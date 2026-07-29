@@ -42,23 +42,34 @@ export interface GenerationResult {
   actualCostUSD: number;
 }
 
-// Approximate blended per-token pricing (USD) used for internal margin tracking.
+// Per-token pricing (USD) used for internal margin tracking.
 const PRICE_PER_MTOK: Record<ModelId, { input: number; output: number }> = {
   haiku: { input: 1.0, output: 5.0 },
   sonnet: { input: 3.0, output: 15.0 },
-  opus: { input: 15.0, output: 75.0 },
+  opus: { input: 5.0, output: 25.0 },
 };
+
+// Full multi-file app output can be large; stream to avoid HTTP timeouts on
+// requests with a high max_tokens (see Anthropic API guidance: stream above ~16K).
+const MAX_TOKENS = 16000;
 
 export async function generateApp(prompt: string, model: ModelId): Promise<GenerationResult> {
   const anthropic = getClient();
   const apiModel = MODEL_INFO[model].apiModel;
 
-  const message = await anthropic.messages.create({
+  const stream = anthropic.messages.stream({
     model: apiModel,
-    max_tokens: 8192,
+    max_tokens: MAX_TOKENS,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: `USER REQUEST: ${prompt}` }],
   });
+  const message = await stream.finalMessage();
+
+  if (message.stop_reason === "refusal") {
+    throw new Error(
+      "Claude declined to generate this app. Try rephrasing your request."
+    );
+  }
 
   const textBlock = message.content.find((b) => b.type === "text");
   const raw = textBlock && "text" in textBlock ? textBlock.text : "{}";
