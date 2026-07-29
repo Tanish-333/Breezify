@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthLayout } from "@/components/auth-layout";
@@ -13,12 +13,18 @@ import { AlertCircle } from "lucide-react";
 
 export default function SignupPage() {
   const router = useRouter();
-  const { signUpWithEmail } = useAuth();
+  const { user, signUpWithEmail } = useAuth();
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!user) return;
+    const hasPendingPrompt = sessionStorage.getItem("feather:pending-prompt");
+    router.push(hasPendingPrompt ? "/build" : "/dashboard");
+  }, [user, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -26,7 +32,8 @@ export default function SignupPage() {
     setLoading(true);
     try {
       await signUpWithEmail(email, password, name || undefined);
-      router.push("/verify-email");
+      const hasPendingPrompt = sessionStorage.getItem("feather:pending-prompt");
+      router.push(hasPendingPrompt ? "/build" : "/verify-email");
     } catch (err) {
       setError(friendlyAuthError(err));
     } finally {

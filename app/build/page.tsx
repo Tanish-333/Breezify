@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
@@ -10,6 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
 import { generateAppRequest } from "@/lib/api-client";
+import { takePendingPrompt } from "@/lib/pending-prompt";
 import { MODEL_INFO, type ModelId } from "@/lib/types";
 import { AlertCircle, Sparkles } from "lucide-react";
 
@@ -21,6 +22,11 @@ function BuildContent() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [result, setResult] = useState<{ appId: string; appName: string; summary: string; files: Record<string, string> } | null>(null);
+
+  useEffect(() => {
+    const pending = takePendingPrompt();
+    if (pending) setPrompt(pending);
+  }, []);
 
   const cost = MODEL_INFO[model].credits;
   const insufficientCredits = (profile?.credits ?? 0) < cost;
