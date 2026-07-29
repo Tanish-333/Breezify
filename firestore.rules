@@ -1,0 +1,45 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // users/{uid} — profile + credit balance.
+    // Credits/plan are only ever mutated server-side via the Admin SDK
+    // (see app/api/generate/route.ts), so client writes may not touch them.
+    match /users/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId);
+      allow update: if isOwner(userId)
+        && request.resource.data.credits == resource.data.credits
+        && request.resource.data.plan == resource.data.plan;
+      allow delete: if false;
+    }
+
+    // apps/{appId} — generated apps.
+    // Creation, generation status, and code are written server-side.
+    match /apps/{appId} {
+      allow read: if isOwner(resource.data.userId);
+      allow delete: if isOwner(resource.data.userId);
+      allow create, update: if false;
+
+      match /events/{eventId} {
+        allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
+        allow write: if false;
+      }
+    }
+
+    // transactions/{txId} — billing/credit history, written server-side only.
+    match /transactions/{txId} {
+      allow read: if isOwner(resource.data.userId);
+      allow write: if false;
+    }
+  }
+}
