@@ -156,7 +156,7 @@ export default function LandingPage() {
         <div className="container">
           <div className="mb-14 max-w-xl">
             <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
-              Everything you need to ship, nothing you don't
+              Everything you need to ship, nothing you don&apos;t
             </h2>
             <p className="mt-3 text-muted-foreground">
               Feather is built for people who want a finished product, not a demo.

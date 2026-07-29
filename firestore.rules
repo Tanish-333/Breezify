@@ -20,6 +20,8 @@ service cloud.firestore {
       allow update: if isOwner(userId)
         && request.resource.data.credits == resource.data.credits
         && request.resource.data.plan == resource.data.plan;
+      // Account deletion goes through /api/delete-account (Admin SDK), which
+      // bypasses these rules — clients never delete their own profile doc.
       allow delete: if false;
     }
 

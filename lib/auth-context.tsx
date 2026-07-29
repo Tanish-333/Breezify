@@ -16,7 +16,6 @@ import {
   signInWithPopup,
   signOut as firebaseSignOut,
   updatePassword,
-  deleteUser,
   type User,
 } from "firebase/auth";
 import {
@@ -174,7 +173,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function deleteAccount() {
     if (!auth.currentUser) throw new Error("Not signed in");
-    await deleteUser(auth.currentUser);
+    const token = await auth.currentUser.getIdToken();
+    const res = await fetch("/api/delete-account", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error || "Failed to delete account.");
+    }
+    await firebaseSignOut(auth);
   }
 
   async function signOut() {

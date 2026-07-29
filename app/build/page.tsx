@@ -29,7 +29,7 @@ function BuildContent() {
   }, []);
 
   const cost = MODEL_INFO[model].credits;
-  const insufficientCredits = (profile?.credits ?? 0) < cost;
+  const insufficientCredits = profile !== null && profile.credits < cost;
 
   async function handleGenerate() {
     if (prompt.trim().length < 5) {
@@ -87,7 +87,9 @@ function BuildContent() {
           </span>
           <Button onClick={handleGenerate} loading={loading} disabled={insufficientCredits}>
             <Sparkles className="h-4 w-4" />
-            {insufficientCredits ? "Not enough credits" : `Generate (${cost.toFixed(2)} credits)`}
+            {insufficientCredits
+              ? "Not enough credits"
+              : `Generate${profile ? ` (${cost.toFixed(2)} credits)` : ""}`}
           </Button>
         </div>
 

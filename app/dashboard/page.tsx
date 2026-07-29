@@ -89,7 +89,9 @@ function DashboardContent() {
                     title="Delete"
                     onClick={() => {
                       if (confirm(`Delete "${app.name}"? This can't be undone.`)) {
-                        deleteApp(app.id);
+                        deleteApp(app.id).catch(() => {
+                          alert("Couldn't delete this app. Please try again.");
+                        });
                       }
                     }}
                   >
