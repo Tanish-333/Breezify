@@ -4,6 +4,8 @@ import { generateWithGemini, isGeminiConfigured } from "./gemini";
 import {
   assertHasFiles,
   parseGenerationJSON,
+  refinePrompt,
+  userPrompt,
   type GenerationResult,
   type ProgressFn,
 } from "./prompt";
@@ -17,8 +19,8 @@ export function isModelAvailable(model: ModelId): boolean {
   return isGeminiConfigured();
 }
 
-export async function generateApp(
-  prompt: string,
+async function run(
+  userContent: string,
   model: ModelId,
   onProgress?: ProgressFn
 ): Promise<GenerationResult> {
@@ -26,8 +28,8 @@ export async function generateApp(
 
   const { raw, inputTokens, outputTokens, actualCostUSD } =
     provider === "anthropic"
-      ? await generateWithAnthropic(prompt, model, onProgress)
-      : await generateWithGemini(prompt, model, onProgress);
+      ? await generateWithAnthropic(userContent, model, onProgress)
+      : await generateWithGemini(userContent, model, onProgress);
 
   const parsed = parseGenerationJSON(raw);
   assertHasFiles(parsed);
@@ -40,4 +42,20 @@ export async function generateApp(
     outputTokens,
     actualCostUSD,
   };
+}
+
+/** Build a brand new app from a prompt. */
+export function generateApp(prompt: string, model: ModelId, onProgress?: ProgressFn) {
+  return run(userPrompt(prompt), model, onProgress);
+}
+
+/** Apply a follow-up change to an app that already has generated files. */
+export function refineApp(
+  originalPrompt: string,
+  files: Record<string, string>,
+  instruction: string,
+  model: ModelId,
+  onProgress?: ProgressFn
+) {
+  return run(refinePrompt(originalPrompt, files, instruction), model, onProgress);
 }

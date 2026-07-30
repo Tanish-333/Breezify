@@ -55,7 +55,11 @@ Feather 123 needs exactly one real secret: `ANTHROPIC_API_KEY`. Firebase require
 - Firestore data model for `users`, `apps`, `transactions`
 - $5.00 free credit on signup, credit costs per model (Haiku 0.50 / Sonnet 1.00 / Opus 2.00 credits), enforced by `firestore.rules` on every write, including the ones from `app/api/generate/route.ts`
 - Dashboard ("My Apps") with status badges, empty state, delete
-- Build flow: prompt + model selector → Claude generates a full app as structured files → live Monaco preview
+- Prompt-first dashboard with a sidebar, ⌘K command palette, file attachments, and optional voice dictation (the microphone is only requested when you click it, never on page load)
+- Build flow: prompt + model selector → the model generates a full app as structured files → live Monaco preview
+- Refine an existing app with a follow-up instruction; the model gets the current files and returns the updated set
+- Push any generated app to a new GitHub repository. The token is used for that one request and never stored; only the resulting repo URL is saved.
+- Rename apps, download the whole app as a ZIP, copy individual files
 - No Firebase admin credentials anywhere: `/api/generate` and `/api/delete-account` verify the caller's Firebase ID token against Google's public keys and write to Firestore over REST using that same token, so Firestore's own security rules are the enforcement, not a trusted server key
 
 ## Not yet built (Phases 2 and 3)

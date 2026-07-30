@@ -41,6 +41,7 @@ function toApp(id: string, data: any): FeatherApp {
     status: data.status,
     summary: data.summary,
     deployedUrl: data.deployedUrl,
+    githubUrl: data.githubUrl,
     subdomain: data.subdomain,
     errorMessage: data.errorMessage,
     createdAt: toMillis(data.createdAt) ?? Date.now(),

@@ -4,7 +4,6 @@ import {
   MAX_OUTPUT_TOKENS,
   SYSTEM_PROMPT,
   detectFiles,
-  userPrompt,
   type GenerationResult,
   type ProgressFn,
 } from "./prompt";
@@ -29,7 +28,7 @@ const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
 };
 
 export async function generateWithAnthropic(
-  prompt: string,
+  userContent: string,
   model: ModelId,
   onProgress?: ProgressFn
 ): Promise<Omit<GenerationResult, "appName" | "summary" | "files"> & { raw: string }> {
@@ -40,7 +39,7 @@ export async function generateWithAnthropic(
     model: apiModel,
     max_tokens: MAX_OUTPUT_TOKENS,
     system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userPrompt(prompt) }],
+    messages: [{ role: "user", content: userContent }],
   });
 
   let raw = "";

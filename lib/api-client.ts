@@ -21,7 +21,9 @@ export async function generateAppRequest(
   prompt: string,
   model: ModelId,
   handlers: GenerateHandlers = {},
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  /** Pass an app id to refine that app instead of building a new one. */
+  appId?: string
 ): Promise<GenerateResult> {
   const user = auth.currentUser;
   if (!user) throw new Error("You must be signed in to generate an app.");
@@ -33,7 +35,7 @@ export async function generateAppRequest(
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify({ prompt, model }),
+    body: JSON.stringify(appId ? { prompt, model, appId } : { prompt, model }),
     signal,
   });
 

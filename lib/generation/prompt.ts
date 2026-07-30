@@ -25,6 +25,31 @@ export function userPrompt(prompt: string) {
   return `USER REQUEST: ${prompt}`;
 }
 
+/**
+ * Prompt for iterating on an app that already exists. The current files are
+ * included so the model edits rather than starts over, and it must return the
+ * complete file set again in the same JSON shape.
+ */
+export function refinePrompt(
+  originalPrompt: string,
+  files: Record<string, string>,
+  instruction: string
+) {
+  const listing = Object.entries(files)
+    .map(([path, content]) => `--- ${path} ---\n${content}`)
+    .join("\n\n");
+
+  return `You previously built an app from this request: ${originalPrompt}
+
+Here are its current files:
+
+${listing}
+
+CHANGE REQUESTED: ${instruction}
+
+Apply the requested change. Return the COMPLETE updated file set in the same JSON shape as before, including files you did not modify. Delete a file by omitting it. Keep the app runnable.`;
+}
+
 /** Shared token budget for a full multi-file app. */
 export const MAX_OUTPUT_TOKENS = 16000;
 

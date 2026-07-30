@@ -4,7 +4,6 @@ import {
   MAX_OUTPUT_TOKENS,
   SYSTEM_PROMPT,
   detectFiles,
-  userPrompt,
   type GenerationResult,
   type ProgressFn,
 } from "./prompt";
@@ -34,7 +33,7 @@ const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
 };
 
 export async function generateWithGemini(
-  prompt: string,
+  userContent: string,
   model: ModelId,
   onProgress?: ProgressFn
 ): Promise<Omit<GenerationResult, "appName" | "summary" | "files"> & { raw: string }> {
@@ -43,7 +42,7 @@ export async function generateWithGemini(
 
   const stream = await ai.models.generateContentStream({
     model: apiModel,
-    contents: userPrompt(prompt),
+    contents: userContent,
     config: {
       systemInstruction: SYSTEM_PROMPT,
       maxOutputTokens: MAX_OUTPUT_TOKENS,

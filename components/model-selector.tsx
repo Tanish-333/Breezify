@@ -10,15 +10,7 @@ import {
   type ModelId,
   type PlanId,
 } from "@/lib/types";
-import { Check, Lock, Sparkles, Zap } from "lucide-react";
-
-function ProviderGlyph({ provider }: { provider: "anthropic" | "google" }) {
-  return provider === "anthropic" ? (
-    <Sparkles className="h-3 w-3" strokeWidth={2} />
-  ) : (
-    <Zap className="h-3 w-3" strokeWidth={2} />
-  );
-}
+import { Check, Lock } from "lucide-react";
 
 export function ModelSelector({
   value,
@@ -55,7 +47,6 @@ export function ModelSelector({
           >
             <div className="flex items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
-                <ProviderGlyph provider={info.provider} />
                 {info.providerLabel}
               </span>
               {active && (

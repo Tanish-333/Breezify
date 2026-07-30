@@ -1,87 +1,281 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { Logo } from "@/components/logo";
+import { Logo, FeatherMark } from "@/components/logo";
+import { CommandPalette } from "@/components/command-palette";
 import { useAuth } from "@/lib/auth-context";
+import { useUserApps } from "@/lib/use-apps";
 import { cn } from "@/lib/utils";
 import { PLANS } from "@/lib/types";
-import { CreditCard, LayoutGrid, LogOut, Settings, Sparkles } from "lucide-react";
+import {
+  CreditCard,
+  FolderOpen,
+  LayoutGrid,
+  LogOut,
+  PanelLeft,
+  Plus,
+  Search,
+  Settings,
+} from "lucide-react";
 
-const NAV = [
-  { href: "/dashboard", label: "My Apps", icon: LayoutGrid },
-  { href: "/build", label: "New App", icon: Sparkles },
+const MAIN_NAV = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
+  { href: "/build", label: "New app", icon: Plus },
+];
+
+const ACCOUNT_NAV = [
   { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
 ];
 
+function NavLink({
+  href,
+  label,
+  icon: Icon,
+  active,
+  collapsed,
+}: {
+  href: string;
+  label: string;
+  icon: typeof LayoutGrid;
+  active: boolean;
+  collapsed: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      title={collapsed ? label : undefined}
+      className={cn(
+        "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
+        active
+          ? "bg-muted font-medium text-foreground"
+          : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
+        collapsed && "justify-center px-0"
+      )}
+    >
+      <Icon className="h-4 w-4 shrink-0" />
+      {!collapsed && <span className="truncate">{label}</span>}
+    </Link>
+  );
+}
+
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
-  const { profile, signOut } = useAuth();
+  const { user, profile, signOut } = useAuth();
+  const { apps } = useUserApps(user?.uid);
+  const [collapsed, setCollapsed] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
+  // Restore the collapsed preference so the layout doesn't reset every visit.
+  useEffect(() => {
+    setCollapsed(localStorage.getItem("feather:sidebar-collapsed") === "1");
+  }, []);
+
+  function toggleCollapsed() {
+    setCollapsed((prev) => {
+      localStorage.setItem("feather:sidebar-collapsed", prev ? "0" : "1");
+      return !prev;
+    });
+  }
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        setPaletteOpen((o) => !o);
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  const recents = apps.slice(0, 5);
   const lowCredits = profile !== null && profile.credits < 0.5;
 
   return (
-    <div className="min-h-screen">
-      <header className="sticky top-0 z-40 border-b border-border bg-background/80 backdrop-blur">
-        <div className="container flex h-16 items-center justify-between gap-4">
-          <Link href="/dashboard" className="shrink-0">
+    <div className="flex min-h-screen">
+      <aside
+        className={cn(
+          "sticky top-0 hidden h-screen shrink-0 flex-col border-r border-border bg-muted/20 transition-[width] duration-200 md:flex",
+          collapsed ? "w-[60px]" : "w-[240px]"
+        )}
+      >
+        <div
+          className={cn(
+            "flex h-16 items-center gap-2 px-3",
+            collapsed && "justify-center px-0"
+          )}
+        >
+          <Link href="/dashboard" className="flex items-center">
+            {collapsed ? <FeatherMark className="h-5 w-5" /> : <Logo />}
+          </Link>
+          {!collapsed && (
+            <button
+              onClick={toggleCollapsed}
+              className="ml-auto flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="Collapse sidebar"
+            >
+              <PanelLeft className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+
+        <nav className="flex-1 space-y-1 overflow-y-auto px-2.5 pb-4">
+          {collapsed && (
+            <button
+              onClick={toggleCollapsed}
+              className="mb-1 flex w-full items-center justify-center rounded-md py-2 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              title="Expand sidebar"
+            >
+              <PanelLeft className="h-4 w-4" />
+            </button>
+          )}
+
+          {MAIN_NAV.map((item) => (
+            <NavLink
+              key={item.href}
+              {...item}
+              collapsed={collapsed}
+              active={pathname === item.href}
+            />
+          ))}
+
+          <button
+            onClick={() => setPaletteOpen(true)}
+            title={collapsed ? "Search" : undefined}
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted/60 hover:text-foreground",
+              collapsed && "justify-center px-0"
+            )}
+          >
+            <Search className="h-4 w-4 shrink-0" />
+            {!collapsed && (
+              <>
+                <span>Search</span>
+                <kbd className="ml-auto rounded border border-border px-1.5 py-0.5 font-sans text-[10px] text-muted-foreground">
+                  ⌘K
+                </kbd>
+              </>
+            )}
+          </button>
+
+          {!collapsed && recents.length > 0 && (
+            <div className="pt-5">
+              <p className="px-2.5 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Recents
+              </p>
+              {recents.map((app) => (
+                <Link
+                  key={app.id}
+                  href={`/build/${app.id}`}
+                  className={cn(
+                    "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
+                    pathname === `/build/${app.id}`
+                      ? "bg-muted font-medium text-foreground"
+                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
+                  )}
+                  title={app.name}
+                >
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{app.name}</span>
+                </Link>
+              ))}
+            </div>
+          )}
+
+          <div className="pt-5">
+            {!collapsed && (
+              <p className="px-2.5 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Account
+              </p>
+            )}
+            {ACCOUNT_NAV.map((item) => (
+              <NavLink
+                key={item.href}
+                {...item}
+                collapsed={collapsed}
+                active={pathname === item.href}
+              />
+            ))}
+          </div>
+        </nav>
+
+        <div className={cn("border-t border-border p-2.5", collapsed && "px-1.5")}>
+          {profile && !collapsed && (
+            <Link
+              href="/billing"
+              className={cn(
+                "mb-2 flex items-center justify-between rounded-md border px-2.5 py-2 text-xs transition-colors",
+                lowCredits
+                  ? "border-warning/40 text-warning hover:bg-warning/10"
+                  : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
+              )}
+            >
+              <span>{PLANS[profile.plan]?.name ?? "Free"}</span>
+              <span className="font-medium tabular-nums">
+                {profile.credits.toFixed(2)}
+              </span>
+            </Link>
+          )}
+          <button
+            onClick={async () => {
+              await signOut();
+              router.push("/");
+            }}
+            title="Sign out"
+            className={cn(
+              "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+              collapsed && "justify-center px-0"
+            )}
+          >
+            <LogOut className="h-4 w-4 shrink-0" />
+            {!collapsed && <span>Sign out</span>}
+          </button>
+        </div>
+      </aside>
+
+      <div className="flex min-w-0 flex-1 flex-col">
+        {/* Mobile bar: the sidebar is hidden below md. */}
+        <header className="sticky top-0 z-30 flex h-14 items-center justify-between gap-3 border-b border-border bg-background/80 px-4 backdrop-blur md:hidden">
+          <Link href="/dashboard">
             <Logo />
           </Link>
-
-          <nav className="flex items-center gap-1">
-            {NAV.map((item) => {
-              const active =
-                pathname === item.href || pathname?.startsWith(item.href + "/");
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={cn(
-                    "flex items-center gap-2 rounded px-3 py-2 text-sm font-medium transition-colors",
-                    active
-                      ? "bg-foreground text-background"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  <item.icon className="h-4 w-4" />
-                  <span className="hidden sm:inline">{item.label}</span>
-                </Link>
-              );
-            })}
-          </nav>
-
-          <div className="flex shrink-0 items-center gap-3">
-            {profile && (
-              <Link
-                href="/billing"
-                className={cn(
-                  "hidden items-center gap-2 rounded-full border px-3 py-1.5 text-xs transition-colors sm:flex",
-                  lowCredits
-                    ? "border-warning/40 text-warning hover:bg-warning/10"
-                    : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
-                )}
-                title={`${PLANS[profile.plan]?.name ?? "Free"} plan`}
-              >
-                <span className="font-medium">{profile.credits.toFixed(2)}</span>
-                <span>credits</span>
-              </Link>
-            )}
+          <div className="flex items-center gap-1">
             <button
-              onClick={async () => {
-                await signOut();
-                router.push("/");
-              }}
-              className="flex h-9 w-9 items-center justify-center rounded border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title="Sign out"
+              onClick={() => setPaletteOpen(true)}
+              className="flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="Search"
             >
-              <LogOut className="h-4 w-4" />
+              <Search className="h-4 w-4" />
             </button>
+            <Link
+              href="/build"
+              className="flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="New app"
+            >
+              <Plus className="h-4 w-4" />
+            </Link>
+            <Link
+              href="/settings"
+              className="flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              title="Settings"
+            >
+              <Settings className="h-4 w-4" />
+            </Link>
           </div>
-        </div>
-      </header>
-      <main className="container py-10">{children}</main>
+        </header>
+
+        <main className="flex-1 px-5 py-8 md:px-10 md:py-10">{children}</main>
+      </div>
+
+      <CommandPalette
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        apps={apps}
+      />
     </div>
   );
 }

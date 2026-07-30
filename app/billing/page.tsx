@@ -14,7 +14,7 @@ import {
   PLAN_RANK,
   type PlanId,
 } from "@/lib/types";
-import { Check, Loader2, Sparkles, TrendingDown } from "lucide-react";
+import { Check, Loader2, Receipt, TrendingDown } from "lucide-react";
 
 function BillingContent() {
   const { user, profile } = useAuth();
@@ -131,7 +131,7 @@ function BillingContent() {
             </div>
           ) : transactions.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-12 text-center">
-              <Sparkles className="h-6 w-6 text-muted-foreground" strokeWidth={1.25} />
+              <Receipt className="h-6 w-6 text-muted-foreground" strokeWidth={1.25} />
               <p className="text-sm text-muted-foreground">
                 No usage yet. Generate your first app to see it here.
               </p>

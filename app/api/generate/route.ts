@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { NextRequest } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, createWrite, getDoc, incrementWrite, updateWrite } from "@/lib/firestore-rest";
-import { generateApp, isModelAvailable } from "@/lib/generation";
+import { generateApp, isModelAvailable, refineApp } from "@/lib/generation";
 import {
   MODEL_INFO,
   PLANS,
@@ -25,15 +25,18 @@ function sse(event: Event) {
   return `data: ${JSON.stringify(event)}\n\n`;
 }
 
+const SSE_HEADERS = {
+  "Content-Type": "text/event-stream; charset=utf-8",
+  "Cache-Control": "no-cache, no-transform",
+  Connection: "keep-alive",
+  "X-Accel-Buffering": "no",
+};
+
 /** Terminates the stream with a single error event rather than an HTTP status. */
 function errorStream(message: string) {
   return new Response(sse({ type: "error", error: message }), {
     status: 200,
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-    },
+    headers: SSE_HEADERS,
   });
 }
 
@@ -58,13 +61,18 @@ export async function POST(req: NextRequest) {
 
   const prompt = typeof body?.prompt === "string" ? body.prompt.trim() : "";
   const model = body?.model;
+  // When present, this is a follow-up change to an existing app rather than a
+  // brand new build.
+  const refineAppId = typeof body?.appId === "string" ? body.appId : null;
 
   if (!prompt || prompt.length < 5) {
-    return errorStream("Please describe the app you want to build in a bit more detail.");
+    return errorStream(
+      refineAppId
+        ? "Describe the change you want in a bit more detail."
+        : "Please describe the app you want to build in a bit more detail."
+    );
   }
-  if (!isModelId(model)) {
-    return errorStream("Invalid model selection.");
-  }
+  if (!isModelId(model)) return errorStream("Invalid model selection.");
   if (!isModelAvailable(model)) {
     return errorStream(
       `${MODEL_INFO[model].label} isn't available on this deployment yet. Pick another model.`
@@ -95,7 +103,31 @@ export async function POST(req: NextRequest) {
     return errorStream("Not enough credits. Top up your balance to keep building.");
   }
 
-  const appId = randomUUID();
+  // For a refine, load the existing app up front so ownership and file
+  // availability fail fast, before any credits are involved.
+  let existing: { prompt: string; files: Record<string, string>; createdAt: unknown } | null = null;
+  if (refineAppId) {
+    let doc;
+    try {
+      doc = await getDoc(`apps/${refineAppId}`, idToken);
+    } catch {
+      return errorStream("Couldn't load that app. Please try again.");
+    }
+    if (!doc) return errorStream("App not found.");
+    if (doc.fields.userId !== uid) return errorStream("You don't have access to this app.");
+    const files =
+      (doc.fields.generatedCode as { files?: Record<string, string> } | undefined)?.files ?? {};
+    if (Object.keys(files).length === 0) {
+      return errorStream("This app has no files to refine yet.");
+    }
+    existing = {
+      prompt: (doc.fields.prompt as string) ?? "",
+      files,
+      createdAt: doc.fields.createdAt,
+    };
+  }
+
+  const appId = refineAppId ?? randomUUID();
   const appPath = `apps/${appId}`;
   const createdAt = new Date();
 
@@ -111,32 +143,42 @@ export async function POST(req: NextRequest) {
       };
 
       try {
-        send({ type: "status", message: "Setting up your app" });
+        if (existing) {
+          send({ type: "status", message: "Reading your current files" });
+        } else {
+          send({ type: "status", message: "Setting up your app" });
+          await commit(
+            [
+              createWrite(appPath, {
+                userId: uid,
+                name: prompt.slice(0, 60),
+                prompt,
+                model,
+                status: "generating",
+                createdAt,
+              }),
+            ],
+            idToken
+          );
+        }
 
-        await commit(
-          [
-            createWrite(appPath, {
-              userId: uid,
-              name: prompt.slice(0, 60),
-              prompt,
-              model,
-              status: "generating",
-              createdAt,
-            }),
-          ],
-          idToken
-        );
-
-        send({ type: "status", message: `Generating with ${MODEL_INFO[model].label}` });
+        send({
+          type: "status",
+          message: `${existing ? "Updating" : "Generating"} with ${MODEL_INFO[model].label}`,
+        });
 
         let lastEmit = 0;
-        const result = await generateApp(prompt, model, ({ chars, files }) => {
+        const onProgress = ({ chars, files }: { chars: number; files: string[] }) => {
           // Throttle so a fast stream doesn't flood the client.
           const now = Date.now();
           if (now - lastEmit < 120) return;
           lastEmit = now;
           send({ type: "progress", chars, files });
-        });
+        };
+
+        const result = existing
+          ? await refineApp(existing.prompt, existing.files, prompt, model, onProgress)
+          : await generateApp(prompt, model, onProgress);
 
         send({ type: "status", message: "Saving your app" });
 
@@ -146,11 +188,12 @@ export async function POST(req: NextRequest) {
             updateWrite(appPath, {
               userId: uid,
               name: result.appName,
-              prompt,
+              // A refine keeps the original brief; the instruction is not the prompt.
+              prompt: existing ? existing.prompt : prompt,
               model,
               status: "ready",
               summary: result.summary,
-              createdAt,
+              createdAt: existing ? (existing.createdAt as Date) ?? createdAt : createdAt,
               generatedCode: { files: result.files },
             }),
             incrementWrite(userPath, "credits", -cost),
@@ -176,24 +219,27 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         const message =
           err instanceof Error ? err.message : "Generation failed. Please try again.";
-        // Best effort: mark the app errored so it doesn't sit in "generating".
-        try {
-          await commit(
-            [
-              updateWrite(appPath, {
-                userId: uid,
-                name: prompt.slice(0, 60),
-                prompt,
-                model,
-                status: "error",
-                createdAt,
-                errorMessage: message,
-              }),
-            ],
-            idToken
-          );
-        } catch {
-          // Ignore, the error event below is what the user sees.
+        // Only a fresh build leaves a half-created doc behind; a failed refine
+        // must leave the existing app untouched.
+        if (!existing) {
+          try {
+            await commit(
+              [
+                updateWrite(appPath, {
+                  userId: uid,
+                  name: prompt.slice(0, 60),
+                  prompt,
+                  model,
+                  status: "error",
+                  createdAt,
+                  errorMessage: message,
+                }),
+              ],
+              idToken
+            );
+          } catch {
+            // Ignore, the error event below is what the user sees.
+          }
         }
         send({ type: "error", error: message });
       } finally {
@@ -202,12 +248,5 @@ export async function POST(req: NextRequest) {
     },
   });
 
-  return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream; charset=utf-8",
-      "Cache-Control": "no-cache, no-transform",
-      Connection: "keep-alive",
-      "X-Accel-Buffering": "no",
-    },
-  });
+  return new Response(stream, { headers: SSE_HEADERS });
 }

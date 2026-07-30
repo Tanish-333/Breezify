@@ -14,7 +14,7 @@ import { useAuth } from "@/lib/auth-context";
 import { fetchModelAvailability, generateAppRequest, type GenerateResult } from "@/lib/api-client";
 import { takePendingPrompt } from "@/lib/pending-prompt";
 import { MODEL_INFO, planAllowsModel, type ModelId, type PlanId } from "@/lib/types";
-import { AlertCircle, ArrowRight, Sparkles, X } from "lucide-react";
+import { AlertCircle, ArrowRight, Wand2, X } from "lucide-react";
 
 const STARTERS = [
   "A habit tracker with daily streaks and a calendar heatmap",
@@ -197,7 +197,7 @@ function BuildContent() {
               </Button>
             )}
             <Button onClick={handleGenerate} loading={loading} disabled={!canSubmit}>
-              {!loading && <Sparkles className="h-4 w-4" />}
+              {!loading && <Wand2 className="h-4 w-4" />}
               {insufficientCredits
                 ? "Not enough credits"
                 : loading

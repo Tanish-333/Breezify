@@ -193,6 +193,7 @@ export interface FeatherApp {
   status: AppStatus;
   summary?: string;
   deployedUrl?: string;
+  githubUrl?: string;
   subdomain?: string;
   errorMessage?: string;
   createdAt: number;
