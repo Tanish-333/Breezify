@@ -53,9 +53,7 @@ export function SiteHeader() {
                 </Button>
               </Link>
               <Link href="/signup">
-                <Button size="sm" className="shadow-glow">
-                  Get started
-                </Button>
+                <Button size="sm">Get started</Button>
               </Link>
             </>
           )}

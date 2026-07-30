@@ -16,7 +16,6 @@ import {
   Gauge,
   Github,
   Check,
-  Sparkles,
 } from "lucide-react";
 
 const FEATURES = [
@@ -91,20 +90,12 @@ export default function LandingPage() {
     <div>
       <SiteHeader />
 
-      <section className="dot-grid relative overflow-hidden border-b border-border">
-        <div
-          className="glow-orb left-1/2 top-[-140px] h-[420px] w-[720px] -translate-x-1/2 bg-gradient-to-r from-violet-400 via-fuchsia-400 to-amber-300"
-          aria-hidden
-        />
+      <section className="dot-grid relative border-b border-border">
         <div className="container relative flex flex-col items-center gap-8 py-24 text-center md:py-32">
-          <span className="animate-in inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1 text-xs text-muted-foreground">
-            <Sparkles className="h-3 w-3" />
-            Now building with Claude Opus 5 &amp; Sonnet 5
-          </span>
           <h1 className="max-w-3xl text-balance text-4xl font-semibold tracking-tight md:text-6xl animate-in">
             Describe your app.
             <br />
-            <span className="text-gradient">Feather 123 builds it.</span>
+            Feather 123 builds it.
           </h1>
           <p className="max-w-xl text-balance text-lg text-muted-foreground animate-in">
             Paste your idea below. Feather 123 writes the full codebase and deploys it
@@ -163,7 +154,7 @@ export default function LandingPage() {
               return (
               <Card
                 key={plan.name}
-                className={`card-hover ${plan.highlighted ? "border-foreground shadow-glow" : ""}`}
+                className={`card-hover ${plan.highlighted ? "border-foreground" : ""}`}
               >
                 <CardContent className="flex h-full flex-col p-7">
                   <div className="flex items-center justify-between">
@@ -215,17 +206,13 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="relative overflow-hidden py-24">
-        <div
-          className="glow-orb left-1/2 top-1/2 h-[320px] w-[560px] -translate-x-1/2 -translate-y-1/2 bg-gradient-to-r from-violet-400 via-fuchsia-400 to-amber-300"
-          aria-hidden
-        />
-        <div className="container relative flex flex-col items-center gap-6 text-center">
+      <section className="py-24">
+        <div className="container flex flex-col items-center gap-6 text-center">
           <h2 className="max-w-2xl text-balance text-3xl font-semibold tracking-tight md:text-4xl">
             Your next app is one prompt away.
           </h2>
           <Link href="/signup">
-            <Button size="lg" className="shadow-glow">
+            <Button size="lg">
               Start building free
               <ArrowRight className="h-4 w-4" />
             </Button>

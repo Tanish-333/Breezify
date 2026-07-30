@@ -77,30 +77,6 @@ body {
   overflow: hidden;
 }
 
-/* Signature accent gradient used sparingly for hero copy, glows, and CTAs. */
-.text-gradient {
-  background: linear-gradient(100deg, #a78bfa 0%, #f0abfc 35%, #fb923c 70%, #fbbf24 100%);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-}
-
-.shadow-glow {
-  box-shadow: 0 0 0 1px hsl(var(--foreground) / 0.05), 0 8px 24px -8px rgba(167, 139, 250, 0.45);
-}
-
-.glow-orb {
-  position: absolute;
-  border-radius: 9999px;
-  filter: blur(90px);
-  opacity: 0.35;
-  pointer-events: none;
-}
-
-.light .glow-orb {
-  opacity: 0.2;
-}
-
 .card-hover {
   transition: border-color 0.2s ease, transform 0.2s ease, background-color 0.2s ease;
 }
