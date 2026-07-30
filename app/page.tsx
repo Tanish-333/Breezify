@@ -21,7 +21,7 @@ const FEATURES = [
   {
     icon: Wand2,
     title: "Describe, don't code",
-    body: "Write what you want in plain English. Feather generates a complete, production-ready app — frontend, backend, and config.",
+    body: "Write what you want in plain English. Feather 123 generates a complete, production-ready app: frontend, backend, and config.",
     span: "sm:col-span-2",
   },
   {
@@ -53,7 +53,7 @@ const FEATURES = [
   {
     icon: ShieldCheck,
     title: "Serious infrastructure",
-    body: "Firebase auth, Firestore, and Vercel deploys under the hood — the same tools production teams use.",
+    body: "Firebase auth, Firestore, and Vercel deploys under the hood, the same tools production teams use.",
   },
 ];
 
@@ -90,7 +90,7 @@ const PLANS = [
     name: "Max",
     price: "$200",
     period: "per month",
-    description: "For teams running Feather at scale.",
+    description: "For teams running Feather 123 at scale.",
     features: ["300.00 credits / month", "All three models", "Team seats", "Dedicated support"],
     cta: "Get started",
     href: "/signup",
@@ -99,16 +99,16 @@ const PLANS = [
 
 const FAQS = [
   {
-    q: "What is Feather?",
-    a: "Feather is an AI app builder. Describe what you want in plain English and Feather writes a complete, working codebase for it — then deploys it to a live URL.",
+    q: "What is Feather 123?",
+    a: "Feather 123 is an AI app builder. Describe what you want in plain English and Feather 123 writes a complete, working codebase for it, then deploys it to a live URL.",
   },
   {
-    q: "How is Feather different from other app builders?",
-    a: "Feather gives you full, inspectable source code for everything it generates — not a black box. You can open any file in the built-in editor, understand exactly what was built, and keep iterating.",
+    q: "How is Feather 123 different from other app builders?",
+    a: "Feather 123 gives you full, inspectable source code for everything it generates. It's not a black box. You can open any file in the built-in editor, understand exactly what was built, and keep iterating.",
   },
   {
     q: "What kind of apps can I build?",
-    a: "Dashboards, internal tools, landing pages, trackers, small SaaS products — anything you can describe as a self-contained web app. More complex apps benefit from the Sonnet or Opus models.",
+    a: "Dashboards, internal tools, landing pages, trackers, small SaaS products, anything you can describe as a self-contained web app. More complex apps benefit from the Sonnet or Opus models.",
   },
   {
     q: "Do I need to know how to code?",
@@ -116,7 +116,7 @@ const FAQS = [
   },
   {
     q: "How does pricing work?",
-    a: "Every new account gets $5.00 of free credit. Each generation costs credits depending on the model — Haiku 4.5 is cheapest, Opus 5 is most capable. Once you run out, top up or subscribe.",
+    a: "Every new account gets $5.00 of free credit. Each generation costs credits depending on the model. Haiku 4.5 is cheapest, Opus 5 is most capable. Once you run out, top up or subscribe.",
   },
   {
     q: "Can I use my own domain?",
@@ -131,16 +131,13 @@ export default function LandingPage() {
 
       <section className="dot-grid border-b border-border">
         <div className="container flex flex-col items-center gap-8 py-24 text-center md:py-32">
-          <div className="inline-flex items-center gap-2 rounded-full border border-border px-3 py-1 text-xs text-muted-foreground animate-in">
-            Build 10x better. Ship 10x faster.
-          </div>
           <h1 className="max-w-3xl text-balance text-4xl font-semibold tracking-tight md:text-6xl animate-in">
             Describe your app.
-            <br /> Feather builds it.
+            <br /> Feather 123 builds it.
           </h1>
           <p className="max-w-xl text-balance text-lg text-muted-foreground animate-in">
-            Paste your idea below. Feather writes the full codebase and deploys it
-            to a live URL — no setup required.
+            Paste your idea below. Feather 123 writes the full codebase and deploys it
+            to a live URL. No setup required.
           </p>
           <PromptHero />
           <p className="text-xs text-muted-foreground">
@@ -159,7 +156,7 @@ export default function LandingPage() {
               Everything you need to ship, nothing you don&apos;t
             </h2>
             <p className="mt-3 text-muted-foreground">
-              Feather is built for people who want a finished product, not a demo.
+              Feather 123 is built for people who want a finished product, not a demo.
             </p>
           </div>
           <div className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
@@ -233,7 +230,7 @@ export default function LandingPage() {
             <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
               Frequently asked questions
             </h2>
-            <p className="mt-3 text-muted-foreground">Everything you need to know before building with Feather.</p>
+            <p className="mt-3 text-muted-foreground">Everything you need to know before building with Feather 123.</p>
           </div>
           <FaqAccordion items={FAQS} />
         </div>
@@ -255,8 +252,14 @@ export default function LandingPage() {
 
       <footer className="border-t border-border py-10">
         <div className="container flex flex-col items-center justify-between gap-4 text-sm text-muted-foreground md:flex-row">
-          <span>© {new Date().getFullYear()} Feather. All rights reserved.</span>
-          <div className="flex items-center gap-6">
+          <span>© {new Date().getFullYear()} Feather 123. All rights reserved.</span>
+          <div className="flex flex-wrap items-center justify-center gap-6">
+            <Link href="/terms" className="hover:text-foreground transition-colors">
+              Terms
+            </Link>
+            <Link href="/privacy" className="hover:text-foreground transition-colors">
+              Privacy
+            </Link>
             <Link href="/login" className="hover:text-foreground transition-colors">
               Log in
             </Link>

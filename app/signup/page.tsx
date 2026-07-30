@@ -99,7 +99,15 @@ export default function SignupPage() {
         </Button>
       </form>
       <p className="mt-5 text-center text-xs text-muted-foreground">
-        By signing up, you agree to Feather&apos;s Terms and Privacy Policy.
+        By signing up, you agree to Feather 123&apos;s{" "}
+        <Link href="/terms" className="text-foreground hover:underline">
+          Terms
+        </Link>{" "}
+        and{" "}
+        <Link href="/privacy" className="text-foreground hover:underline">
+          Privacy Policy
+        </Link>
+        .
       </p>
     </AuthLayout>
   );

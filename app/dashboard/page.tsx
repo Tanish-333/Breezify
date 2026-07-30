@@ -44,7 +44,7 @@ function DashboardContent() {
             <div>
               <h3 className="font-medium">No apps yet</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Describe an app and Feather will build it for you.
+                Describe an app and Feather 123 will build it for you.
               </p>
             </div>
             <Link href="/build">

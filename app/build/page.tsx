@@ -54,7 +54,7 @@ function BuildContent() {
     <div className="mx-auto max-w-4xl">
       <h1 className="text-2xl font-semibold tracking-tight">Build a new app</h1>
       <p className="mt-1 text-sm text-muted-foreground">
-        Describe what you want. Feather writes the full, working codebase.
+        Describe what you want. Feather 123 writes the full, working codebase.
       </p>
 
       <div className="mt-8 space-y-6">

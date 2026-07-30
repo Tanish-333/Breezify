@@ -1,6 +1,6 @@
-# Feather
+# Feather 123
 
-Feather turns a plain-English prompt into a complete, production-ready app. This repo contains **Phase 1**: authentication, the landing page, the dashboard, and the AI generation flow with a live code preview.
+Feather 123 turns a plain-English prompt into a complete, production-ready app. This repo contains **Phase 1**: authentication, the landing page, the dashboard, and the AI generation flow with a live code preview.
 
 ## Stack
 
@@ -22,7 +22,7 @@ Feather turns a plain-English prompt into a complete, production-ready app. This
    - Enable **Firestore Database** (start in production mode)
    - Deploy the included security rules: `firebase deploy --only firestore:rules,firestore:indexes` (requires the [Firebase CLI](https://firebase.google.com/docs/cli))
    - Copy your web app config into `.env.local` (`NEXT_PUBLIC_FIREBASE_*` keys)
-   - Generate a service account (Project settings → Service accounts → Generate new private key) and copy `project_id` / `client_email` / `private_key` into the `FIREBASE_ADMIN_*` variables — this powers server-side credit deduction and generation
+   - Generate a service account (Project settings → Service accounts → Generate new private key) and copy `project_id`, `client_email`, and `private_key` into the `FIREBASE_ADMIN_*` variables. This powers server-side credit deduction and generation.
 
 3. **Get an Anthropic API key** at [console.anthropic.com](https://console.anthropic.com) and set `ANTHROPIC_API_KEY`.
 
@@ -46,14 +46,14 @@ Feather turns a plain-English prompt into a complete, production-ready app. This
 - $5.00 free credit on signup, credit costs per model (Haiku 0.50 / Sonnet 1.00 / Opus 2.00 credits), enforced server-side in `app/api/generate/route.ts`
 - Dashboard ("My Apps") with status badges, empty state, delete
 - Build flow: prompt + model selector → Claude generates a full app as structured files → live Monaco preview
-- Firestore security rules — credits/plan and generated code are only ever written by the trusted server (Admin SDK), never directly by the client
+- Firestore security rules. Credits, plan, and generated code are only ever written by the trusted server (Admin SDK), never directly by the client.
 
-## Not yet built (Phases 2–3)
+## Not yet built (Phases 2 and 3)
 
 - Vercel deployment pipeline (`deployedUrl`, live status polling)
 - Per-app analytics (visits, errors, load time, traffic graph)
 - Stripe billing (credit top-ups, subscriptions)
 - Admin margin-tracking dashboard
-- "Made with Feather" watermark injection
+- "Made with Feather 123" watermark injection
 
 These are scoped in `lib/types.ts` (`AppStatus`, `FeatherTransaction`) and the Firestore rules already anticipate them, but the UI intentionally doesn't link to them yet so there are no dead pages.

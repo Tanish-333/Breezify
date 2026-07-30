@@ -77,7 +77,7 @@ function SettingsContent() {
         <CardContent className="space-y-3">
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Name</span>
-            <span>{user?.displayName || "—"}</span>
+            <span>{user?.displayName || "Not set"}</span>
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Email</span>
@@ -99,7 +99,7 @@ function SettingsContent() {
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Credit balance</span>
-            <span>{profile ? formatCredits(profile.credits) : "—"}</span>
+            <span>{profile ? formatCredits(profile.credits) : "Loading"}</span>
           </div>
         </CardContent>
       </Card>

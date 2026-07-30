@@ -23,7 +23,7 @@ export function Logo({ className, wordmark = true }: { className?: string; wordm
   return (
     <span className={cn("inline-flex items-center gap-2 font-semibold tracking-tight", className)}>
       <FeatherMark />
-      {wordmark && <span>Feather</span>}
+      {wordmark && <span>Feather 123</span>}
     </span>
   );
 }

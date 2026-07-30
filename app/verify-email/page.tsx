@@ -54,7 +54,7 @@ export default function VerifyEmailPage() {
         </p>
         <div className="flex w-full flex-col gap-2.5">
           <Button className="w-full" onClick={checkVerified} loading={checking}>
-            I&apos;ve verified — continue
+            I&apos;ve verified, continue
           </Button>
           <Button className="w-full" variant="secondary" onClick={resend} loading={sending} disabled={sent}>
             {sent ? "Email sent" : "Resend email"}

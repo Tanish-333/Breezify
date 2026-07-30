@@ -20,7 +20,7 @@ export const firebaseApp = getApps().length ? getApp() : initializeApp(firebaseC
 
 // Firebase throws synchronously if NEXT_PUBLIC_FIREBASE_* env vars aren't set
 // yet (e.g. before the user has connected their Firebase project). Fall back
-// gracefully so the rest of the app still renders — auth-context treats a
+// gracefully so the rest of the app still renders. auth-context treats a
 // null `auth` as "signed out" instead of crashing.
 let authInstance: ReturnType<typeof getAuth> | null = null;
 let dbInstance: ReturnType<typeof getFirestore> | null = null;

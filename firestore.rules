@@ -11,7 +11,7 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // users/{uid} — profile + credit balance.
+    // users/{uid}: profile + credit balance.
     // Credits/plan are only ever mutated server-side via the Admin SDK
     // (see app/api/generate/route.ts), so client writes may not touch them.
     match /users/{userId} {
@@ -21,11 +21,11 @@ service cloud.firestore {
         && request.resource.data.credits == resource.data.credits
         && request.resource.data.plan == resource.data.plan;
       // Account deletion goes through /api/delete-account (Admin SDK), which
-      // bypasses these rules — clients never delete their own profile doc.
+      // bypasses these rules; clients never delete their own profile doc.
       allow delete: if false;
     }
 
-    // apps/{appId} — generated apps.
+    // apps/{appId}: generated apps.
     // Creation, generation status, and code are written server-side.
     match /apps/{appId} {
       allow read: if isOwner(resource.data.userId);
@@ -38,7 +38,7 @@ service cloud.firestore {
       }
     }
 
-    // transactions/{txId} — billing/credit history, written server-side only.
+    // transactions/{txId}: billing/credit history, written server-side only.
     match /transactions/{txId} {
       allow read: if isOwner(resource.data.userId);
       allow write: if false;
