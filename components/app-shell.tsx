@@ -2,9 +2,10 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import { Logo, FeatherMark } from "@/components/logo";
 import { CommandPalette } from "@/components/command-palette";
+import { AccountMenu } from "@/components/account-menu";
 import { useAuth } from "@/lib/auth-context";
 import { useUserApps } from "@/lib/use-apps";
 import { cn } from "@/lib/utils";
@@ -13,7 +14,6 @@ import {
   CreditCard,
   FolderOpen,
   LayoutGrid,
-  LogOut,
   PanelLeft,
   Plus,
   Search,
@@ -63,8 +63,7 @@ function NavLink({
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const { user, profile, signOut } = useAuth();
+  const { user, profile } = useAuth();
   const { apps } = useUserApps(user?.uid);
   const [collapsed, setCollapsed] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -121,6 +120,10 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <PanelLeft className="h-4 w-4" />
             </button>
           )}
+        </div>
+
+        <div className={cn("px-2.5 pb-3", collapsed && "px-1.5")}>
+          <AccountMenu collapsed={collapsed} />
         </div>
 
         <nav className="flex-1 space-y-1 overflow-y-auto px-2.5 pb-4">
@@ -220,20 +223,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </span>
             </Link>
           )}
-          <button
-            onClick={async () => {
-              await signOut();
-              router.push("/");
-            }}
-            title="Sign out"
-            className={cn(
-              "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-              collapsed && "justify-center px-0"
-            )}
-          >
-            <LogOut className="h-4 w-4 shrink-0" />
-            {!collapsed && <span>Sign out</span>}
-          </button>
         </div>
       </aside>
 
@@ -258,13 +247,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             >
               <Plus className="h-4 w-4" />
             </Link>
-            <Link
-              href="/settings"
-              className="flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
-              title="Settings"
-            >
-              <Settings className="h-4 w-4" />
-            </Link>
+            <div className="w-9">
+              <AccountMenu collapsed />
+            </div>
           </div>
         </header>
 

@@ -16,7 +16,8 @@ import { fetchModelAvailability, generateAppRequest } from "@/lib/api-client";
 import { takePendingPrompt } from "@/lib/pending-prompt";
 import { formatDate } from "@/lib/utils";
 import { MODEL_INFO, planAllowsModel, type ModelId, type PlanId } from "@/lib/types";
-import { AlertCircle, FolderOpen, Loader2, Plus, Trash2 } from "lucide-react";
+import { AlertCircle, FolderOpen, Loader2, Search, Trash2 } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 const STARTERS = [
   "A habit tracker with streaks and a calendar heatmap",
@@ -38,6 +39,8 @@ function DashboardContent() {
   const [status, setStatus] = useState("");
   const [progress, setProgress] = useState({ chars: 0, files: [] as string[] });
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [showAll, setShowAll] = useState(false);
 
   useEffect(() => {
     const pending = takePendingPrompt();
@@ -72,7 +75,22 @@ function DashboardContent() {
     }
   }
 
-  const recent = useMemo(() => apps.slice(0, 6), [apps]);
+  // Everything the user owns must stay reachable from here, so search filters
+  // the full list and "Show all" expands past the initial six.
+  const visible = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const matched = q
+      ? apps.filter(
+          (a) =>
+            a.name?.toLowerCase().includes(q) ||
+            a.prompt?.toLowerCase().includes(q) ||
+            a.summary?.toLowerCase().includes(q)
+        )
+      : apps;
+    return showAll || q ? matched : matched.slice(0, 6);
+  }, [apps, search, showAll]);
+
+  const searching = search.trim().length > 0;
 
   return (
     <div className="mx-auto max-w-4xl">
@@ -142,12 +160,23 @@ function DashboardContent() {
       </section>
 
       <section className="border-t border-border pt-8">
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-sm font-medium">Your apps</h2>
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-sm font-medium">
+            Your apps
+            {apps.length > 0 && (
+              <span className="ml-2 font-normal text-muted-foreground">{apps.length}</span>
+            )}
+          </h2>
           {apps.length > 6 && (
-            <span className="text-xs text-muted-foreground">
-              Showing 6 of {apps.length}
-            </span>
+            <div className="relative w-full sm:w-64">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Search your apps"
+                className="h-9 pl-8 text-sm"
+              />
+            </div>
           )}
         </div>
 
@@ -166,7 +195,7 @@ function DashboardContent() {
           </Card>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {recent.map((app) => (
+            {visible.map((app) => (
               <Card
                 key={app.id}
                 className="group flex flex-col transition-colors hover:border-muted-foreground"
@@ -207,14 +236,17 @@ function DashboardContent() {
           </div>
         )}
 
-        {apps.length > 6 && (
+        {!appsLoading && searching && visible.length === 0 && (
+          <p className="py-10 text-center text-sm text-muted-foreground">
+            No apps match “{search}”.
+          </p>
+        )}
+
+        {!searching && apps.length > 6 && (
           <div className="mt-4 text-center">
-            <Link href="/build">
-              <Button variant="secondary" size="sm">
-                <Plus className="h-4 w-4" />
-                New app
-              </Button>
-            </Link>
+            <Button variant="secondary" size="sm" onClick={() => setShowAll((v) => !v)}>
+              {showAll ? "Show less" : `Show all ${apps.length}`}
+            </Button>
           </div>
         )}
       </section>
