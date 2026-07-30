@@ -16,6 +16,7 @@ import {
   Gauge,
   Github,
   Check,
+  Sparkles,
 } from "lucide-react";
 
 const FEATURES = [
@@ -90,11 +91,20 @@ export default function LandingPage() {
     <div>
       <SiteHeader />
 
-      <section className="dot-grid border-b border-border">
-        <div className="container flex flex-col items-center gap-8 py-24 text-center md:py-32">
+      <section className="dot-grid relative overflow-hidden border-b border-border">
+        <div
+          className="glow-orb left-1/2 top-[-140px] h-[420px] w-[720px] -translate-x-1/2 bg-gradient-to-r from-violet-400 via-fuchsia-400 to-amber-300"
+          aria-hidden
+        />
+        <div className="container relative flex flex-col items-center gap-8 py-24 text-center md:py-32">
+          <span className="animate-in inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1 text-xs text-muted-foreground">
+            <Sparkles className="h-3 w-3" />
+            Now building with Claude Opus 5 &amp; Sonnet 5
+          </span>
           <h1 className="max-w-3xl text-balance text-4xl font-semibold tracking-tight md:text-6xl animate-in">
             Describe your app.
-            <br /> Feather 123 builds it.
+            <br />
+            <span className="text-gradient">Feather 123 builds it.</span>
           </h1>
           <p className="max-w-xl text-balance text-lg text-muted-foreground animate-in">
             Paste your idea below. Feather 123 writes the full codebase and deploys it
@@ -105,7 +115,7 @@ export default function LandingPage() {
             $5.00 free credit on signup · No credit card required
           </p>
         </div>
-        <div className="container pb-24">
+        <div className="container relative pb-24">
           <BuilderMockup />
         </div>
       </section>
@@ -122,8 +132,13 @@ export default function LandingPage() {
           </div>
           <div className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
             {FEATURES.map((f) => (
-              <div key={f.title} className={`bg-background p-7 ${f.span ?? ""}`}>
-                <f.icon className="mb-4 h-5 w-5" strokeWidth={1.5} />
+              <div
+                key={f.title}
+                className={`card-hover relative bg-background p-7 ${f.span ?? ""}`}
+              >
+                <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-muted/40">
+                  <f.icon className="h-5 w-5" strokeWidth={1.5} />
+                </div>
                 <h3 className="mb-2 font-medium">{f.title}</h3>
                 <p className="text-sm leading-relaxed text-muted-foreground">{f.body}</p>
               </div>
@@ -148,7 +163,7 @@ export default function LandingPage() {
               return (
               <Card
                 key={plan.name}
-                className={plan.highlighted ? "border-foreground" : ""}
+                className={`card-hover ${plan.highlighted ? "border-foreground shadow-glow" : ""}`}
               >
                 <CardContent className="flex h-full flex-col p-7">
                   <div className="flex items-center justify-between">
@@ -200,13 +215,17 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section className="py-24">
-        <div className="container flex flex-col items-center gap-6 text-center">
+      <section className="relative overflow-hidden py-24">
+        <div
+          className="glow-orb left-1/2 top-1/2 h-[320px] w-[560px] -translate-x-1/2 -translate-y-1/2 bg-gradient-to-r from-violet-400 via-fuchsia-400 to-amber-300"
+          aria-hidden
+        />
+        <div className="container relative flex flex-col items-center gap-6 text-center">
           <h2 className="max-w-2xl text-balance text-3xl font-semibold tracking-tight md:text-4xl">
             Your next app is one prompt away.
           </h2>
           <Link href="/signup">
-            <Button size="lg">
+            <Button size="lg" className="shadow-glow">
               Start building free
               <ArrowRight className="h-4 w-4" />
             </Button>

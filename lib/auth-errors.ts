@@ -13,6 +13,10 @@ export function friendlyAuthError(err: unknown): string {
       "An account already exists with this email using a different sign-in method.",
     "auth/requires-recent-login": "Please sign in again to complete this action.",
     "auth/operation-not-allowed": "This sign-in method isn't enabled yet.",
+    "auth/network-request-failed": "Network error. Check your connection and try again.",
+    "auth/popup-blocked": "Your browser blocked the sign-in popup. Allow popups and try again.",
+    "auth/cancelled-popup-request": "Sign-in was cancelled.",
+    "auth/unauthorized-domain": "This domain isn't authorized for sign-in yet.",
   };
   return map[code] || (err as Error)?.message || "Something went wrong. Please try again.";
 }
