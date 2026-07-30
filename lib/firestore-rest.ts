@@ -1,0 +1,180 @@
+// Minimal Firestore REST client used server-side. Every call is authenticated
+// with the caller's own Firebase ID token (the same token the client SDK
+// would use), so writes are evaluated against firestore.rules exactly as if
+// they came from the browser. No service account or admin credentials
+// involved, just the standard Firestore REST API.
+
+import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
+
+const PROJECT_ID = FIREBASE_PUBLIC_CONFIG.projectId;
+const BASE = `https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents`;
+
+type FirestoreValue =
+  | { nullValue: null }
+  | { booleanValue: boolean }
+  | { integerValue: string }
+  | { doubleValue: number }
+  | { stringValue: string }
+  | { timestampValue: string }
+  | { mapValue: { fields: Record<string, FirestoreValue> } }
+  | { arrayValue: { values: FirestoreValue[] } };
+
+export function toFirestoreValue(value: unknown): FirestoreValue {
+  if (value === null || value === undefined) return { nullValue: null };
+  if (typeof value === "boolean") return { booleanValue: value };
+  if (typeof value === "number") {
+    return Number.isInteger(value)
+      ? { integerValue: String(value) }
+      : { doubleValue: value };
+  }
+  if (typeof value === "string") return { stringValue: value };
+  if (Array.isArray(value)) {
+    return { arrayValue: { values: value.map(toFirestoreValue) } };
+  }
+  if (typeof value === "object") {
+    return { mapValue: { fields: toFirestoreFields(value as Record<string, unknown>) } };
+  }
+  throw new Error(`Unsupported Firestore value type: ${typeof value}`);
+}
+
+export function toFirestoreFields(obj: Record<string, unknown>): Record<string, FirestoreValue> {
+  const fields: Record<string, FirestoreValue> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (value === undefined) continue;
+    fields[key] = toFirestoreValue(value);
+  }
+  return fields;
+}
+
+function fromFirestoreValue(value: any): unknown {
+  if ("nullValue" in value) return null;
+  if ("booleanValue" in value) return value.booleanValue;
+  if ("integerValue" in value) return Number(value.integerValue);
+  if ("doubleValue" in value) return value.doubleValue;
+  if ("stringValue" in value) return value.stringValue;
+  if ("timestampValue" in value) return value.timestampValue;
+  if ("mapValue" in value) return fromFirestoreFields(value.mapValue.fields ?? {});
+  if ("arrayValue" in value) return (value.arrayValue.values ?? []).map(fromFirestoreValue);
+  return null;
+}
+
+export function fromFirestoreFields(fields: Record<string, any>): Record<string, unknown> {
+  const obj: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(fields)) {
+    obj[key] = fromFirestoreValue(value);
+  }
+  return obj;
+}
+
+function docName(path: string) {
+  return `projects/${PROJECT_ID}/databases/(default)/documents/${path}`;
+}
+
+async function firestoreFetch(url: string, idToken: string, init?: RequestInit) {
+  const res = await fetch(url, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${idToken}`,
+      "Content-Type": "application/json",
+      ...(init?.headers ?? {}),
+    },
+  });
+  return res;
+}
+
+export async function getDoc(
+  path: string,
+  idToken: string
+): Promise<{ fields: Record<string, unknown> } | null> {
+  const res = await firestoreFetch(`${BASE}/${path}`, idToken);
+  if (res.status === 404) return null;
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Firestore GET ${path} failed (${res.status}): ${body}`);
+  }
+  const data = await res.json();
+  return { fields: fromFirestoreFields(data.fields ?? {}) };
+}
+
+export interface FirestoreWrite {
+  update?: { name: string; fields: Record<string, FirestoreValue> };
+  updateMask?: { fieldPaths: string[] };
+  transform?: {
+    document: string;
+    fieldTransforms: { fieldPath: string; increment: FirestoreValue }[];
+  };
+  delete?: string;
+}
+
+export async function commit(writes: FirestoreWrite[], idToken: string): Promise<void> {
+  const res = await firestoreFetch(`${BASE}:commit`, idToken, {
+    method: "POST",
+    body: JSON.stringify({ writes }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Firestore commit failed (${res.status}): ${body}`);
+  }
+}
+
+export function updateWrite(
+  path: string,
+  fields: Record<string, unknown>,
+  mask?: string[]
+): FirestoreWrite {
+  return {
+    update: { name: docName(path), fields: toFirestoreFields(fields) },
+    updateMask: { fieldPaths: mask ?? Object.keys(fields) },
+  };
+}
+
+export function createWrite(path: string, fields: Record<string, unknown>): FirestoreWrite {
+  return { update: { name: docName(path), fields: toFirestoreFields(fields) } };
+}
+
+export function incrementWrite(path: string, fieldPath: string, delta: number): FirestoreWrite {
+  return {
+    transform: {
+      document: docName(path),
+      fieldTransforms: [{ fieldPath, increment: toFirestoreValue(delta) }],
+    },
+  };
+}
+
+export function deleteWrite(path: string): FirestoreWrite {
+  return { delete: docName(path) };
+}
+
+export async function queryCollection(
+  collectionId: string,
+  field: string,
+  value: string,
+  idToken: string
+): Promise<{ id: string; fields: Record<string, unknown> }[]> {
+  const res = await firestoreFetch(`${BASE}:runQuery`, idToken, {
+    method: "POST",
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: field },
+            op: "EQUAL",
+            value: toFirestoreValue(value),
+          },
+        },
+      },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Firestore query failed (${res.status}): ${body}`);
+  }
+  const rows = (await res.json()) as { document?: { name: string; fields?: Record<string, any> } }[];
+  return rows
+    .filter((r) => r.document)
+    .map((r) => ({
+      id: r.document!.name.split("/").pop()!,
+      fields: fromFirestoreFields(r.document!.fields ?? {}),
+    }));
+}

@@ -1,6 +1,7 @@
+import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
-import { FieldValue } from "firebase-admin/firestore";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { verifyIdToken } from "@/lib/verify-id-token";
+import { commit, createWrite, getDoc, incrementWrite, updateWrite } from "@/lib/firestore-rest";
 import { generateApp } from "@/lib/anthropic";
 import { MODEL_INFO, type ModelId } from "@/lib/types";
 
@@ -14,13 +15,17 @@ function isModelId(v: unknown): v is ModelId {
 export async function POST(req: NextRequest) {
   try {
     const authHeader = req.headers.get("authorization") ?? "";
-    const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
-    if (!token) {
+    const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!idToken) {
       return NextResponse.json({ error: "Missing authorization token." }, { status: 401 });
     }
 
-    const decoded = await adminAuth().verifyIdToken(token);
-    const uid = decoded.uid;
+    let uid: string;
+    try {
+      uid = (await verifyIdToken(idToken)).uid;
+    } catch {
+      return NextResponse.json({ error: "Your session has expired. Please sign in again." }, { status: 401 });
+    }
 
     const body = await req.json();
     const prompt = typeof body.prompt === "string" ? body.prompt.trim() : "";
@@ -33,15 +38,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Invalid model selection." }, { status: 400 });
     }
 
-    const db = adminDb();
-    const userRef = db.collection("users").doc(uid);
-    const userSnap = await userRef.get();
-    if (!userSnap.exists) {
+    const userPath = `users/${uid}`;
+    const userDoc = await getDoc(userPath, idToken);
+    if (!userDoc) {
       return NextResponse.json({ error: "User account not found." }, { status: 404 });
     }
 
     const cost = MODEL_INFO[model].credits;
-    const currentCredits = (userSnap.data()?.credits as number) ?? 0;
+    const currentCredits = typeof userDoc.fields.credits === "number" ? userDoc.fields.credits : 0;
     if (currentCredits < cost) {
       return NextResponse.json(
         { error: "Not enough credits. Top up your balance to keep building." },
@@ -49,47 +53,72 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const appRef = db.collection("apps").doc();
-    await appRef.set({
-      userId: uid,
-      name: prompt.slice(0, 60),
-      prompt,
-      model,
-      status: "generating",
-      createdAt: FieldValue.serverTimestamp(),
-    });
+    const appId = randomUUID();
+    const appPath = `apps/${appId}`;
+    await commit(
+      [
+        createWrite(appPath, {
+          userId: uid,
+          name: prompt.slice(0, 60),
+          prompt,
+          model,
+          status: "generating",
+          createdAt: new Date().toISOString(),
+        }),
+      ],
+      idToken
+    );
 
     try {
       const result = await generateApp(prompt, model);
 
-      await appRef.update({
-        name: result.appName,
-        status: "ready",
-        generatedCode: {
-          files: result.files,
-        },
-      });
-
-      await userRef.update({ credits: FieldValue.increment(-cost) });
-
-      await db.collection("transactions").add({
-        userId: uid,
-        type: "generation",
-        creditsUsed: cost,
-        model,
-        actualCostUSD: result.actualCostUSD,
-        createdAt: FieldValue.serverTimestamp(),
-      });
+      const txId = randomUUID();
+      await commit(
+        [
+          updateWrite(appPath, {
+            userId: uid,
+            name: result.appName,
+            prompt,
+            model,
+            status: "ready",
+            createdAt: userDoc.fields.createdAt ?? new Date().toISOString(),
+            generatedCode: { files: result.files },
+          }),
+          incrementWrite(userPath, "credits", -cost),
+          createWrite(`transactions/${txId}`, {
+            userId: uid,
+            type: "generation",
+            creditsUsed: cost,
+            model,
+            actualCostUSD: result.actualCostUSD,
+            createdAt: new Date().toISOString(),
+          }),
+        ],
+        idToken
+      );
 
       return NextResponse.json({
-        appId: appRef.id,
+        appId,
         appName: result.appName,
         summary: result.summary,
         files: result.files,
       });
     } catch (genErr) {
       const message = genErr instanceof Error ? genErr.message : "Generation failed.";
-      await appRef.update({ status: "error", errorMessage: message });
+      await commit(
+        [
+          updateWrite(appPath, {
+            userId: uid,
+            name: prompt.slice(0, 60),
+            prompt,
+            model,
+            status: "error",
+            createdAt: new Date().toISOString(),
+            errorMessage: message,
+          }),
+        ],
+        idToken
+      );
       return NextResponse.json({ error: message }, { status: 502 });
     }
   } catch (err) {

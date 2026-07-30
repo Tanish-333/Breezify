@@ -11,26 +11,23 @@ Feather 123 turns a plain-English prompt into a complete, production-ready app. 
 
 ## Setup
 
+Feather 123 needs exactly one real secret: `ANTHROPIC_API_KEY`. Firebase requires no admin credentials or service account at all, every server-side write is authenticated with the calling user's own Firebase ID token and enforced by `firestore.rules`, the same way a client write would be. The Firebase web config in `lib/firebase-public-config.ts` is not a secret (Firebase config is meant to ship in the browser bundle) and already points at this project's own Firebase project, so the app runs with zero configuration out of the box. Set `NEXT_PUBLIC_FIREBASE_*` env vars only if you want to point it at a different Firebase project.
+
 1. **Install dependencies**
 
    ```bash
    npm install
    ```
 
-2. **Create a Firebase project** at [console.firebase.google.com](https://console.firebase.google.com)
-   - Enable **Authentication** → Sign-in methods: Email/Password, Google, Apple, GitHub
-   - Enable **Firestore Database** (start in production mode)
-   - Deploy the included security rules: `firebase deploy --only firestore:rules,firestore:indexes` (requires the [Firebase CLI](https://firebase.google.com/docs/cli))
-   - Copy your web app config into `.env.local` (`NEXT_PUBLIC_FIREBASE_*` keys)
-   - Generate a service account (Project settings → Service accounts → Generate new private key) and copy `project_id`, `client_email`, and `private_key` into the `FIREBASE_ADMIN_*` variables. This powers server-side credit deduction and generation.
+2. **Get an Anthropic API key** at [console.anthropic.com](https://console.anthropic.com) and set `ANTHROPIC_API_KEY`.
 
-3. **Get an Anthropic API key** at [console.anthropic.com](https://console.anthropic.com) and set `ANTHROPIC_API_KEY`.
-
-4. Copy `.env.example` to `.env.local` and fill in the values above.
+3. Copy `.env.example` to `.env.local` and fill in the key above.
 
    ```bash
    cp .env.example .env.local
    ```
+
+4. (Optional, only if using your own Firebase project) In the Firebase console: enable **Authentication** sign-in methods for Email/Password, Google, Apple, and GitHub; enable **Firestore Database**; and deploy the included rules with `firebase deploy --only firestore:rules,firestore:indexes` (requires the [Firebase CLI](https://firebase.google.com/docs/cli)).
 
 5. **Run the dev server**
 
@@ -43,10 +40,10 @@ Feather 123 turns a plain-English prompt into a complete, production-ready app. 
 - Landing page, pricing, feature grid
 - Full auth: signup/login (email + Google + GitHub + Apple), forgot password, email verification, account settings (change password, connected providers, delete account)
 - Firestore data model for `users`, `apps`, `transactions`
-- $5.00 free credit on signup, credit costs per model (Haiku 0.50 / Sonnet 1.00 / Opus 2.00 credits), enforced server-side in `app/api/generate/route.ts`
+- $5.00 free credit on signup, credit costs per model (Haiku 0.50 / Sonnet 1.00 / Opus 2.00 credits), enforced by `firestore.rules` on every write, including the ones from `app/api/generate/route.ts`
 - Dashboard ("My Apps") with status badges, empty state, delete
 - Build flow: prompt + model selector → Claude generates a full app as structured files → live Monaco preview
-- Firestore security rules. Credits, plan, and generated code are only ever written by the trusted server (Admin SDK), never directly by the client.
+- No Firebase admin credentials anywhere: `/api/generate` and `/api/delete-account` verify the caller's Firebase ID token against Google's public keys and write to Firestore over REST using that same token, so Firestore's own security rules are the enforcement, not a trusted server key
 
 ## Not yet built (Phases 2 and 3)
 

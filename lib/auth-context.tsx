@@ -31,7 +31,6 @@ import {
   googleProvider,
   githubProvider,
   appleProvider,
-  isFirebaseConfigured,
 } from "@/lib/firebase";
 import type { FeatherUser } from "@/lib/types";
 
@@ -107,10 +106,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    if (!isFirebaseConfigured) {
-      setLoading(false);
-      return;
-    }
     const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       if (u) {
@@ -128,16 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (auth.currentUser) await loadProfile(auth.currentUser);
   }
 
-  function assertConfigured() {
-    if (!isFirebaseConfigured) {
-      throw new Error(
-        "Firebase isn't configured yet. Add your Firebase project keys to .env.local."
-      );
-    }
-  }
-
   async function signUpWithEmail(email: string, password: string, displayName?: string) {
-    assertConfigured();
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     if (displayName) {
       const { updateProfile } = await import("firebase/auth");
@@ -149,14 +135,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function signInWithEmail(email: string, password: string) {
-    assertConfigured();
     const cred = await signInWithEmailAndPassword(auth, email, password);
     await ensureUserDoc(cred.user);
     await loadProfile(cred.user);
   }
 
   async function oauthSignIn(provider: typeof googleProvider) {
-    assertConfigured();
     const cred = await signInWithPopup(auth, provider);
     await ensureUserDoc(cred.user);
     await loadProfile(cred.user);

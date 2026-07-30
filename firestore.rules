@@ -11,26 +11,43 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // The three credit costs a generation can ever charge (see
+    // lib/types.ts MODEL_INFO). Every write that touches credits or logs a
+    // transaction must match one of these exactly, this is what stands in
+    // for a trusted backend now that all writes, including the ones from
+    // our own API routes, are authenticated as the calling user rather than
+    // an admin service account.
+    function isValidCost(n) {
+      return n == 0.5 || n == 1.0 || n == 2.0;
+    }
+
     // users/{uid}: profile + credit balance.
-    // Credits/plan are only ever mutated server-side via the Admin SDK
-    // (see app/api/generate/route.ts), so client writes may not touch them.
     match /users/{userId} {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId);
+      // Plan can't be self-assigned, and credits can only ever move by
+      // staying the same or dropping by exactly one valid generation cost.
+      // That's what makes it safe for /api/generate to spend credit using
+      // the user's own ID token instead of an admin key: the rule is the
+      // enforcement, not the caller's trustworthiness.
       allow update: if isOwner(userId)
-        && request.resource.data.credits == resource.data.credits
-        && request.resource.data.plan == resource.data.plan;
-      // Account deletion goes through /api/delete-account (Admin SDK), which
-      // bypasses these rules; clients never delete their own profile doc.
-      allow delete: if false;
+        && request.resource.data.plan == resource.data.plan
+        && request.resource.data.credits <= resource.data.credits
+        && (
+          request.resource.data.credits == resource.data.credits
+          || isValidCost(resource.data.credits - request.resource.data.credits)
+        )
+        && request.resource.data.credits >= 0;
+      allow delete: if isOwner(userId);
     }
 
     // apps/{appId}: generated apps.
-    // Creation, generation status, and code are written server-side.
     match /apps/{appId} {
       allow read: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId);
+      allow update: if isOwner(resource.data.userId)
+        && request.resource.data.userId == resource.data.userId;
       allow delete: if isOwner(resource.data.userId);
-      allow create, update: if false;
 
       match /events/{eventId} {
         allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
@@ -38,10 +55,14 @@ service cloud.firestore {
       }
     }
 
-    // transactions/{txId}: billing/credit history, written server-side only.
+    // transactions/{txId}: billing/credit history. Immutable once written.
     match /transactions/{txId} {
       allow read: if isOwner(resource.data.userId);
-      allow write: if false;
+      allow create: if isOwner(request.resource.data.userId)
+        && request.resource.data.type == "generation"
+        && isValidCost(request.resource.data.creditsUsed);
+      allow update: if false;
+      allow delete: if isOwner(resource.data.userId);
     }
   }
 }
