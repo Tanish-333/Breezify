@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { ApiKeysCard } from "@/components/api-keys-card";
 import { useAuth } from "@/lib/auth-context";
 import { friendlyAuthError } from "@/lib/auth-errors";
 import { formatCredits } from "@/lib/utils";
@@ -160,6 +161,8 @@ function SettingsContent() {
           </CardContent>
         </Card>
       )}
+
+      <ApiKeysCard />
 
       <Card className="border-error/30">
         <CardHeader>

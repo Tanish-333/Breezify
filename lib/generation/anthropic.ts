@@ -4,16 +4,21 @@ import {
   MAX_OUTPUT_TOKENS,
   SYSTEM_PROMPT,
   detectFiles,
-  type GenerationResult,
+  type ProviderResult,
   type ProgressFn,
 } from "./prompt";
 
 let client: Anthropic | null = null;
 
-function getClient() {
+/**
+ * `overrideKey` is a user-supplied key sent with a single request. It is used
+ * for that request only and never cached on the shared client.
+ */
+function getClient(overrideKey?: string) {
+  if (overrideKey) return new Anthropic({ apiKey: overrideKey });
   if (!process.env.ANTHROPIC_API_KEY) {
     throw new Error(
-      "Anthropic models aren't configured on this deployment yet. Set ANTHROPIC_API_KEY."
+      "Anthropic models aren't configured on this deployment yet. Add your own API key in Settings, or set ANTHROPIC_API_KEY."
     );
   }
   if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -30,9 +35,10 @@ const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
 export async function generateWithAnthropic(
   userContent: string,
   model: ModelId,
-  onProgress?: ProgressFn
-): Promise<Omit<GenerationResult, "appName" | "summary" | "files"> & { raw: string }> {
-  const anthropic = getClient();
+  onProgress?: ProgressFn,
+  overrideKey?: string
+): Promise<ProviderResult> {
+  const anthropic = getClient(overrideKey);
   const apiModel = MODEL_INFO[model].apiModel;
 
   const stream = anthropic.messages.stream({

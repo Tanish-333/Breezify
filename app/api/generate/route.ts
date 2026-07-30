@@ -64,6 +64,11 @@ export async function POST(req: NextRequest) {
   // When present, this is a follow-up change to an existing app rather than a
   // brand new build.
   const refineAppId = typeof body?.appId === "string" ? body.appId : null;
+  // A user-supplied provider key. Used for this request only; never logged or
+  // persisted. When present the user pays their provider directly, so we skip
+  // both plan gating and credit deduction.
+  const overrideKey =
+    typeof body?.apiKey === "string" && body.apiKey.trim() ? body.apiKey.trim() : undefined;
 
   if (!prompt || prompt.length < 5) {
     return errorStream(
@@ -73,9 +78,9 @@ export async function POST(req: NextRequest) {
     );
   }
   if (!isModelId(model)) return errorStream("Invalid model selection.");
-  if (!isModelAvailable(model)) {
+  if (!overrideKey && !isModelAvailable(model)) {
     return errorStream(
-      `${MODEL_INFO[model].label} isn't available on this deployment yet. Pick another model.`
+      `${MODEL_INFO[model].label} isn't available on this deployment yet. Add your own API key in Settings, or pick another model.`
     );
   }
 
@@ -89,23 +94,29 @@ export async function POST(req: NextRequest) {
   if (!userDoc) return errorStream("User account not found.");
 
   const plan = (userDoc.fields.plan as PlanId) ?? "free";
-  if (!planAllowsModel(plan, model)) {
+  if (!overrideKey && !planAllowsModel(plan, model)) {
     const needed = requiredPlanFor(model);
     return errorStream(
-      `${MODEL_INFO[model].label} is available on the ${needed.name} plan. You're on ${PLANS[plan]?.name ?? "Free"}.`
+      `${MODEL_INFO[model].label} is available on the ${needed.name} plan. You're on ${PLANS[plan]?.name ?? "Free"}. You can also use your own API key.`
     );
   }
 
-  const cost = MODEL_INFO[model].credits;
+  // Own key means own bill, so nothing is charged here.
+  const cost = overrideKey ? 0 : MODEL_INFO[model].credits;
   const currentCredits =
     typeof userDoc.fields.credits === "number" ? userDoc.fields.credits : 0;
-  if (currentCredits < cost) {
+  if (!overrideKey && currentCredits < cost) {
     return errorStream("Not enough credits. Top up your balance to keep building.");
   }
 
   // For a refine, load the existing app up front so ownership and file
   // availability fail fast, before any credits are involved.
-  let existing: { prompt: string; files: Record<string, string>; createdAt: unknown } | null = null;
+  let existing: {
+    prompt: string;
+    files: Record<string, string>;
+    createdAt: unknown;
+    turns: unknown[];
+  } | null = null;
   if (refineAppId) {
     let doc;
     try {
@@ -124,6 +135,7 @@ export async function POST(req: NextRequest) {
       prompt: (doc.fields.prompt as string) ?? "",
       files,
       createdAt: doc.fields.createdAt,
+      turns: Array.isArray(doc.fields.turns) ? doc.fields.turns : [],
     };
   }
 
@@ -177,10 +189,20 @@ export async function POST(req: NextRequest) {
         };
 
         const result = existing
-          ? await refineApp(existing.prompt, existing.files, prompt, model, onProgress)
-          : await generateApp(prompt, model, onProgress);
+          ? await refineApp(existing.prompt, existing.files, prompt, model, onProgress, overrideKey)
+          : await generateApp(prompt, model, onProgress, overrideKey);
 
         send({ type: "status", message: "Saving your app" });
+
+        const turn = {
+          id: randomUUID(),
+          kind: existing ? "refine" : "build",
+          instruction: prompt,
+          summary: result.summary,
+          model,
+          fileCount: Object.keys(result.files).length,
+          createdAt: new Date(),
+        };
 
         const txId = randomUUID();
         await commit(
@@ -193,16 +215,21 @@ export async function POST(req: NextRequest) {
               model,
               status: "ready",
               summary: result.summary,
+              suggestions: result.suggestions,
+              turns: [...(existing?.turns ?? []), turn],
               createdAt: existing ? (existing.createdAt as Date) ?? createdAt : createdAt,
               generatedCode: { files: result.files },
             }),
-            incrementWrite(userPath, "credits", -cost),
+            ...(cost > 0 ? [incrementWrite(userPath, "credits", -cost)] : []),
             createWrite(`transactions/${txId}`, {
               userId: uid,
               type: "generation",
               creditsUsed: cost,
               model,
-              actualCostUSD: result.actualCostUSD,
+              // With a user-supplied key the spend lands on their provider
+              // account, not ours, so there is no platform cost to track.
+              actualCostUSD: overrideKey ? 0 : result.actualCostUSD,
+              ownKey: Boolean(overrideKey),
               createdAt: new Date(),
             }),
           ],

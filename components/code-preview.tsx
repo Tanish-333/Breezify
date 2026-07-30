@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Editor from "@monaco-editor/react";
 import { cn } from "@/lib/utils";
 import { downloadZip } from "@/lib/zip";
+import { withWatermark } from "@/lib/watermark";
 import { Button } from "@/components/ui/button";
 import {
   Check,
@@ -206,7 +207,7 @@ export function CodePreview({
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? "Copied" : "Copy file"}
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => downloadZip(files, appName)}>
+          <Button variant="secondary" size="sm" onClick={() => downloadZip(withWatermark(files), appName)}>
             <Download className="h-3.5 w-3.5" />
             Download ZIP
           </Button>

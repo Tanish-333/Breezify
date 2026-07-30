@@ -1,5 +1,6 @@
 import { auth } from "@/lib/firebase";
-import type { ModelId } from "@/lib/types";
+import { MODEL_INFO, type ModelId } from "@/lib/types";
+import { keyForRequest } from "@/lib/byok";
 
 export interface GenerateResult {
   appId: string;
@@ -29,13 +30,20 @@ export async function generateAppRequest(
   if (!user) throw new Error("You must be signed in to generate an app.");
 
   const token = await user.getIdToken();
+  const apiKey = keyForRequest(MODEL_INFO[model].provider);
   const res = await fetch("/api/generate", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       Authorization: `Bearer ${token}`,
     },
-    body: JSON.stringify(appId ? { prompt, model, appId } : { prompt, model }),
+    // Sent per request and never stored server-side; see lib/byok.ts.
+    body: JSON.stringify({
+      prompt,
+      model,
+      ...(appId ? { appId } : {}),
+      ...(apiKey ? { apiKey } : {}),
+    }),
     signal,
   });
 

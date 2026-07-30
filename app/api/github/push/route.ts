@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, getDoc, updateWrite } from "@/lib/firestore-rest";
+import { withWatermark } from "@/lib/watermark";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -76,7 +77,8 @@ export async function POST(req: NextRequest) {
     }
 
     const generated = appDoc.fields.generatedCode as { files?: Record<string, string> } | undefined;
-    const files = generated?.files ?? {};
+    // Exported copies carry the badge; the stored source stays clean.
+    const files = withWatermark(generated?.files ?? {});
     if (Object.keys(files).length === 0) {
       return NextResponse.json({ error: "This app has no files to push." }, { status: 400 });
     }

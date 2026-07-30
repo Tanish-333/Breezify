@@ -22,14 +22,15 @@ export function isModelAvailable(model: ModelId): boolean {
 async function run(
   userContent: string,
   model: ModelId,
-  onProgress?: ProgressFn
+  onProgress?: ProgressFn,
+  overrideKey?: string
 ): Promise<GenerationResult> {
   const provider = MODEL_INFO[model].provider;
 
   const { raw, inputTokens, outputTokens, actualCostUSD } =
     provider === "anthropic"
-      ? await generateWithAnthropic(userContent, model, onProgress)
-      : await generateWithGemini(userContent, model, onProgress);
+      ? await generateWithAnthropic(userContent, model, onProgress, overrideKey)
+      : await generateWithGemini(userContent, model, onProgress, overrideKey);
 
   const parsed = parseGenerationJSON(raw);
   assertHasFiles(parsed);
@@ -38,6 +39,9 @@ async function run(
     appName: parsed.appName || "generated-app",
     summary: parsed.summary || "",
     files: parsed.files,
+    suggestions: Array.isArray(parsed.suggestions)
+      ? parsed.suggestions.filter((x): x is string => typeof x === "string").slice(0, 4)
+      : [],
     inputTokens,
     outputTokens,
     actualCostUSD,
@@ -45,8 +49,13 @@ async function run(
 }
 
 /** Build a brand new app from a prompt. */
-export function generateApp(prompt: string, model: ModelId, onProgress?: ProgressFn) {
-  return run(userPrompt(prompt), model, onProgress);
+export function generateApp(
+  prompt: string,
+  model: ModelId,
+  onProgress?: ProgressFn,
+  overrideKey?: string
+) {
+  return run(userPrompt(prompt), model, onProgress, overrideKey);
 }
 
 /** Apply a follow-up change to an app that already has generated files. */
@@ -55,7 +64,8 @@ export function refineApp(
   files: Record<string, string>,
   instruction: string,
   model: ModelId,
-  onProgress?: ProgressFn
+  onProgress?: ProgressFn,
+  overrideKey?: string
 ) {
-  return run(refinePrompt(originalPrompt, files, instruction), model, onProgress);
+  return run(refinePrompt(originalPrompt, files, instruction), model, onProgress, overrideKey);
 }

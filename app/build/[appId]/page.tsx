@@ -1,14 +1,17 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { doc, updateDoc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { CodePreview } from "@/components/code-preview";
+import { AppPreview } from "@/components/app-preview";
+import { PromptComposer } from "@/components/prompt-composer";
 import { GenerationProgress } from "@/components/generation-progress";
 import { GithubPushDialog } from "@/components/github-push-dialog";
+import { TurnCard } from "@/components/turn-card";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,20 +19,23 @@ import { useApp } from "@/lib/use-apps";
 import { useAuth } from "@/lib/auth-context";
 import { fetchModelAvailability, generateAppRequest } from "@/lib/api-client";
 import { MODEL_INFO, planAllowsModel, type ModelId, type PlanId } from "@/lib/types";
-import { formatDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import { GithubIcon } from "@/components/oauth-icons";
 import {
   AlertCircle,
   ArrowLeft,
   Check,
+  Code2,
+  Eye,
   ExternalLink,
   Loader2,
   Pencil,
-  Wand2,
   X,
 } from "lucide-react";
 
-function AppDetailContent() {
+type Pane = "preview" | "code";
+
+function AppWorkspace() {
   const params = useParams<{ appId: string }>();
   const router = useRouter();
   const { app, loading } = useApp(params.appId);
@@ -46,15 +52,24 @@ function AppDetailContent() {
   const [showGithub, setShowGithub] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
+  const [pane, setPane] = useState<Pane>("preview");
+  const conversationRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchModelAvailability().then(setAvailability).catch(() => {});
   }, []);
 
-  // Default the refine model to whatever built the app, when the plan allows.
   useEffect(() => {
     if (app?.model && planAllowsModel(plan, app.model)) setModel(app.model);
   }, [app?.model, plan]);
+
+  // Keep the newest turn in view as the conversation grows.
+  useEffect(() => {
+    conversationRef.current?.scrollTo({
+      top: conversationRef.current.scrollHeight,
+      behavior: "smooth",
+    });
+  }, [app?.turns?.length, refining]);
 
   if (loading) {
     return (
@@ -81,19 +96,17 @@ function AppDetailContent() {
   const hasFiles = Object.keys(files).length > 0;
   const cost = MODEL_INFO[model].credits;
   const insufficient = profile !== null && profile.credits < cost;
+  const turns = app.turns ?? [];
+  const suggestions = app.suggestions ?? [];
 
-  async function refine() {
-    if (instruction.trim().length < 5) {
-      setError("Describe the change in a bit more detail.");
-      return;
-    }
+  async function refine(text: string) {
     setError("");
     setProgress({ chars: 0, files: [] });
     setStatus("Starting");
     setRefining(true);
     try {
       await generateAppRequest(
-        instruction,
+        text,
         model,
         { onStatus: setStatus, onProgress: setProgress },
         undefined,
@@ -123,172 +136,192 @@ function AppDetailContent() {
   }
 
   return (
-    <div className="mx-auto max-w-5xl">
-      <button
-        onClick={() => router.push("/dashboard")}
-        className="mb-6 flex items-center gap-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ArrowLeft className="h-3.5 w-3.5" />
-        Back to dashboard
-      </button>
-
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2.5">
-            {renaming ? (
-              <div className="flex items-center gap-1.5">
-                <Input
-                  value={nameDraft}
-                  autoFocus
-                  onChange={(e) => setNameDraft(e.target.value)}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") saveName();
-                    if (e.key === "Escape") setRenaming(false);
-                  }}
-                  className="h-9 w-64 text-lg font-semibold"
-                />
-                <Button size="icon" variant="ghost" onClick={saveName} title="Save">
-                  <Check className="h-4 w-4" />
-                </Button>
-                <Button
-                  size="icon"
-                  variant="ghost"
-                  onClick={() => setRenaming(false)}
-                  title="Cancel"
-                >
-                  <X className="h-4 w-4" />
-                </Button>
-              </div>
-            ) : (
-              <>
-                <h1 className="text-2xl font-semibold tracking-tight">{app.name}</h1>
-                <button
-                  onClick={() => {
-                    setNameDraft(app!.name);
-                    setRenaming(true);
-                  }}
-                  title="Rename"
-                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  <Pencil className="h-3.5 w-3.5" />
-                </button>
-              </>
-            )}
-            <StatusBadge status={app.status} />
-          </div>
-          {app.summary && (
-            <p className="mt-1.5 text-sm text-muted-foreground">{app.summary}</p>
+    <div className="-mx-5 -my-8 flex h-[calc(100vh-3.5rem)] flex-col md:-mx-10 md:-my-10 md:h-screen">
+      {/* Workspace header */}
+      <div className="flex shrink-0 items-center justify-between gap-3 border-b border-border px-5 py-3">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <button
+            onClick={() => router.push("/dashboard")}
+            title="Back to dashboard"
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <ArrowLeft className="h-4 w-4" />
+          </button>
+          {renaming ? (
+            <div className="flex items-center gap-1">
+              <Input
+                value={nameDraft}
+                autoFocus
+                onChange={(e) => setNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") saveName();
+                  if (e.key === "Escape") setRenaming(false);
+                }}
+                className="h-8 w-56 text-sm font-medium"
+              />
+              <Button size="icon" variant="ghost" onClick={saveName} title="Save">
+                <Check className="h-4 w-4" />
+              </Button>
+              <Button size="icon" variant="ghost" onClick={() => setRenaming(false)}>
+                <X className="h-4 w-4" />
+              </Button>
+            </div>
+          ) : (
+            <>
+              <h1 className="truncate font-medium">{app.name}</h1>
+              <button
+                onClick={() => {
+                  setNameDraft(app!.name);
+                  setRenaming(true);
+                }}
+                title="Rename"
+                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Pencil className="h-3 w-3" />
+              </button>
+            </>
           )}
-          <p className="mt-2 text-xs text-muted-foreground">
-            {MODEL_INFO[app.model]?.label ?? app.model} · Created {formatDate(app.createdAt)}
-          </p>
+          <StatusBadge status={app.status} />
         </div>
 
-        {hasFiles && (
-          <div className="flex items-center gap-2">
-            {app.githubUrl ? (
+        <div className="flex shrink-0 items-center gap-2">
+          {hasFiles &&
+            (app.githubUrl ? (
               <a href={app.githubUrl} target="_blank" rel="noreferrer">
-                <Button variant="secondary" size="sm">
+                <Button variant="ghost" size="sm">
                   <GithubIcon className="h-4 w-4" />
-                  View repo
-                  <ExternalLink className="h-3.5 w-3.5" />
+                  <span className="hidden sm:inline">Repo</span>
+                  <ExternalLink className="h-3 w-3" />
                 </Button>
               </a>
             ) : (
-              <Button variant="secondary" size="sm" onClick={() => setShowGithub(true)}>
+              <Button variant="ghost" size="sm" onClick={() => setShowGithub(true)}>
                 <GithubIcon className="h-4 w-4" />
-                Push to GitHub
+                <span className="hidden sm:inline">Push to GitHub</span>
               </Button>
+            ))}
+
+          {hasFiles && (
+            <div className="flex items-center rounded-lg border border-border p-0.5">
+              {(["preview", "code"] as Pane[]).map((p) => (
+                <button
+                  key={p}
+                  onClick={() => setPane(p)}
+                  className={cn(
+                    "flex items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium capitalize transition-colors",
+                    pane === p
+                      ? "bg-foreground text-background"
+                      : "text-muted-foreground hover:text-foreground"
+                  )}
+                >
+                  {p === "preview" ? (
+                    <Eye className="h-3 w-3" />
+                  ) : (
+                    <Code2 className="h-3 w-3" />
+                  )}
+                  {p}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Split: conversation left, output right */}
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <div className="flex min-h-0 w-full flex-col border-b border-border lg:w-[420px] lg:shrink-0 lg:border-b-0 lg:border-r">
+          <div ref={conversationRef} className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+            <div className="rounded-lg border border-border bg-muted/20 p-3">
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                Original brief
+              </p>
+              <p className="mt-1 text-sm leading-relaxed">{app.prompt}</p>
+            </div>
+
+            {turns.length === 0 && app.summary && (
+              <div className="rounded-lg border border-border p-3">
+                <p className="text-sm leading-relaxed text-muted-foreground">{app.summary}</p>
+              </div>
             )}
-          </div>
-        )}
-      </div>
 
-      <div className="mt-6 rounded-lg border border-border bg-muted/20 p-4">
-        <p className="text-xs uppercase tracking-wide text-muted-foreground">Original brief</p>
-        <p className="mt-1.5 text-sm leading-relaxed">{app.prompt}</p>
-      </div>
+            {turns.map((turn) => (
+              <TurnCard key={turn.id} turn={turn} files={files} />
+            ))}
 
-      {hasFiles && (
-        <div className="mt-6 rounded-lg border border-border p-4">
-          <label htmlFor="refine" className="text-sm font-medium">
-            Make a change
-          </label>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            Describe what to change and Feather 123 rewrites the affected files.
-          </p>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <Input
-              id="refine"
-              value={instruction}
-              onChange={(e) => setInstruction(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && !refining) refine();
-              }}
-              disabled={refining}
-              placeholder="Add dark mode and a settings page"
-              className="flex-1"
-            />
-            <select
-              value={model}
-              onChange={(e) => setModel(e.target.value as ModelId)}
-              disabled={refining}
-              className="h-10 rounded border border-border bg-background px-2 text-sm focus:outline-none focus:ring-1 focus:ring-foreground"
-            >
-              {(Object.keys(MODEL_INFO) as ModelId[])
-                .filter(
-                  (id) =>
-                    planAllowsModel(plan, id) &&
-                    (availability ? availability[id] !== false : true)
-                )
-                .map((id) => (
-                  <option key={id} value={id}>
-                    {MODEL_INFO[id].label} · {MODEL_INFO[id].credits.toFixed(2)}
-                  </option>
-                ))}
-            </select>
-            <Button onClick={refine} loading={refining} disabled={insufficient}>
-              {!refining && <Wand2 className="h-4 w-4" />}
-              {insufficient ? "No credits" : "Update"}
-            </Button>
-          </div>
-
-          {refining && (
-            <div className="mt-4">
+            {refining && (
               <GenerationProgress
                 status={status}
                 chars={progress.chars}
                 files={progress.files}
                 modelLabel={MODEL_INFO[model].label}
               />
+            )}
+
+            {error && (
+              <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+          </div>
+
+          {hasFiles && (
+            <div className="shrink-0 border-t border-border p-3">
+              {!refining && suggestions.length > 0 && (
+                <div className="mb-2.5 flex flex-wrap gap-1.5">
+                  {suggestions.map((s) => (
+                    <button
+                      key={s}
+                      onClick={() => refine(s)}
+                      disabled={insufficient}
+                      className="rounded-full border border-border px-2.5 py-1 text-[11px] text-muted-foreground transition-colors hover:border-muted-foreground hover:text-foreground disabled:opacity-50"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <PromptComposer
+                value={instruction}
+                onChange={setInstruction}
+                model={model}
+                onModelChange={setModel}
+                plan={plan}
+                availability={availability}
+                onSubmit={refine}
+                loading={refining}
+                disabled={insufficient}
+                placeholder={
+                  insufficient ? "Out of credits" : "Describe a change to make..."
+                }
+              />
             </div>
           )}
         </div>
-      )}
 
-      {error && (
-        <div className="mt-4 flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
+        <div className="min-h-0 min-w-0 flex-1">
+          {app.status === "generating" ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+              <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Generating your app...</p>
+            </div>
+          ) : app.status === "error" && !hasFiles ? (
+            <div className="flex h-full items-center justify-center p-8">
+              <div className="flex max-w-sm items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-4 text-sm text-error">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{app.errorMessage || "Something went wrong generating this app."}</span>
+              </div>
+            </div>
+          ) : hasFiles ? (
+            pane === "preview" ? (
+              <AppPreview files={files} />
+            ) : (
+              <div className="h-full overflow-auto p-4">
+                <CodePreview files={files} appName={app.name} />
+              </div>
+            )
+          ) : null}
         </div>
-      )}
-
-      <div className="mt-8">
-        {app.status === "generating" && (
-          <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border py-16 text-center">
-            <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-            <p className="text-sm text-muted-foreground">Generating your app...</p>
-          </div>
-        )}
-
-        {app.status === "error" && (
-          <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-4 text-sm text-error">
-            <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-            <span>{app.errorMessage || "Something went wrong generating this app."}</span>
-          </div>
-        )}
-
-        {hasFiles && <CodePreview files={files} appName={app.name} />}
       </div>
 
       {showGithub && (
@@ -307,7 +340,7 @@ export default function AppDetailPage() {
   return (
     <ProtectedRoute>
       <AppShell>
-        <AppDetailContent />
+        <AppWorkspace />
       </AppShell>
     </ProtectedRoute>
   );

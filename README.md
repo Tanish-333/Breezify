@@ -60,6 +60,10 @@ Feather 123 needs exactly one real secret: `ANTHROPIC_API_KEY`. Firebase require
 - Refine an existing app with a follow-up instruction; the model gets the current files and returns the updated set
 - Push any generated app to a new GitHub repository. The token is used for that one request and never stored; only the resulting repo URL is saved.
 - Rename apps, download the whole app as a ZIP, copy individual files
+- Split workspace per app: change history on the left with per-turn Details/Files tabs and model-suggested follow-ups, live preview or code on the right
+- Live in-browser preview. Generated sources are transpiled with Babel standalone in a sandboxed iframe, so React apps run without a build step; apps needing a server show a clear fallback instead.
+- "Built with Feather 123" badge injected into previews and exports (ZIP, GitHub) rather than stored in the source, so the code you see stays clean
+- Bring your own API key: paste an Anthropic or Gemini key in Settings and generations cost 0 credits and unlock every model. Keys live in your browser's localStorage and ride along with the single request that uses them; they are never written to Firestore.
 - No Firebase admin credentials anywhere: `/api/generate` and `/api/delete-account` verify the caller's Firebase ID token against Google's public keys and write to Firestore over REST using that same token, so Firestore's own security rules are the enforcement, not a trusted server key
 
 ## Not yet built (Phases 2 and 3)

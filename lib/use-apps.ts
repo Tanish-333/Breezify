@@ -40,6 +40,10 @@ function toApp(id: string, data: any): FeatherApp {
     generatedCode: data.generatedCode,
     status: data.status,
     summary: data.summary,
+    suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
+    turns: Array.isArray(data.turns)
+      ? data.turns.map((t: any) => ({ ...t, createdAt: toMillis(t.createdAt) ?? Date.now() }))
+      : [],
     deployedUrl: data.deployedUrl,
     githubUrl: data.githubUrl,
     subdomain: data.subdomain,

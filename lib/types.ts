@@ -178,6 +178,19 @@ export type AppStatus =
   | "error"
   | "stopped";
 
+export interface AppTurn {
+  id: string;
+  /** "build" is the original generation; "refine" is a follow-up change. */
+  kind: "build" | "refine";
+  /** The user's words for this turn. */
+  instruction: string;
+  /** What the model says it did. */
+  summary: string;
+  model: ModelId;
+  fileCount: number;
+  createdAt: number;
+}
+
 export interface FeatherApp {
   id: string;
   userId: string;
@@ -192,6 +205,8 @@ export interface FeatherApp {
   };
   status: AppStatus;
   summary?: string;
+  suggestions?: string[];
+  turns?: AppTurn[];
   deployedUrl?: string;
   githubUrl?: string;
   subdomain?: string;

@@ -16,7 +16,8 @@ Output your response as a single JSON object (no markdown fences, no commentary)
   "files": {
     "path/to/file.ext": "full file contents as a string",
     ...
-  }
+  },
+  "suggestions": ["three or four short follow-up changes the user might want next, each under 6 words"]
 }
 
 Output complete file contents, not fragments or diffs. Every file referenced by package.json or by an import must be present in "files".`;
@@ -47,7 +48,7 @@ ${listing}
 
 CHANGE REQUESTED: ${instruction}
 
-Apply the requested change. Return the COMPLETE updated file set in the same JSON shape as before, including files you did not modify. Delete a file by omitting it. Keep the app runnable.`;
+Apply the requested change. Return the COMPLETE updated file set in the same JSON shape as before, including files you did not modify and a fresh "suggestions" list. Delete a file by omitting it. Keep the app runnable. In "summary", describe what you changed in this update rather than what the app does overall.`;
 }
 
 /** Shared token budget for a full multi-file app. */
@@ -57,6 +58,15 @@ export interface GenerationResult {
   appName: string;
   summary: string;
   files: Record<string, string>;
+  suggestions: string[];
+  inputTokens: number;
+  outputTokens: number;
+  actualCostUSD: number;
+}
+
+/** What a provider returns before the JSON body is parsed. */
+export interface ProviderResult {
+  raw: string;
   inputTokens: number;
   outputTokens: number;
   actualCostUSD: number;
@@ -97,6 +107,7 @@ export function parseGenerationJSON(raw: string): {
   appName?: string;
   summary?: string;
   files?: Record<string, string>;
+  suggestions?: string[];
 } {
   const start = raw.indexOf("{");
   const end = raw.lastIndexOf("}");
