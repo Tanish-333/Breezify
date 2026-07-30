@@ -6,8 +6,21 @@ Feather 123 turns a plain-English prompt into a complete, production-ready app. 
 
 - Next.js 14 (App Router) + TypeScript + Tailwind CSS
 - Firebase Auth (email/password, Google, GitHub, Apple) + Firestore
-- Anthropic Claude API (Haiku 4.5 / Sonnet 4.5 / Opus 5) for generation
+- Anthropic Claude (Haiku 4.5 / Sonnet 4.5 / Opus 5) and Google Gemini
+  (3.6 Flash / 3.1 Pro) for generation
 - Monaco Editor for code preview
+
+## Models and plans
+
+Models are plan-gated. Free accounts get Haiku 4.5 only; Plus adds Sonnet 4.5
+and Gemini 3.6 Flash; Pro adds Opus 5 and Gemini 3.1 Pro. The registry lives in
+`lib/types.ts` (`MODEL_INFO` and `PLANS`) and is the single source of truth for
+the landing page, the billing page, and the server-side gate in
+`app/api/generate/route.ts`.
+
+Providers are independent: with only `ANTHROPIC_API_KEY` set, the Gemini models
+render as unavailable and everything else keeps working, and vice versa.
+`GET /api/models` reports which providers are configured.
 
 ## Setup
 

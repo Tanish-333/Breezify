@@ -57,6 +57,20 @@ body {
   animation: fade-in 0.5s ease-out both;
 }
 
+/* Indeterminate progress bar for long-running generations. */
+@keyframes slide-track {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(400%);
+  }
+}
+
+.progress-track {
+  animation: slide-track 1.6s ease-in-out infinite;
+}
+
 .monaco-shell {
   border: 1px solid hsl(var(--border));
   border-radius: 8px;

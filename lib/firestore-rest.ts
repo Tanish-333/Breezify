@@ -21,6 +21,9 @@ type FirestoreValue =
 
 export function toFirestoreValue(value: unknown): FirestoreValue {
   if (value === null || value === undefined) return { nullValue: null };
+  // Dates must round-trip as real Firestore timestamps, otherwise the client
+  // SDK reads them back as plain strings and .toMillis() is unavailable.
+  if (value instanceof Date) return { timestampValue: value.toISOString() };
   if (typeof value === "boolean") return { booleanValue: value };
   if (typeof value === "number") {
     return Number.isInteger(value)

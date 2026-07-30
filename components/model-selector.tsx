@@ -1,42 +1,119 @@
 "use client";
 
+import Link from "next/link";
 import { cn } from "@/lib/utils";
-import { MODEL_INFO, type ModelId } from "@/lib/types";
-import { Check } from "lucide-react";
+import {
+  MODEL_IDS,
+  MODEL_INFO,
+  planAllowsModel,
+  requiredPlanFor,
+  type ModelId,
+  type PlanId,
+} from "@/lib/types";
+import { Check, Lock, Sparkles, Zap } from "lucide-react";
+
+function ProviderGlyph({ provider }: { provider: "anthropic" | "google" }) {
+  return provider === "anthropic" ? (
+    <Sparkles className="h-3 w-3" strokeWidth={2} />
+  ) : (
+    <Zap className="h-3 w-3" strokeWidth={2} />
+  );
+}
 
 export function ModelSelector({
   value,
   onChange,
+  plan,
+  availability,
 }: {
   value: ModelId;
   onChange: (model: ModelId) => void;
+  plan: PlanId;
+  availability?: Record<string, boolean>;
 }) {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-      {(Object.keys(MODEL_INFO) as ModelId[]).map((id) => {
+    <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
+      {MODEL_IDS.map((id) => {
         const info = MODEL_INFO[id];
-        const active = value === id;
+        const unlocked = planAllowsModel(plan, id);
+        // Availability is unknown until the fetch resolves; assume usable so
+        // models don't flash as "unavailable" on first paint.
+        const configured = availability ? availability[id] !== false : true;
+        const usable = unlocked && configured;
+        const active = value === id && usable;
+
+        const card = (
+          <div
+            className={cn(
+              "relative flex h-full flex-col gap-1 rounded-lg border p-4 text-left transition-all",
+              active
+                ? "border-foreground bg-muted/40 ring-1 ring-foreground"
+                : usable
+                  ? "border-border hover:border-muted-foreground hover:bg-muted/20"
+                  : "border-border opacity-55"
+            )}
+          >
+            <div className="flex items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-border px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+                <ProviderGlyph provider={info.provider} />
+                {info.providerLabel}
+              </span>
+              {active && (
+                <span className="flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background">
+                  <Check className="h-2.5 w-2.5" strokeWidth={3} />
+                </span>
+              )}
+              {!unlocked && <Lock className="h-3.5 w-3.5 text-muted-foreground" />}
+            </div>
+
+            <span className="mt-1 font-medium">{info.label}</span>
+            <span className="text-xs leading-relaxed text-muted-foreground">
+              {info.description}
+            </span>
+
+            <div className="mt-auto flex items-baseline justify-between pt-3">
+              <span className="text-sm font-medium">
+                {info.credits.toFixed(2)}{" "}
+                <span className="text-xs font-normal text-muted-foreground">credits</span>
+              </span>
+              {!unlocked ? (
+                <span className="text-xs text-muted-foreground">
+                  {requiredPlanFor(id).name} plan
+                </span>
+              ) : !configured ? (
+                <span className="text-xs text-warning">Not configured</span>
+              ) : null}
+            </div>
+          </div>
+        );
+
+        if (!unlocked) {
+          return (
+            <Link
+              key={id}
+              href="/billing"
+              title={`Upgrade to ${requiredPlanFor(id).name} to use ${info.label}`}
+              className="rounded-lg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground"
+            >
+              {card}
+            </Link>
+          );
+        }
+
         return (
           <button
             key={id}
             type="button"
+            disabled={!configured}
             onClick={() => onChange(id)}
-            className={cn(
-              "relative flex flex-col items-start gap-1 rounded-lg border p-4 text-left transition-colors",
-              active ? "border-foreground" : "border-border hover:border-muted-foreground"
-            )}
+            title={
+              configured
+                ? info.label
+                : `${info.label} needs a provider API key on this deployment`
+            }
+            className="rounded-lg text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground disabled:cursor-not-allowed"
           >
-            {active && (
-              <span className="absolute right-3 top-3 flex h-4 w-4 items-center justify-center rounded-full bg-foreground text-background">
-                <Check className="h-2.5 w-2.5" />
-              </span>
-            )}
-            <span className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {info.tier}
-            </span>
-            <span className="font-medium">{info.label}</span>
-            <span className="text-xs text-muted-foreground">{info.description}</span>
-            <span className="mt-2 text-sm font-medium">{info.credits.toFixed(2)} credits</span>
+            {card}
           </button>
         );
       })}

@@ -1,0 +1,96 @@
+export const SYSTEM_PROMPT = `You are an expert full-stack engineer. Generate a COMPLETE, PRODUCTION-READY application.
+
+REQUIREMENTS:
+- Modern React (TypeScript) frontend with Tailwind CSS
+- Node.js/Express backend (or Next.js API routes) if the app needs one
+- Full error handling, input validation, no placeholder logic
+- No TODOs, no "implement this later" comments
+- Include package.json, README.md, and .env.example
+- Must run immediately after \`npm install && npm run dev\`
+- Prefer a small number of well-organized files over many tiny ones
+
+Output your response as a single JSON object (no markdown fences, no commentary) with this exact shape:
+{
+  "appName": "short-kebab-case-name",
+  "summary": "one sentence description of the app",
+  "files": {
+    "path/to/file.ext": "full file contents as a string",
+    ...
+  }
+}
+
+Output complete file contents, not fragments or diffs. Every file referenced by package.json or by an import must be present in "files".`;
+
+export function userPrompt(prompt: string) {
+  return `USER REQUEST: ${prompt}`;
+}
+
+/** Shared token budget for a full multi-file app. */
+export const MAX_OUTPUT_TOKENS = 16000;
+
+export interface GenerationResult {
+  appName: string;
+  summary: string;
+  files: Record<string, string>;
+  inputTokens: number;
+  outputTokens: number;
+  actualCostUSD: number;
+}
+
+/**
+ * Called as the model streams. `chars` is the total response length so far and
+ * `files` are the file paths detected in the partial JSON, so the UI can show
+ * real progress instead of an indeterminate spinner.
+ */
+export type ProgressFn = (progress: { chars: number; files: string[] }) => void;
+
+const FILE_PATH_RE = /"((?:[\w.@-]+\/)*[\w.@-]+\.[A-Za-z0-9]+)"\s*:\s*"/g;
+
+/**
+ * Pulls file paths out of a partially-streamed JSON body. Only looks at the
+ * "files" object so keys from elsewhere in the payload aren't mistaken for
+ * filenames.
+ */
+export function detectFiles(partial: string): string[] {
+  const filesAt = partial.indexOf('"files"');
+  if (filesAt === -1) return [];
+  const scope = partial.slice(filesAt);
+  const found: string[] = [];
+  let m: RegExpExecArray | null;
+  FILE_PATH_RE.lastIndex = 0;
+  while ((m = FILE_PATH_RE.exec(scope)) !== null) {
+    found.push(m[1]);
+  }
+  return found;
+}
+
+/**
+ * Models occasionally wrap JSON in prose or a markdown fence despite being
+ * told not to, so pull out the outermost JSON object before parsing.
+ */
+export function parseGenerationJSON(raw: string): {
+  appName?: string;
+  summary?: string;
+  files?: Record<string, string>;
+} {
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  if (start === -1 || end === -1 || end <= start) {
+    throw new Error("The model did not return a valid app. Please try again.");
+  }
+  try {
+    return JSON.parse(raw.slice(start, end + 1));
+  } catch {
+    throw new Error(
+      "The model's response was cut off before it finished. Try a simpler prompt or a more capable model."
+    );
+  }
+}
+
+export function assertHasFiles<T extends { files?: Record<string, string> }>(
+  parsed: T
+): asserts parsed is T & { files: Record<string, string> } {
+  if (!parsed.files || Object.keys(parsed.files).length === 0) {
+    throw new Error("The model did not return any files. Please try again.");
+  }
+}

@@ -13,6 +13,41 @@ import {
 import { db } from "@/lib/firebase";
 import type { FeatherApp } from "@/lib/types";
 
+/**
+ * Firestore timestamps come back as Timestamp objects from the client SDK,
+ * but documents written over the REST API can also carry ISO strings, so
+ * handle both rather than silently falling back to "now".
+ */
+function toMillis(value: unknown): number | undefined {
+  if (!value) return undefined;
+  if (typeof value === "object" && "toMillis" in (value as object)) {
+    return (value as { toMillis: () => number }).toMillis();
+  }
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    if (!Number.isNaN(parsed)) return parsed;
+  }
+  return undefined;
+}
+
+function toApp(id: string, data: any): FeatherApp {
+  return {
+    id,
+    userId: data.userId,
+    name: data.name,
+    prompt: data.prompt,
+    model: data.model,
+    generatedCode: data.generatedCode,
+    status: data.status,
+    summary: data.summary,
+    deployedUrl: data.deployedUrl,
+    subdomain: data.subdomain,
+    errorMessage: data.errorMessage,
+    createdAt: toMillis(data.createdAt) ?? Date.now(),
+    deployedAt: toMillis(data.deployedAt),
+  };
+}
+
 export function useUserApps(uid: string | undefined) {
   const [apps, setApps] = useState<FeatherApp[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,25 +66,7 @@ export function useUserApps(uid: string | undefined) {
     const unsub = onSnapshot(
       q,
       (snap) => {
-        setApps(
-          snap.docs.map((d) => {
-            const data = d.data();
-            return {
-              id: d.id,
-              userId: data.userId,
-              name: data.name,
-              prompt: data.prompt,
-              model: data.model,
-              generatedCode: data.generatedCode,
-              status: data.status,
-              deployedUrl: data.deployedUrl,
-              subdomain: data.subdomain,
-              errorMessage: data.errorMessage,
-              createdAt: data.createdAt?.toMillis?.() ?? Date.now(),
-              deployedAt: data.deployedAt?.toMillis?.(),
-            } as FeatherApp;
-          })
-        );
+        setApps(snap.docs.map((d) => toApp(d.id, d.data())));
         setLoading(false);
       },
       () => setLoading(false)
@@ -62,23 +79,6 @@ export function useUserApps(uid: string | undefined) {
 
 export async function deleteApp(appId: string) {
   await deleteDoc(doc(db, "apps", appId));
-}
-
-function toApp(id: string, data: any): FeatherApp {
-  return {
-    id,
-    userId: data.userId,
-    name: data.name,
-    prompt: data.prompt,
-    model: data.model,
-    generatedCode: data.generatedCode,
-    status: data.status,
-    deployedUrl: data.deployedUrl,
-    subdomain: data.subdomain,
-    errorMessage: data.errorMessage,
-    createdAt: data.createdAt?.toMillis?.() ?? Date.now(),
-    deployedAt: data.deployedAt?.toMillis?.(),
-  };
 }
 
 export function useApp(appId: string | undefined) {

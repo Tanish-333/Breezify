@@ -1,31 +1,174 @@
-export type ModelId = "haiku" | "sonnet" | "opus";
+export type Provider = "anthropic" | "google";
 
-export const MODEL_INFO: Record<
-  ModelId,
-  { label: string; description: string; credits: number; apiModel: string; tier: string }
-> = {
+export type ModelId = "haiku" | "gemini-flash" | "sonnet" | "gemini-pro" | "opus";
+
+export type PlanId = "free" | "plus" | "pro" | "max";
+
+export interface ModelInfo {
+  label: string;
+  provider: Provider;
+  providerLabel: string;
+  description: string;
+  /** User-facing credit cost per generation. */
+  credits: number;
+  /** The exact model ID string sent to the provider's API. */
+  apiModel: string;
+  /** Lowest plan that unlocks this model. */
+  minPlan: PlanId;
+  tier: string;
+}
+
+// Credit costs are deliberately limited to 0.50 / 1.00 / 2.00. firestore.rules
+// validates every credit deduction against exactly this set, so adding a new
+// cost value here means updating isValidCost() in the rules too.
+export const MODEL_INFO: Record<ModelId, ModelInfo> = {
   haiku: {
     label: "Haiku 4.5",
-    description: "Fast, free-tier friendly. Great for simple apps and prototypes.",
+    provider: "anthropic",
+    providerLabel: "Anthropic",
+    description: "Fast and inexpensive. Great for simple apps and quick iterations.",
     credits: 0.5,
     apiModel: "claude-haiku-4-5",
-    tier: "Default",
+    minPlan: "free",
+    tier: "Included free",
+  },
+  "gemini-flash": {
+    label: "Gemini 3.6 Flash",
+    provider: "google",
+    providerLabel: "Google",
+    description: "Very fast with a large context window. Good for content-heavy apps.",
+    credits: 0.5,
+    apiModel: "gemini-3.6-flash",
+    minPlan: "plus",
+    tier: "Plus",
   },
   sonnet: {
     label: "Sonnet 4.5",
-    description: "Balanced quality and speed. Best for most real applications.",
+    provider: "anthropic",
+    providerLabel: "Anthropic",
+    description: "Balanced quality and speed. The best default for real applications.",
     credits: 1.0,
     apiModel: "claude-sonnet-4-5",
-    tier: "Recommended",
+    minPlan: "plus",
+    tier: "Plus",
+  },
+  "gemini-pro": {
+    label: "Gemini 3.1 Pro",
+    provider: "google",
+    providerLabel: "Google",
+    description: "Strong reasoning across long, multi-file codebases.",
+    credits: 1.0,
+    apiModel: "gemini-3.1-pro-preview",
+    minPlan: "pro",
+    tier: "Pro",
   },
   opus: {
     label: "Opus 5",
-    description: "Maximum quality reasoning. Best for complex, multi-part apps.",
+    provider: "anthropic",
+    providerLabel: "Anthropic",
+    description: "Maximum quality reasoning. Best for complex, multi-part applications.",
     credits: 2.0,
     apiModel: "claude-opus-5",
-    tier: "Premium",
+    minPlan: "pro",
+    tier: "Pro",
   },
 };
+
+export const MODEL_IDS = Object.keys(MODEL_INFO) as ModelId[];
+
+export function isModelId(v: unknown): v is ModelId {
+  return typeof v === "string" && v in MODEL_INFO;
+}
+
+export interface PlanInfo {
+  id: PlanId;
+  name: string;
+  price: string;
+  period: string;
+  description: string;
+  /** Credits granted: one-time for free, per month for paid plans. */
+  credits: number;
+  features: string[];
+  highlighted?: boolean;
+}
+
+export const PLAN_RANK: Record<PlanId, number> = {
+  free: 0,
+  plus: 1,
+  pro: 2,
+  max: 3,
+};
+
+export const PLANS: Record<PlanId, PlanInfo> = {
+  free: {
+    id: "free",
+    name: "Free",
+    price: "$0",
+    period: "to start",
+    description: "$5.00 in free credit, no card required.",
+    credits: 5,
+    features: [
+      "5.00 credits, one time",
+      "Haiku 4.5",
+      "Full source code access",
+      "Community support",
+    ],
+  },
+  plus: {
+    id: "plus",
+    name: "Plus",
+    price: "$20",
+    period: "per month",
+    description: "For builders shipping apps regularly.",
+    credits: 25,
+    features: [
+      "25.00 credits every month",
+      "Adds Sonnet 4.5 and Gemini 3.6 Flash",
+      "Priority generation",
+      "Email support",
+    ],
+    highlighted: true,
+  },
+  pro: {
+    id: "pro",
+    name: "Pro",
+    price: "$50",
+    period: "per month",
+    description: "Every model, including the frontier ones.",
+    credits: 70,
+    features: [
+      "70.00 credits every month",
+      "Adds Opus 5 and Gemini 3.1 Pro",
+      "Advanced analytics",
+      "Priority support",
+    ],
+  },
+  max: {
+    id: "max",
+    name: "Max",
+    price: "$200",
+    period: "per month",
+    description: "For teams running Feather 123 at scale.",
+    credits: 300,
+    features: [
+      "300.00 credits every month",
+      "Every model",
+      "Team seats",
+      "Dedicated support",
+    ],
+  },
+};
+
+export const PLAN_IDS = Object.keys(PLANS) as PlanId[];
+
+export function planAllowsModel(plan: PlanId, model: ModelId): boolean {
+  return PLAN_RANK[plan] >= PLAN_RANK[MODEL_INFO[model].minPlan];
+}
+
+/** Cheapest plan that unlocks the given model. */
+export function requiredPlanFor(model: ModelId): PlanInfo {
+  return PLANS[MODEL_INFO[model].minPlan];
+}
 
 export type AppStatus =
   | "generating"
@@ -48,6 +191,7 @@ export interface FeatherApp {
     files?: Record<string, string>;
   };
   status: AppStatus;
+  summary?: string;
   deployedUrl?: string;
   subdomain?: string;
   errorMessage?: string;
@@ -61,7 +205,7 @@ export interface FeatherUser {
   displayName: string | null;
   photoURL: string | null;
   credits: number;
-  plan: "free" | "payg" | "pro";
+  plan: PlanId;
   createdAt: number;
   lastLoginAt: number;
   authProviders: string[];

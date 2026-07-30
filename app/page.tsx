@@ -5,6 +5,7 @@ import { BuilderMockup } from "@/components/builder-mockup";
 import { FaqAccordion } from "@/components/faq-accordion";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
+import { PLANS, PLAN_IDS } from "@/lib/types";
 import {
   ArrowRight,
   Wand2,
@@ -54,46 +55,6 @@ const FEATURES = [
     icon: ShieldCheck,
     title: "Serious infrastructure",
     body: "Firebase auth, Firestore, and Vercel deploys under the hood, the same tools production teams use.",
-  },
-];
-
-const PLANS = [
-  {
-    name: "Free",
-    price: "$0",
-    period: "to start",
-    description: "$5.00 in free credit, no card required.",
-    features: ["5.00 credits included", "All three models", "Public app deploys", "Community support"],
-    cta: "Start free",
-    href: "/signup",
-  },
-  {
-    name: "Plus",
-    price: "$20",
-    period: "per month",
-    description: "For builders shipping apps regularly.",
-    features: ["25.00 credits / month", "All three models", "Priority generation", "Email support"],
-    cta: "Get started",
-    href: "/signup",
-    highlighted: true,
-  },
-  {
-    name: "Pro",
-    price: "$50",
-    period: "per month",
-    description: "More credit, more headroom for bigger apps.",
-    features: ["70.00 credits / month", "All three models", "Advanced analytics", "Priority support"],
-    cta: "Get started",
-    href: "/signup",
-  },
-  {
-    name: "Max",
-    price: "$200",
-    period: "per month",
-    description: "For teams running Feather 123 at scale.",
-    features: ["300.00 credits / month", "All three models", "Team seats", "Dedicated support"],
-    cta: "Get started",
-    href: "/signup",
   },
 ];
 
@@ -182,7 +143,9 @@ export default function LandingPage() {
             </p>
           </div>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {PLANS.map((plan) => (
+            {PLAN_IDS.map((id) => {
+              const plan = PLANS[id];
+              return (
               <Card
                 key={plan.name}
                 className={plan.highlighted ? "border-foreground" : ""}
@@ -209,17 +172,18 @@ export default function LandingPage() {
                       </li>
                     ))}
                   </ul>
-                  <Link href={plan.href} className="mt-7">
+                  <Link href="/signup" className="mt-7">
                     <Button
                       className="w-full"
                       variant={plan.highlighted ? "primary" : "secondary"}
                     >
-                      {plan.cta}
+                      {plan.id === "free" ? "Start free" : "Get started"}
                     </Button>
                   </Link>
                 </CardContent>
               </Card>
-            ))}
+              );
+            })}
           </div>
         </div>
       </section>
