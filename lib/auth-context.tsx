@@ -106,17 +106,37 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, async (u) => {
-      setUser(u);
-      if (u) {
-        await ensureUserDoc(u);
-        await loadProfile(u);
-      } else {
-        setProfile(null);
+    // Firebase resolves this almost instantly from local persistence, but if the
+    // network hangs (flaky connection, blocked request) we still need to stop
+    // showing a spinner and fall back to the signed-out UI rather than hang forever.
+    const failSafe = setTimeout(() => setLoading(false), 4000);
+
+    const unsub = onAuthStateChanged(
+      auth,
+      async (u) => {
+        setUser(u);
+        if (u) {
+          try {
+            await ensureUserDoc(u);
+            await loadProfile(u);
+          } catch {
+            // Profile sync failed (offline, permissions); still let the user in.
+          }
+        } else {
+          setProfile(null);
+        }
+        clearTimeout(failSafe);
+        setLoading(false);
+      },
+      () => {
+        clearTimeout(failSafe);
+        setLoading(false);
       }
-      setLoading(false);
-    });
-    return () => unsub();
+    );
+    return () => {
+      clearTimeout(failSafe);
+      unsub();
+    };
   }, []);
 
   async function refreshProfile() {
