@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import Link from "next/link";
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { friendlyAuthError } from "@/lib/auth-errors";
@@ -9,19 +8,16 @@ import { getGithubToken, hasGithubToken, clearGithubToken } from "@/lib/github-c
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { GithubIcon } from "@/components/oauth-icons";
-import { AlertCircle, CheckCircle2, ExternalLink, Lock, X } from "lucide-react";
+import { AlertCircle, CheckCircle2, ExternalLink, X } from "lucide-react";
 
 export function GithubPushDialog({
   appId,
   defaultName,
-  removeBadge = false,
   onClose,
   onPushed,
 }: {
   appId: string;
   defaultName: string;
-  /** Paid plans push clean; free stays badged. */
-  removeBadge?: boolean;
   onClose: () => void;
   onPushed: (url: string) => void;
 }) {
@@ -160,18 +156,6 @@ export function GithubPushDialog({
               />
               Make the repository private
             </label>
-
-            {!removeBadge && (
-              <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
-                <Lock className="mt-0.5 h-3 w-3 shrink-0" />
-                <span>
-                  Pushed code includes the Feather 123 badge.{" "}
-                  <Link href="/billing" className="font-medium text-foreground hover:underline">
-                    Upgrade to remove it
-                  </Link>
-                </span>
-              </p>
-            )}
 
             {error && (
               <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">

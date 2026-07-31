@@ -110,8 +110,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     features: [
       "5.00 credits, one time",
       "Haiku 4.5",
-      "Full source code access",
-      "Feather 123 badge on exports",
+      "View & copy code in the editor",
       "Community support",
     ],
   },
@@ -125,7 +124,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     features: [
       "25.00 credits every month",
       "Adds Sonnet 4.5 and Gemini 3.6 Flash",
-      "No Feather 123 badge on exports",
+      "Download ZIP & push to GitHub, badge-free",
       "Email support",
     ],
     highlighted: true,

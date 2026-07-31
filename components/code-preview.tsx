@@ -155,13 +155,13 @@ export function CodePreview({
   files,
   appName = "app",
   streamingPaths,
-  removeBadge = false,
+  canExport = false,
 }: {
   files: Record<string, string>;
   appName?: string;
   streamingPaths?: Set<string>;
-  /** Paid plans export clean; free stays badged. */
-  removeBadge?: boolean;
+  /** ZIP download is a Plus-and-up feature; free can still view and copy code. */
+  canExport?: boolean;
 }) {
   const paths = useMemo(() => Object.keys(files).sort(), [files]);
   const [active, setActive] = useState(paths[0] ?? "");
@@ -212,22 +212,31 @@ export function CodePreview({
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? "Copied" : "Copy file"}
           </Button>
-          <Button
-            variant="secondary"
-            size="sm"
-            onClick={() => downloadZip(withWatermark(files, !removeBadge), appName)}
-          >
-            <Download className="h-3.5 w-3.5" />
-            Download ZIP
-          </Button>
+          {canExport ? (
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => downloadZip(withWatermark(files, false), appName)}
+            >
+              <Download className="h-3.5 w-3.5" />
+              Download ZIP
+            </Button>
+          ) : (
+            <Link href="/billing" title="Upgrade to Plus to download your code">
+              <Button variant="secondary" size="sm">
+                <Lock className="h-3.5 w-3.5" />
+                Download ZIP
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
-      {!removeBadge && (
+      {!canExport && (
         <div className="flex items-center gap-1.5 border-b border-border bg-muted/20 px-4 py-1.5 text-[11px] text-muted-foreground">
           <Lock className="h-3 w-3 shrink-0" />
-          Exports include the Feather 123 badge.{" "}
+          Downloading your code is a Plus feature.{" "}
           <Link href="/billing" className="font-medium text-foreground hover:underline">
-            Upgrade to remove it
+            Upgrade to Plus
           </Link>
         </div>
       )}

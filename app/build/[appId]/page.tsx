@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { doc, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -29,6 +30,7 @@ import {
   Eye,
   ExternalLink,
   Loader2,
+  Lock,
   Pencil,
   Rocket,
   X,
@@ -241,6 +243,13 @@ function AppWorkspace() {
                   <ExternalLink className="h-3 w-3" />
                 </Button>
               </a>
+            ) : plan === "free" ? (
+              <Link href="/billing" title="Upgrade to Plus to push to GitHub">
+                <Button variant="ghost" size="sm">
+                  <Lock className="h-4 w-4" />
+                  <span className="hidden sm:inline">Push to GitHub</span>
+                </Button>
+              </Link>
             ) : (
               <Button variant="ghost" size="sm" onClick={() => setShowGithub(true)}>
                 <GithubIcon className="h-4 w-4" />
@@ -371,7 +380,7 @@ function AppWorkspace() {
               <AppPreview files={files} removeBadge={plan !== "free"} />
             ) : (
               <div className="h-full overflow-auto p-4">
-                <CodePreview files={files} appName={app.name} removeBadge={plan !== "free"} />
+                <CodePreview files={files} appName={app.name} canExport={plan !== "free"} />
               </div>
             )
           ) : null}
@@ -382,7 +391,6 @@ function AppWorkspace() {
         <GithubPushDialog
           appId={app.id}
           defaultName={app.name}
-          removeBadge={plan !== "free"}
           onClose={() => setShowGithub(false)}
           onPushed={() => {}}
         />
