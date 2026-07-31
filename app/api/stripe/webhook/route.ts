@@ -39,6 +39,71 @@ async function revertToFree(uid: string) {
   await adminDb().collection("users").doc(uid).set({ plan: "free" }, { merge: true });
 }
 
+async function handleEvent(stripe: Stripe, event: Stripe.Event) {
+  switch (event.type) {
+    case "checkout.session.completed": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const uid = session.client_reference_id ?? session.metadata?.uid;
+      const plan = session.metadata?.plan;
+      if (uid && isPlanId(plan) && plan !== "free") {
+        await setPlan(uid, plan);
+      } else {
+        console.error("[stripe webhook] checkout.session.completed missing uid/plan metadata");
+      }
+      break;
+    }
+
+    // Fires on every successful recurring renewal; refills credits for the new period.
+    case "invoice.paid": {
+      const invoice = event.data.object as Stripe.Invoice;
+      const subscriptionId =
+        typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
+      const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id ?? null;
+      const uid = await findUid(stripe, customerId, subscriptionId);
+      const priceId = invoice.lines.data[0]?.price?.id;
+      const plan = priceId ? planForPriceId(priceId) : undefined;
+      if (uid && plan) {
+        await setPlan(uid, plan);
+      } else {
+        console.error("[stripe webhook] invoice.paid: couldn't resolve uid/plan", { customerId, priceId });
+      }
+      break;
+    }
+
+    // Fires when a subscription's price changes (e.g. the user switched
+    // plans in the billing portal), separately from renewals.
+    case "customer.subscription.updated": {
+      const subscription = event.data.object as Stripe.Subscription;
+      const uid =
+        subscription.metadata?.uid ??
+        (await findUid(
+          stripe,
+          typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id
+        ));
+      const priceId = subscription.items.data[0]?.price?.id;
+      const plan = priceId ? planForPriceId(priceId) : undefined;
+      // A pending cancellation still has full access until the period
+      // actually ends; customer.subscription.deleted handles that transition.
+      if (uid && plan && !subscription.cancel_at_period_end) {
+        await setPlan(uid, plan);
+      }
+      break;
+    }
+
+    case "customer.subscription.deleted": {
+      const subscription = event.data.object as Stripe.Subscription;
+      const customerId =
+        typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+      const uid = subscription.metadata?.uid ?? (await findUid(stripe, customerId));
+      if (uid) await revertToFree(uid);
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
 export async function POST(req: NextRequest) {
   if (!isFirebaseAdminConfigured()) {
     console.error("[stripe webhook] FIREBASE_SERVICE_ACCOUNT isn't set; can't update accounts.");
@@ -62,61 +127,33 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid signature." }, { status: 400 });
   }
 
-  // Skip anything already processed (Stripe retries on any non-2xx, or if our
-  // own response is slow), so an app never gets double-credited.
-  const eventRef = adminDb().collection("stripe_events").doc(event.id);
-  if ((await eventRef.get()).exists) {
+  const db = adminDb();
+  const eventRef = db.collection("stripe_events").doc(event.id);
+
+  // Atomically claim this event before doing any work, so two near-
+  // simultaneous deliveries of the same event (Stripe's retries are
+  // at-least-once) can't both pass the "already done?" check and double-
+  // process a payment. Only a prior *successful* run is skipped; a run that
+  // previously failed or got stuck mid-processing is retried.
+  const claimed = await db.runTransaction(async (tx) => {
+    const doc = await tx.get(eventRef);
+    if (doc.exists && doc.data()?.status === "done") return false;
+    tx.set(eventRef, { type: event.type, status: "processing", startedAt: new Date().toISOString() });
+    return true;
+  });
+  if (!claimed) {
     return NextResponse.json({ received: true });
   }
 
   try {
-    switch (event.type) {
-      case "checkout.session.completed": {
-        const session = event.data.object as Stripe.Checkout.Session;
-        const uid = session.client_reference_id ?? session.metadata?.uid;
-        const plan = session.metadata?.plan;
-        if (uid && isPlanId(plan) && plan !== "free") {
-          await setPlan(uid, plan);
-        } else {
-          console.error("[stripe webhook] checkout.session.completed missing uid/plan metadata");
-        }
-        break;
-      }
-
-      // Fires on every successful recurring renewal; refills credits for the new period.
-      case "invoice.paid": {
-        const invoice = event.data.object as Stripe.Invoice;
-        const subscriptionId =
-          typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
-        const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id ?? null;
-        const uid = await findUid(stripe, customerId, subscriptionId);
-        const priceId = invoice.lines.data[0]?.price?.id;
-        const plan = priceId ? planForPriceId(priceId) : undefined;
-        if (uid && plan) {
-          await setPlan(uid, plan);
-        } else {
-          console.error("[stripe webhook] invoice.paid: couldn't resolve uid/plan", { customerId, priceId });
-        }
-        break;
-      }
-
-      case "customer.subscription.deleted": {
-        const subscription = event.data.object as Stripe.Subscription;
-        const customerId =
-          typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
-        const uid = subscription.metadata?.uid ?? (await findUid(stripe, customerId));
-        if (uid) await revertToFree(uid);
-        break;
-      }
-
-      default:
-        break;
-    }
-
-    await eventRef.set({ type: event.type, processedAt: new Date().toISOString() });
+    await handleEvent(stripe, event);
+    await eventRef.set({ status: "done", processedAt: new Date().toISOString() }, { merge: true });
     return NextResponse.json({ received: true });
   } catch (err) {
     console.error(`[stripe webhook] Failed to handle ${event.type}:`, err);
+    await eventRef
+      .set({ status: "failed", failedAt: new Date().toISOString() }, { merge: true })
+      .catch(() => {});
     return NextResponse.json({ error: "Failed to process event." }, { status: 500 });
   }
 }
