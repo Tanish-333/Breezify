@@ -67,6 +67,23 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Pushing to GitHub is a Plus-and-up feature. Checked server-side, not
+    // just hidden in the UI, since this is a real API a client could hit
+    // directly.
+    let userPlan: PlanId = "free";
+    try {
+      const userDoc = await getDoc(`users/${uid}`, idToken);
+      userPlan = (userDoc?.fields.plan as PlanId) ?? "free";
+    } catch {
+      // If this fails, treat as free (blocked) rather than let the push through.
+    }
+    if (userPlan === "free") {
+      return NextResponse.json(
+        { error: "Pushing to GitHub is available on the Plus plan and above." },
+        { status: 403 }
+      );
+    }
+
     // Read the app with the user's own token, so Firestore rules confirm
     // ownership rather than us trusting the appId from the request body.
     const appDoc = await getDoc(`apps/${appId}`, idToken);
@@ -77,20 +94,9 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "You don't have access to this app." }, { status: 403 });
     }
 
-    // Free plan exports keep the "Built with Feather 123" badge; paid plans
-    // push clean. Read from the user's own doc so a client can't just omit
-    // the flag to skip it.
-    let userPlan: PlanId = "free";
-    try {
-      const userDoc = await getDoc(`users/${uid}`, idToken);
-      userPlan = (userDoc?.fields.plan as PlanId) ?? "free";
-    } catch {
-      // If this fails, default to "free" (show the badge) rather than block the push.
-    }
-
     const generated = appDoc.fields.generatedCode as { files?: Record<string, string> } | undefined;
-    // Exported copies carry the badge; the stored source stays clean.
-    const files = withWatermark(generated?.files ?? {}, userPlan === "free");
+    // Paid plans push clean; the stored source itself never carries the badge.
+    const files = withWatermark(generated?.files ?? {}, false);
     if (Object.keys(files).length === 0) {
       return NextResponse.json({ error: "This app has no files to push." }, { status: 400 });
     }
