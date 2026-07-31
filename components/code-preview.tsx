@@ -155,13 +155,13 @@ export function CodePreview({
   files,
   appName = "app",
   streamingPaths,
-  canExport = false,
+  locked = false,
 }: {
   files: Record<string, string>;
   appName?: string;
   streamingPaths?: Set<string>;
-  /** ZIP download is a Plus-and-up feature; free can still view and copy code. */
-  canExport?: boolean;
+  /** Viewing, copying, and exporting code is a Plus-and-up feature. */
+  locked?: boolean;
 }) {
   const paths = useMemo(() => Object.keys(files).sort(), [files]);
   const [active, setActive] = useState(paths[0] ?? "");
@@ -200,6 +200,28 @@ export function CodePreview({
     0
   );
 
+  if (locked) {
+    return (
+      <div className="overflow-hidden rounded-lg border border-border">
+        <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-2.5 text-xs text-muted-foreground">
+          <div className="flex items-center gap-3">
+            <span className="font-medium text-foreground">{paths.length} files</span>
+            <span>{totalLines.toLocaleString()} lines</span>
+          </div>
+        </div>
+        <div className="flex h-64 flex-col items-center justify-center gap-3 p-8 text-center">
+          <Lock className="h-6 w-6 text-muted-foreground" strokeWidth={1.5} />
+          <p className="max-w-xs text-sm text-muted-foreground">
+            Viewing, copying, and exporting your generated code is a Plus feature.
+          </p>
+          <Link href="/billing">
+            <Button size="sm">Upgrade to Plus</Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="overflow-hidden rounded-lg border border-border">
       <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-2.5">
@@ -212,34 +234,16 @@ export function CodePreview({
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? "Copied" : "Copy file"}
           </Button>
-          {canExport ? (
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => downloadZip(withWatermark(files, false), appName)}
-            >
-              <Download className="h-3.5 w-3.5" />
-              Download ZIP
-            </Button>
-          ) : (
-            <Link href="/billing" title="Upgrade to Plus to download your code">
-              <Button variant="secondary" size="sm">
-                <Lock className="h-3.5 w-3.5" />
-                Download ZIP
-              </Button>
-            </Link>
-          )}
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => downloadZip(withWatermark(files, false), appName)}
+          >
+            <Download className="h-3.5 w-3.5" />
+            Download ZIP
+          </Button>
         </div>
       </div>
-      {!canExport && (
-        <div className="flex items-center gap-1.5 border-b border-border bg-muted/20 px-4 py-1.5 text-[11px] text-muted-foreground">
-          <Lock className="h-3 w-3 shrink-0" />
-          Downloading your code is a Plus feature.{" "}
-          <Link href="/billing" className="font-medium text-foreground hover:underline">
-            Upgrade to Plus
-          </Link>
-        </div>
-      )}
 
       <div className="grid h-[560px] grid-cols-1 sm:grid-cols-[240px_1fr]">
         <div className="overflow-y-auto border-b border-border bg-muted/20 py-1 sm:border-b-0 sm:border-r">

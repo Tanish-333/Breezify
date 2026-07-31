@@ -1,8 +1,9 @@
-import { MODEL_INFO, type ModelId } from "@/lib/types";
+import { MODEL_INFO, type ModelId, type PlanId } from "@/lib/types";
 import { generateWithAnthropic } from "./anthropic";
 import { generateWithGemini, isGeminiConfigured } from "./gemini";
 import {
   assertHasFiles,
+  maxOutputTokensFor,
   parseGenerationJSON,
   refinePrompt,
   userPrompt,
@@ -22,15 +23,17 @@ export function isModelAvailable(model: ModelId): boolean {
 async function run(
   userContent: string,
   model: ModelId,
+  plan: PlanId,
   onProgress?: ProgressFn,
   overrideKey?: string
 ): Promise<GenerationResult> {
   const provider = MODEL_INFO[model].provider;
+  const maxOutputTokens = maxOutputTokensFor(plan);
 
   const { raw, inputTokens, outputTokens, actualCostUSD } =
     provider === "anthropic"
-      ? await generateWithAnthropic(userContent, model, onProgress, overrideKey)
-      : await generateWithGemini(userContent, model, onProgress, overrideKey);
+      ? await generateWithAnthropic(userContent, model, maxOutputTokens, onProgress, overrideKey)
+      : await generateWithGemini(userContent, model, maxOutputTokens, onProgress, overrideKey);
 
   const parsed = parseGenerationJSON(raw);
   assertHasFiles(parsed);
@@ -52,10 +55,11 @@ async function run(
 export function generateApp(
   prompt: string,
   model: ModelId,
+  plan: PlanId,
   onProgress?: ProgressFn,
   overrideKey?: string
 ) {
-  return run(userPrompt(prompt), model, onProgress, overrideKey);
+  return run(userPrompt(prompt), model, plan, onProgress, overrideKey);
 }
 
 /** Apply a follow-up change to an app that already has generated files. */
@@ -64,8 +68,9 @@ export function refineApp(
   files: Record<string, string>,
   instruction: string,
   model: ModelId,
+  plan: PlanId,
   onProgress?: ProgressFn,
   overrideKey?: string
 ) {
-  return run(refinePrompt(originalPrompt, files, instruction), model, onProgress, overrideKey);
+  return run(refinePrompt(originalPrompt, files, instruction), model, plan, onProgress, overrideKey);
 }
