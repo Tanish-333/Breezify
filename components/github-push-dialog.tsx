@@ -1,23 +1,33 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import Link from "next/link";
 import { auth } from "@/lib/firebase";
+import { useAuth } from "@/lib/auth-context";
+import { friendlyAuthError } from "@/lib/auth-errors";
+import { getGithubToken, hasGithubToken, clearGithubToken } from "@/lib/github-connect";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
-import { AlertCircle, CheckCircle2, ExternalLink, X } from "lucide-react";
+import { GithubIcon } from "@/components/oauth-icons";
+import { AlertCircle, CheckCircle2, ExternalLink, Lock, X } from "lucide-react";
 
 export function GithubPushDialog({
   appId,
   defaultName,
+  removeBadge = false,
   onClose,
   onPushed,
 }: {
   appId: string;
   defaultName: string;
+  /** Paid plans push clean; free stays badged. */
+  removeBadge?: boolean;
   onClose: () => void;
   onPushed: (url: string) => void;
 }) {
-  const [token, setToken] = useState("");
+  const { connectGithub } = useAuth();
+  const [connected, setConnected] = useState(false);
+  const [connecting, setConnecting] = useState(false);
   const [name, setName] = useState(
     defaultName.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") ||
       "feather-app"
@@ -26,6 +36,23 @@ export function GithubPushDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [url, setUrl] = useState("");
+
+  useEffect(() => {
+    setConnected(hasGithubToken());
+  }, []);
+
+  async function connect() {
+    setError("");
+    setConnecting(true);
+    try {
+      await connectGithub();
+      setConnected(true);
+    } catch (err) {
+      setError(friendlyAuthError(err));
+    } finally {
+      setConnecting(false);
+    }
+  }
 
   async function push() {
     setError("");
@@ -37,10 +64,16 @@ export function GithubPushDialog({
       const res = await fetch("/api/github/push", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
-        body: JSON.stringify({ appId, githubToken: token, repoName: name, isPrivate }),
+        body: JSON.stringify({ appId, githubToken: getGithubToken(), repoName: name, isPrivate }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Push failed.");
+      if (!res.ok) {
+        // A revoked or expired GitHub token looks like any other rejected
+        // token from here; clearing it lets the next attempt re-connect
+        // instead of repeatedly failing with the same stale token.
+        if (res.status === 400 && /token/i.test(data.error || "")) clearGithubToken();
+        throw new Error(data.error || "Push failed.");
+      }
       setUrl(data.url);
       onPushed(data.url);
     } catch (err) {
@@ -87,6 +120,25 @@ export function GithubPushDialog({
               </Button>
             </a>
           </div>
+        ) : !connected ? (
+          <div className="mt-6 space-y-4">
+            <p className="text-sm text-muted-foreground">
+              Connect your GitHub account to create the repository and push, no token to copy
+              or paste.
+            </p>
+
+            {error && (
+              <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+
+            <Button className="w-full" onClick={connect} loading={connecting}>
+              <GithubIcon className="h-4 w-4" />
+              Connect GitHub
+            </Button>
+          </div>
         ) : (
           <div className="mt-6 space-y-4">
             <div>
@@ -99,29 +151,6 @@ export function GithubPushDialog({
               />
             </div>
 
-            <div>
-              <Label htmlFor="token">GitHub personal access token</Label>
-              <Input
-                id="token"
-                type="password"
-                value={token}
-                onChange={(e) => setToken(e.target.value)}
-                placeholder="ghp_..."
-              />
-              <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
-                Needs the <code className="text-foreground">repo</code> scope. Used once for
-                this push and never stored.{" "}
-                <a
-                  href="https://github.com/settings/tokens/new?scopes=repo&description=Feather%20123"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-foreground underline"
-                >
-                  Create one
-                </a>
-              </p>
-            </div>
-
             <label className="flex cursor-pointer items-center gap-2 text-sm">
               <input
                 type="checkbox"
@@ -132,6 +161,18 @@ export function GithubPushDialog({
               Make the repository private
             </label>
 
+            {!removeBadge && (
+              <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
+                <Lock className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>
+                  Pushed code includes the Feather 123 badge.{" "}
+                  <Link href="/billing" className="font-medium text-foreground hover:underline">
+                    Upgrade to remove it
+                  </Link>
+                </span>
+              </p>
+            )}
+
             {error && (
               <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
@@ -139,12 +180,8 @@ export function GithubPushDialog({
               </div>
             )}
 
-            <Button
-              className="w-full"
-              onClick={push}
-              loading={loading}
-              disabled={!token.trim() || !name.trim()}
-            >
+            <Button className="w-full" onClick={push} loading={loading} disabled={!name.trim()}>
+              <GithubIcon className="h-4 w-4" />
               Create repository and push
             </Button>
           </div>

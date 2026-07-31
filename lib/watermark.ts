@@ -29,9 +29,14 @@ function appUrl() {
 
 /**
  * Returns a copy of the file set with the badge added to every HTML entry
- * point. Files without an HTML document are returned untouched.
+ * point. Files without an HTML document are returned untouched. Paid plans
+ * pass `show: false` to export clean, badge-free code.
  */
-export function withWatermark(files: Record<string, string>): Record<string, string> {
+export function withWatermark(
+  files: Record<string, string>,
+  show: boolean = true
+): Record<string, string> {
+  if (!show) return files;
   const snippet = watermarkSnippet(appUrl());
   const out: Record<string, string> = { ...files };
   let injected = false;

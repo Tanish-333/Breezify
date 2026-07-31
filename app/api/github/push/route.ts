@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, getDoc, updateWrite } from "@/lib/firestore-rest";
 import { withWatermark } from "@/lib/watermark";
+import type { PlanId } from "@/lib/types";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
@@ -76,9 +77,20 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "You don't have access to this app." }, { status: 403 });
     }
 
+    // Free plan exports keep the "Built with Feather 123" badge; paid plans
+    // push clean. Read from the user's own doc so a client can't just omit
+    // the flag to skip it.
+    let userPlan: PlanId = "free";
+    try {
+      const userDoc = await getDoc(`users/${uid}`, idToken);
+      userPlan = (userDoc?.fields.plan as PlanId) ?? "free";
+    } catch {
+      // If this fails, default to "free" (show the badge) rather than block the push.
+    }
+
     const generated = appDoc.fields.generatedCode as { files?: Record<string, string> } | undefined;
     // Exported copies carry the badge; the stored source stays clean.
-    const files = withWatermark(generated?.files ?? {});
+    const files = withWatermark(generated?.files ?? {}, userPlan === "free");
     if (Object.keys(files).length === 0) {
       return NextResponse.json({ error: "This app has no files to push." }, { status: 400 });
     }

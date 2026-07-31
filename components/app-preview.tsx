@@ -8,7 +8,14 @@ import { cn } from "@/lib/utils";
 
 type Viewport = "desktop" | "mobile";
 
-export function AppPreview({ files }: { files: Record<string, string> }) {
+export function AppPreview({
+  files,
+  removeBadge = false,
+}: {
+  files: Record<string, string>;
+  /** Paid plans preview clean; free stays badged. */
+  removeBadge?: boolean;
+}) {
   const [viewport, setViewport] = useState<Viewport>("desktop");
   // Bumping this remounts the iframe, which is the simplest reliable reload.
   const [nonce, setNonce] = useState(0);
@@ -17,7 +24,10 @@ export function AppPreview({ files }: { files: Record<string, string> }) {
     process.env.NEXT_PUBLIC_APP_URL ||
     (typeof window !== "undefined" ? window.location.origin : "");
 
-  const result = useMemo(() => buildPreview(files, appUrl), [files, appUrl]);
+  const result = useMemo(
+    () => buildPreview(files, appUrl, !removeBadge),
+    [files, appUrl, removeBadge]
+  );
 
   if (result.kind === "unsupported") {
     return (

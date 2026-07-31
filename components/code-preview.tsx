@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import Link from "next/link";
 import Editor from "@monaco-editor/react";
 import { cn } from "@/lib/utils";
 import { downloadZip } from "@/lib/zip";
@@ -17,6 +18,7 @@ import {
   FileText,
   Folder,
   Loader2,
+  Lock,
 } from "lucide-react";
 
 function languageFor(path: string) {
@@ -153,10 +155,13 @@ export function CodePreview({
   files,
   appName = "app",
   streamingPaths,
+  removeBadge = false,
 }: {
   files: Record<string, string>;
   appName?: string;
   streamingPaths?: Set<string>;
+  /** Paid plans export clean; free stays badged. */
+  removeBadge?: boolean;
 }) {
   const paths = useMemo(() => Object.keys(files).sort(), [files]);
   const [active, setActive] = useState(paths[0] ?? "");
@@ -207,12 +212,25 @@ export function CodePreview({
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? "Copied" : "Copy file"}
           </Button>
-          <Button variant="secondary" size="sm" onClick={() => downloadZip(withWatermark(files), appName)}>
+          <Button
+            variant="secondary"
+            size="sm"
+            onClick={() => downloadZip(withWatermark(files, !removeBadge), appName)}
+          >
             <Download className="h-3.5 w-3.5" />
             Download ZIP
           </Button>
         </div>
       </div>
+      {!removeBadge && (
+        <div className="flex items-center gap-1.5 border-b border-border bg-muted/20 px-4 py-1.5 text-[11px] text-muted-foreground">
+          <Lock className="h-3 w-3 shrink-0" />
+          Exports include the Feather 123 badge.{" "}
+          <Link href="/billing" className="font-medium text-foreground hover:underline">
+            Upgrade to remove it
+          </Link>
+        </div>
+      )}
 
       <div className="grid h-[560px] grid-cols-1 sm:grid-cols-[240px_1fr]">
         <div className="overflow-y-auto border-b border-border bg-muted/20 py-1 sm:border-b-0 sm:border-r">
