@@ -1,7 +1,6 @@
 import { GoogleGenAI } from "@google/genai";
 import { MODEL_INFO, type ModelId } from "@/lib/types";
 import {
-  MAX_OUTPUT_TOKENS,
   SYSTEM_PROMPT,
   detectFiles,
   type ProviderResult,
@@ -40,6 +39,7 @@ const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
 export async function generateWithGemini(
   userContent: string,
   model: ModelId,
+  maxOutputTokens: number,
   onProgress?: ProgressFn,
   overrideKey?: string
 ): Promise<ProviderResult> {
@@ -51,7 +51,7 @@ export async function generateWithGemini(
     contents: userContent,
     config: {
       systemInstruction: SYSTEM_PROMPT,
-      maxOutputTokens: MAX_OUTPUT_TOKENS,
+      maxOutputTokens,
       // Gemini can hard-guarantee JSON output, so we don't have to rely on
       // the model honoring the "no markdown fences" instruction.
       responseMimeType: "application/json",

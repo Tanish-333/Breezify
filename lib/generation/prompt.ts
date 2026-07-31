@@ -1,3 +1,5 @@
+import type { PlanId } from "@/lib/types";
+
 export const SYSTEM_PROMPT = `You are an expert full-stack engineer. Generate a COMPLETE, PRODUCTION-READY application.
 
 REQUIREMENTS:
@@ -52,8 +54,13 @@ CHANGE REQUESTED: ${instruction}
 Apply the requested change. Return the COMPLETE updated file set in the same JSON shape as before, including files you did not modify and a fresh "suggestions" list. Delete a file by omitting it. Keep the app runnable. In "summary", describe what you changed in this update rather than what the app does overall.`;
 }
 
-/** Shared token budget for a full multi-file app. */
-export const MAX_OUTPUT_TOKENS = 16000;
+/**
+ * Token budget for a full multi-file app. Max gets real headroom for bigger
+ * generations; every other plan shares the same default budget.
+ */
+export function maxOutputTokensFor(plan: PlanId): number {
+  return plan === "max" ? 32000 : 16000;
+}
 
 export interface GenerationResult {
   appName: string;

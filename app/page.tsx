@@ -65,7 +65,7 @@ const FAQS = [
   },
   {
     q: "How is Feather 123 different from other app builders?",
-    a: "Feather 123 gives you full, inspectable source code for everything it generates. It's not a black box. You can open any file in the built-in editor, understand exactly what was built, and keep iterating.",
+    a: "Feather 123 gives you full, inspectable source code for everything it generates. It's not a black box. On the Plus plan and above, you can open any file in the built-in editor, understand exactly what was built, and export or push it to GitHub to keep iterating.",
   },
   {
     q: "What kind of apps can I build?",
@@ -73,7 +73,7 @@ const FAQS = [
   },
   {
     q: "Do I need to know how to code?",
-    a: "No. Just describe what you want. If you do know how to code, you get full access to the generated source and can keep building on top of it.",
+    a: "No. Just describe what you want. If you do know how to code, upgrading to Plus or above gives you full access to the generated source, so you can keep building on top of it.",
   },
   {
     q: "How does pricing work?",

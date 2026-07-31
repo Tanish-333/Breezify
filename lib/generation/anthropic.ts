@@ -1,7 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { MODEL_INFO, type ModelId } from "@/lib/types";
 import {
-  MAX_OUTPUT_TOKENS,
   SYSTEM_PROMPT,
   detectFiles,
   type ProviderResult,
@@ -35,6 +34,7 @@ const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
 export async function generateWithAnthropic(
   userContent: string,
   model: ModelId,
+  maxOutputTokens: number,
   onProgress?: ProgressFn,
   overrideKey?: string
 ): Promise<ProviderResult> {
@@ -43,7 +43,7 @@ export async function generateWithAnthropic(
 
   const stream = anthropic.messages.stream({
     model: apiModel,
-    max_tokens: MAX_OUTPUT_TOKENS,
+    max_tokens: maxOutputTokens,
     system: SYSTEM_PROMPT,
     messages: [{ role: "user", content: userContent }],
   });

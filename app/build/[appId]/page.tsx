@@ -380,7 +380,7 @@ function AppWorkspace() {
               <AppPreview files={files} removeBadge={plan !== "free"} />
             ) : (
               <div className="h-full overflow-auto p-4">
-                <CodePreview files={files} appName={app.name} canExport={plan !== "free"} />
+                <CodePreview files={files} appName={app.name} locked={plan === "free"} />
               </div>
             )
           ) : null}
