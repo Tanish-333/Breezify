@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { doc, updateDoc } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { CodePreview } from "@/components/code-preview";
@@ -30,6 +30,7 @@ import {
   ExternalLink,
   Loader2,
   Pencil,
+  Rocket,
   X,
 } from "lucide-react";
 
@@ -50,6 +51,8 @@ function AppWorkspace() {
   const [progress, setProgress] = useState({ chars: 0, files: [] as string[] });
   const [error, setError] = useState("");
   const [showGithub, setShowGithub] = useState(false);
+  const [deploying, setDeploying] = useState(false);
+  const [deployError, setDeployError] = useState("");
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [pane, setPane] = useState<Pane>("preview");
@@ -135,6 +138,29 @@ function AppWorkspace() {
     setRenaming(false);
   }
 
+  async function deployApp() {
+    setDeployError("");
+    setDeploying(true);
+    try {
+      const user = auth.currentUser;
+      if (!user) throw new Error("You must be signed in.");
+      const idToken = await user.getIdToken();
+      const res = await fetch("/api/deploy", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+        body: JSON.stringify({ appId: app!.id }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Deploy failed.");
+      // Firestore's onSnapshot in useApp() picks up the new deployedUrl/status
+      // as soon as the server writes them; nothing else to do here.
+    } catch (err) {
+      setDeployError(err instanceof Error ? err.message : "Deploy failed.");
+    } finally {
+      setDeploying(false);
+    }
+  }
+
   return (
     <div className="-mx-5 -my-8 flex h-[calc(100vh-3.5rem)] flex-col md:-mx-10 md:-my-10 md:h-screen">
       {/* Workspace header */}
@@ -185,6 +211,27 @@ function AppWorkspace() {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          {hasFiles && app.deployedUrl && (
+            <a href={app.deployedUrl} target="_blank" rel="noreferrer">
+              <Button variant="ghost" size="sm">
+                <Rocket className="h-4 w-4" />
+                <span className="hidden sm:inline">Live</span>
+                <ExternalLink className="h-3 w-3" />
+              </Button>
+            </a>
+          )}
+
+          {hasFiles && (
+            <Button
+              size="sm"
+              onClick={deployApp}
+              loading={deploying || app.status === "deploying"}
+            >
+              {!(deploying || app.status === "deploying") && <Rocket className="h-4 w-4" />}
+              <span className="hidden sm:inline">{app.deployedUrl ? "Redeploy" : "Deploy"}</span>
+            </Button>
+          )}
+
           {hasFiles &&
             (app.githubUrl ? (
               <a href={app.githubUrl} target="_blank" rel="noreferrer">
@@ -261,6 +308,13 @@ function AppWorkspace() {
               <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{error}</span>
+              </div>
+            )}
+
+            {deployError && (
+              <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{deployError}</span>
               </div>
             )}
           </div>
