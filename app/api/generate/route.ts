@@ -88,7 +88,8 @@ export async function POST(req: NextRequest) {
   let userDoc;
   try {
     userDoc = await getDoc(userPath, idToken);
-  } catch {
+  } catch (err) {
+    console.error(`[generate] Failed to load ${userPath}:`, err);
     return errorStream("Couldn't load your account. Please try again.");
   }
   if (!userDoc) return errorStream("User account not found.");
@@ -121,7 +122,8 @@ export async function POST(req: NextRequest) {
     let doc;
     try {
       doc = await getDoc(`apps/${refineAppId}`, idToken);
-    } catch {
+    } catch (err) {
+      console.error(`[generate] Failed to load apps/${refineAppId}:`, err);
       return errorStream("Couldn't load that app. Please try again.");
     }
     if (!doc) return errorStream("App not found.");

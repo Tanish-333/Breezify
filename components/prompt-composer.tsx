@@ -377,6 +377,11 @@ export function PromptComposer({
       {(attachError || micError) && (
         <p className="mt-2 text-xs text-warning">{attachError || micError}</p>
       )}
+      {!attachError && !micError && value.trim().length > 0 && value.trim().length < 5 && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          Add a bit more detail ({value.trim().length}/5 characters minimum).
+        </p>
+      )}
       {listening && (
         <p className="mt-2 flex items-center gap-1.5 text-xs text-muted-foreground">
           <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-error" />
