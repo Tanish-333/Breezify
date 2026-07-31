@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import { useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { auth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { useTransactions } from "@/lib/use-transactions";
 import { formatCredits, formatDate, cn } from "@/lib/utils";
@@ -14,14 +17,56 @@ import {
   PLAN_RANK,
   type PlanId,
 } from "@/lib/types";
-import { Check, Loader2, Receipt, TrendingDown } from "lucide-react";
+import { AlertCircle, Check, CheckCircle2, Loader2, Receipt, TrendingDown } from "lucide-react";
 
 function BillingContent() {
   const { user, profile } = useAuth();
   const { transactions, loading } = useTransactions(user?.uid);
+  const searchParams = useSearchParams();
   const plan: PlanId = profile?.plan ?? "free";
 
+  const [checkoutPlan, setCheckoutPlan] = useState<PlanId | null>(null);
+  const [portalLoading, setPortalLoading] = useState(false);
+  const [billingError, setBillingError] = useState("");
+  const checkoutResult = searchParams.get("checkout");
+
   const creditsUsed = transactions.reduce((sum, t) => sum + (t.creditsUsed ?? 0), 0);
+
+  async function authedFetch(path: string, body?: unknown) {
+    const idToken = await auth.currentUser?.getIdToken();
+    const res = await fetch(path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+      body: JSON.stringify(body ?? {}),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Something went wrong.");
+    return data;
+  }
+
+  async function startCheckout(targetPlan: PlanId) {
+    setBillingError("");
+    setCheckoutPlan(targetPlan);
+    try {
+      const { url } = await authedFetch("/api/create-checkout-session", { plan: targetPlan });
+      window.location.href = url;
+    } catch (err) {
+      setBillingError(err instanceof Error ? err.message : "Couldn't start checkout.");
+      setCheckoutPlan(null);
+    }
+  }
+
+  async function openPortal() {
+    setBillingError("");
+    setPortalLoading(true);
+    try {
+      const { url } = await authedFetch("/api/stripe/portal");
+      window.location.href = url;
+    } catch (err) {
+      setBillingError(err instanceof Error ? err.message : "Couldn't open the billing portal.");
+      setPortalLoading(false);
+    }
+  }
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
@@ -31,6 +76,19 @@ function BillingContent() {
           Manage your plan, credits, and usage history.
         </p>
       </div>
+
+      {checkoutResult === "success" && (
+        <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-success">
+          <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>Payment complete. Your plan updates as soon as Stripe confirms it, usually within seconds.</span>
+        </div>
+      )}
+      {billingError && (
+        <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{billingError}</span>
+        </div>
+      )}
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
         <Card>
@@ -52,13 +110,16 @@ function BillingContent() {
           </CardContent>
         </Card>
         <Card>
-          <CardContent className="p-5">
+          <CardContent className="flex flex-col justify-center gap-2 p-5">
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               Credits spent
             </p>
-            <p className="mt-2 text-3xl font-semibold tracking-tight">
-              {creditsUsed.toFixed(2)}
-            </p>
+            <p className="text-3xl font-semibold tracking-tight">{creditsUsed.toFixed(2)}</p>
+            {plan !== "free" && (
+              <Button size="sm" variant="secondary" onClick={openPortal} loading={portalLoading}>
+                Manage billing
+              </Button>
+            )}
           </CardContent>
         </Card>
       </div>
@@ -69,7 +130,7 @@ function BillingContent() {
           {PLAN_IDS.map((id) => {
             const p = PLANS[id];
             const isCurrent = id === plan;
-            const isDowngrade = PLAN_RANK[id] < PLAN_RANK[plan];
+            const isUpgrade = PLAN_RANK[id] > PLAN_RANK[plan];
             return (
               <Card
                 key={id}
@@ -99,24 +160,36 @@ function BillingContent() {
                       </li>
                     ))}
                   </ul>
-                  <Button
-                    className="mt-5 w-full"
-                    size="sm"
-                    variant={isCurrent ? "ghost" : isDowngrade ? "ghost" : "primary"}
-                    disabled
-                    title="Payments aren't connected yet"
-                  >
-                    {isCurrent ? "Current plan" : isDowngrade ? "Downgrade" : "Upgrade"}
-                  </Button>
+                  {isCurrent ? (
+                    <Button className="mt-5 w-full" size="sm" variant="ghost" disabled>
+                      Current plan
+                    </Button>
+                  ) : isUpgrade ? (
+                    <Button
+                      className="mt-5 w-full"
+                      size="sm"
+                      onClick={() => startCheckout(id)}
+                      loading={checkoutPlan === id}
+                      disabled={checkoutPlan !== null}
+                    >
+                      {id === "free" ? "Start free" : "Upgrade"}
+                    </Button>
+                  ) : (
+                    <Button
+                      className="mt-5 w-full"
+                      size="sm"
+                      variant="ghost"
+                      onClick={openPortal}
+                      loading={portalLoading}
+                    >
+                      Downgrade
+                    </Button>
+                  )}
                 </CardContent>
               </Card>
             );
           })}
         </div>
-        <p className="mt-3 text-xs text-muted-foreground">
-          Checkout isn&apos;t connected yet, so plan changes are disabled. Your plan is read from
-          your account and already controls which models you can use.
-        </p>
       </div>
 
       <Card>

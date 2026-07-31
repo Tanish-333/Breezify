@@ -99,6 +99,10 @@ export const PLAN_RANK: Record<PlanId, number> = {
   max: 3,
 };
 
+export function isPlanId(v: unknown): v is PlanId {
+  return typeof v === "string" && v in PLAN_RANK;
+}
+
 export const PLANS: Record<PlanId, PlanInfo> = {
   free: {
     id: "free",
