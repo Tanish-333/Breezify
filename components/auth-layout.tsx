@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Logo } from "@/components/logo";
+import { ThemeToggle } from "@/components/theme-toggle";
 
 export function AuthLayout({
   title,
@@ -13,7 +14,8 @@ export function AuthLayout({
   footer?: React.ReactNode;
 }) {
   return (
-    <div className="dot-grid flex min-h-screen flex-col items-center justify-center px-4 py-12">
+    <div className="dot-grid relative flex min-h-screen flex-col items-center justify-center px-4 py-12">
+      <ThemeToggle className="absolute right-4 top-4" />
       <Link href="/" className="mb-8">
         <Logo className="text-lg" />
       </Link>

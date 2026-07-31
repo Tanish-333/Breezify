@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { Logo, FeatherMark } from "@/components/logo";
 import { CommandPalette } from "@/components/command-palette";
 import { AccountMenu } from "@/components/account-menu";
+import { ThemeToggle } from "@/components/theme-toggle";
 import { useAuth } from "@/lib/auth-context";
 import { useUserApps } from "@/lib/use-apps";
 import { cn } from "@/lib/utils";
@@ -112,13 +113,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {collapsed ? <FeatherMark className="h-5 w-5" /> : <Logo />}
           </Link>
           {!collapsed && (
-            <button
-              onClick={toggleCollapsed}
-              className="ml-auto flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              title="Collapse sidebar"
-            >
-              <PanelLeft className="h-4 w-4" />
-            </button>
+            <div className="ml-auto flex items-center gap-0.5">
+              <ThemeToggle className="h-7 w-7" />
+              <button
+                onClick={toggleCollapsed}
+                className="flex h-7 w-7 items-center justify-center rounded text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                title="Collapse sidebar"
+              >
+                <PanelLeft className="h-4 w-4" />
+              </button>
+            </div>
           )}
         </div>
 
@@ -233,6 +237,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Logo />
           </Link>
           <div className="flex items-center gap-1">
+            <ThemeToggle />
             <button
               onClick={() => setPaletteOpen(true)}
               className="flex h-9 w-9 items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
