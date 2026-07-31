@@ -12,7 +12,9 @@ const JWKS = createRemoteJWKSet(
   new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com")
 );
 
-export async function verifyIdToken(idToken: string): Promise<{ uid: string; email?: string }> {
+export async function verifyIdToken(
+  idToken: string
+): Promise<{ uid: string; email?: string; emailVerified: boolean }> {
   const { payload } = await jwtVerify(idToken, JWKS, {
     issuer: `https://securetoken.google.com/${PROJECT_ID}`,
     audience: PROJECT_ID,
@@ -22,5 +24,9 @@ export async function verifyIdToken(idToken: string): Promise<{ uid: string; ema
     throw new Error("Invalid token: missing subject.");
   }
 
-  return { uid: payload.sub, email: typeof payload.email === "string" ? payload.email : undefined };
+  return {
+    uid: payload.sub,
+    email: typeof payload.email === "string" ? payload.email : undefined,
+    emailVerified: payload.email_verified === true,
+  };
 }

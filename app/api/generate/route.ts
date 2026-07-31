@@ -6,6 +6,7 @@ import { generateApp, isModelAvailable, refineApp } from "@/lib/generation";
 import {
   MODEL_INFO,
   PLANS,
+  PROMPT_CHAR_LIMIT,
   isModelId,
   planAllowsModel,
   requiredPlanFor,
@@ -46,8 +47,11 @@ export async function POST(req: NextRequest) {
   if (!idToken) return errorStream("Missing authorization token.");
 
   let uid: string;
+  let emailVerified: boolean;
   try {
-    uid = (await verifyIdToken(idToken)).uid;
+    const verified = await verifyIdToken(idToken);
+    uid = verified.uid;
+    emailVerified = verified.emailVerified;
   } catch {
     return errorStream("Your session has expired. Please sign in again.");
   }
@@ -69,6 +73,13 @@ export async function POST(req: NextRequest) {
   // both plan gating and credit deduction.
   const overrideKey =
     typeof body?.apiKey === "string" && body.apiKey.trim() ? body.apiKey.trim() : undefined;
+
+  // Unverified accounts cost nothing to create, so they're the cheapest way
+  // to farm free signup credit against our own key. A user bringing their
+  // own key isn't spending ours, so this doesn't apply to them.
+  if (!overrideKey && !emailVerified) {
+    return errorStream("Please verify your email before generating apps. Check your inbox for the link.");
+  }
 
   if (!prompt || prompt.length < 5) {
     return errorStream(
@@ -95,6 +106,18 @@ export async function POST(req: NextRequest) {
   if (!userDoc) return errorStream("User account not found.");
 
   const plan = (userDoc.fields.plan as PlanId) ?? "free";
+
+  // Caps how much text (including any attached file context the client
+  // appended) can be sent per request. Scales with plan so a free account
+  // can't submit a huge prompt against our own key; a bring-your-own-key
+  // request pays its own bill, so it isn't capped here.
+  const charLimit = PROMPT_CHAR_LIMIT[plan];
+  if (!overrideKey && prompt.length > charLimit) {
+    return errorStream(
+      `${PLANS[plan]?.name ?? "Free"} plan prompts are limited to ${charLimit.toLocaleString()} characters (this one is ${prompt.length.toLocaleString()}). Upgrade for a higher limit, or trim it down.`
+    );
+  }
+
   if (!overrideKey && !planAllowsModel(plan, model)) {
     const needed = requiredPlanFor(model);
     return errorStream(

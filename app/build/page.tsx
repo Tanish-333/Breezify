@@ -13,7 +13,15 @@ import { Textarea } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
 import { fetchModelAvailability, generateAppRequest, type GenerateResult } from "@/lib/api-client";
 import { takePendingPrompt } from "@/lib/pending-prompt";
-import { MODEL_INFO, planAllowsModel, type ModelId, type PlanId } from "@/lib/types";
+import {
+  MODEL_INFO,
+  PLANS,
+  PROMPT_CHAR_LIMIT,
+  planAllowsModel,
+  type ModelId,
+  type PlanId,
+} from "@/lib/types";
+import { cn } from "@/lib/utils";
 import { AlertCircle, ArrowRight, Wand2, X } from "lucide-react";
 
 const STARTERS = [
@@ -52,11 +60,17 @@ function BuildContent() {
 
   const cost = MODEL_INFO[model].credits;
   const insufficientCredits = profile !== null && profile.credits < cost;
-  const canSubmit = prompt.trim().length >= 5 && !insufficientCredits;
+  const charLimit = PROMPT_CHAR_LIMIT[plan];
+  const overLimit = prompt.trim().length > charLimit;
+  const canSubmit = prompt.trim().length >= 5 && !overLimit && !insufficientCredits;
 
   async function handleGenerate() {
     if (prompt.trim().length < 5) {
       setError("Describe your app in a bit more detail.");
+      return;
+    }
+    if (overLimit) {
+      setError(`${PLANS[plan]?.name ?? "Free"} plan prompts are limited to ${charLimit.toLocaleString()} characters.`);
       return;
     }
     setError("");
@@ -111,11 +125,11 @@ function BuildContent() {
             <label htmlFor="prompt" className="text-sm font-medium">
               What do you want to build?
             </label>
-            <span className="text-xs text-muted-foreground">
+            <span className={cn("text-xs", overLimit ? "text-warning" : "text-muted-foreground")}>
               {prompt.trim().length > 0 &&
                 (prompt.trim().length < 5
                   ? `${prompt.trim().length}/5 characters minimum`
-                  : `${prompt.trim().length} characters`)}
+                  : `${prompt.trim().length.toLocaleString()} / ${charLimit.toLocaleString()} characters`)}
             </span>
           </div>
           <Textarea
@@ -129,10 +143,20 @@ function BuildContent() {
                 handleGenerate();
               }
             }}
+            maxLength={charLimit}
             placeholder="A habit tracker with daily streaks, a calendar view, and charts of progress over time..."
             disabled={loading}
             className="text-base"
           />
+          {overLimit && (
+            <p className="mt-1.5 text-xs text-warning">
+              {PLANS[plan]?.name ?? "Free"} plan prompts are limited to{" "}
+              {charLimit.toLocaleString()} characters.{" "}
+              <Link href="/billing" className="font-medium underline">
+                Upgrade for more room
+              </Link>
+            </p>
+          )}
           {!loading && (
             <div className="mt-3 flex flex-wrap gap-2">
               {STARTERS.map((s) => (

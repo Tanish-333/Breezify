@@ -160,6 +160,18 @@ export const PLANS: Record<PlanId, PlanInfo> = {
 
 export const PLAN_IDS = Object.keys(PLANS) as PlanId[];
 
+/**
+ * Max characters allowed in a single generate/refine prompt, including any
+ * attached-file context the client appends. Scales with plan so a free
+ * account can't submit a huge prompt against the platform's own API key.
+ */
+export const PROMPT_CHAR_LIMIT: Record<PlanId, number> = {
+  free: 500,
+  plus: 2000,
+  pro: 5000,
+  max: 10000,
+};
+
 export function planAllowsModel(plan: PlanId, model: ModelId): boolean {
   return PLAN_RANK[plan] >= PLAN_RANK[MODEL_INFO[model].minPlan];
 }
