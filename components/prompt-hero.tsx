@@ -5,7 +5,11 @@ import { useRouter } from "next/navigation";
 import { ArrowUp, Loader2, Paperclip } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { setPendingPrompt } from "@/lib/pending-prompt";
+import { PROMPT_CHAR_LIMIT } from "@/lib/types";
 import { cn } from "@/lib/utils";
+
+// Not signed in yet, so this is what a fresh signup gets.
+const CHAR_LIMIT = PROMPT_CHAR_LIMIT.free;
 
 const SUGGESTIONS = [
   "A habit tracker with streaks and a calendar view",
@@ -20,9 +24,11 @@ export function PromptHero() {
   const [prompt, setPrompt] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  const overLimit = prompt.trim().length > CHAR_LIMIT;
+
   function handleSubmit() {
     const trimmed = prompt.trim();
-    if (trimmed.length < 5) return;
+    if (trimmed.length < 5 || trimmed.length > CHAR_LIMIT) return;
     setSubmitting(true);
     setPendingPrompt(trimmed);
     router.push(user ? "/build" : "/signup");
@@ -45,6 +51,7 @@ export function PromptHero() {
             }
           }}
           rows={3}
+          maxLength={CHAR_LIMIT}
           placeholder="Describe the app you want to build..."
           className="w-full resize-none bg-transparent px-2 pt-1 text-base placeholder:text-muted-foreground focus:outline-none"
         />
@@ -55,7 +62,7 @@ export function PromptHero() {
           </div>
           <button
             onClick={handleSubmit}
-            disabled={prompt.trim().length < 5 || submitting}
+            disabled={prompt.trim().length < 5 || overLimit || submitting}
             className="flex h-9 w-9 items-center justify-center rounded-lg bg-foreground text-background transition-opacity hover:opacity-85 disabled:opacity-30"
             aria-label="Generate app"
           >
@@ -66,6 +73,12 @@ export function PromptHero() {
       {prompt.trim().length > 0 && prompt.trim().length < 5 && (
         <p className="mt-2 text-center text-xs text-muted-foreground">
           Add a bit more detail ({prompt.trim().length}/5 characters minimum).
+        </p>
+      )}
+      {overLimit && (
+        <p className="mt-2 text-center text-xs text-warning">
+          {prompt.trim().length.toLocaleString()} / {CHAR_LIMIT.toLocaleString()} characters —
+          free accounts start with a {CHAR_LIMIT.toLocaleString()}-character limit per prompt.
         </p>
       )}
       <div className="mt-4 flex flex-wrap items-center justify-center gap-2">

@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import {
   MODEL_IDS,
   MODEL_INFO,
+  PROMPT_CHAR_LIMIT,
   planAllowsModel,
   requiredPlanFor,
   type ModelId,
@@ -34,7 +35,10 @@ interface Attachment {
 /** Text-ish files we can meaningfully inline into a prompt. */
 const TEXT_EXT =
   /\.(txt|md|markdown|json|ya?ml|csv|tsv|ts|tsx|js|jsx|css|scss|html|py|rb|go|rs|java|sql|sh|env|toml|ini|xml)$/i;
-const MAX_ATTACH_CHARS = 20000;
+
+function attachmentContext(attachments: Attachment[]) {
+  return attachments.map((a) => `\n\n--- Attached file: ${a.name} ---\n${a.content}`).join("");
+}
 
 export function PromptComposer({
   value,
@@ -78,8 +82,13 @@ export function PromptComposer({
 
   const info = MODEL_INFO[model];
   const usingOwnKey = ownKeyFor[info.provider] === true;
+  // Your own key means your own bill, so the plan's character cap doesn't apply.
+  const charLimit = usingOwnKey ? Infinity : PROMPT_CHAR_LIMIT[plan];
+  const composedLength = value.trim().length + attachmentContext(attachments).length;
+  const overLimit = composedLength > charLimit;
   // A missing balance shouldn't block you when you're paying your own bill.
-  const canSubmit = value.trim().length >= 5 && !loading && (!disabled || usingOwnKey);
+  const canSubmit =
+    value.trim().length >= 5 && !overLimit && !loading && (!disabled || usingOwnKey);
 
   // Feature-detect only. Constructing a recognizer does not prompt for the
   // microphone; permission is requested when start() runs on click.
@@ -167,19 +176,27 @@ export function PromptComposer({
     if (!fileList?.length) return;
     setAttachError("");
     const next: Attachment[] = [];
+    // Attachments share the same per-plan character budget as the prompt
+    // itself, so a large file can't be used to route around the cap.
+    let budget = charLimit - value.trim().length - attachmentContext(attachments).length;
     for (const file of Array.from(fileList)) {
       if (!TEXT_EXT.test(file.name)) {
         setAttachError(`${file.name} isn't a text file, so it can't be attached.`);
         continue;
       }
+      if (budget <= 0) {
+        setAttachError(
+          Number.isFinite(charLimit)
+            ? "You've reached your plan's character limit. Upgrade for more room, or remove an attachment."
+            : `${file.name} wasn't attached.`
+        );
+        continue;
+      }
       const text = await file.text();
-      next.push({
-        name: file.name,
-        content:
-          text.length > MAX_ATTACH_CHARS
-            ? `${text.slice(0, MAX_ATTACH_CHARS)}\n...[truncated]`
-            : text,
-      });
+      const truncated = text.length > budget;
+      const content = truncated ? `${text.slice(0, budget)}\n...[truncated]` : text;
+      next.push({ name: file.name, content });
+      budget -= content.length;
     }
     if (next.length) setAttachments((prev) => [...prev, ...next]);
     if (fileRef.current) fileRef.current.value = "";
@@ -189,10 +206,7 @@ export function PromptComposer({
     if (!canSubmit) return;
     if (listening) recognitionRef.current?.stop();
 
-    const context = attachments
-      .map((a) => `\n\n--- Attached file: ${a.name} ---\n${a.content}`)
-      .join("");
-    onSubmit(value.trim() + context);
+    onSubmit(value.trim() + attachmentContext(attachments));
     setAttachments([]);
   }
 
@@ -380,6 +394,20 @@ export function PromptComposer({
       {!attachError && !micError && value.trim().length > 0 && value.trim().length < 5 && (
         <p className="mt-2 text-xs text-muted-foreground">
           Add a bit more detail ({value.trim().length}/5 characters minimum).
+        </p>
+      )}
+      {!attachError && !micError && overLimit && (
+        <p className="mt-2 text-xs text-warning">
+          {composedLength.toLocaleString()} / {charLimit.toLocaleString()} characters — over your
+          plan's limit.{" "}
+          <Link href="/billing" className="font-medium underline">
+            Upgrade for more room
+          </Link>
+        </p>
+      )}
+      {!attachError && !micError && !overLimit && Number.isFinite(charLimit) && composedLength > charLimit * 0.7 && (
+        <p className="mt-2 text-xs text-muted-foreground">
+          {composedLength.toLocaleString()} / {charLimit.toLocaleString()} characters
         </p>
       )}
       {listening && (
