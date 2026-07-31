@@ -112,7 +112,10 @@ function BuildContent() {
               What do you want to build?
             </label>
             <span className="text-xs text-muted-foreground">
-              {prompt.trim().length > 0 && `${prompt.trim().length} characters`}
+              {prompt.trim().length > 0 &&
+                (prompt.trim().length < 5
+                  ? `${prompt.trim().length}/5 characters minimum`
+                  : `${prompt.trim().length} characters`)}
             </span>
           </div>
           <Textarea

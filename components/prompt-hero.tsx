@@ -63,6 +63,11 @@ export function PromptHero() {
           </button>
         </div>
       </div>
+      {prompt.trim().length > 0 && prompt.trim().length < 5 && (
+        <p className="mt-2 text-center text-xs text-muted-foreground">
+          Add a bit more detail ({prompt.trim().length}/5 characters minimum).
+        </p>
+      )}
       <div className="mt-4 flex flex-wrap items-center justify-center gap-2">
         {SUGGESTIONS.map((s) => (
           <button
