@@ -10,7 +10,7 @@ import {
   ArrowRight,
   Wand2,
   Rocket,
-  BarChart3,
+  Monitor,
   ShieldCheck,
   Code2,
   Gauge,
@@ -41,9 +41,9 @@ const FEATURES = [
     body: "Export any generated app straight to a repo and keep iterating in your own editor.",
   },
   {
-    icon: BarChart3,
-    title: "Built-in analytics",
-    body: "Track visits, errors, and load time for every app you ship, right from your dashboard.",
+    icon: Monitor,
+    title: "Live preview, instantly",
+    body: "See your app running in a sandboxed preview the moment it's generated, desktop or mobile, no build step required.",
   },
   {
     icon: Gauge,
@@ -81,7 +81,7 @@ const FAQS = [
   },
   {
     q: "Can I use my own domain?",
-    a: "Every generated app deploys to a free *.vercel.app URL out of the box. Once you own a domain, you can point it at any app with no code changes required.",
+    a: "Every generated app deploys to a free *.vercel.app URL out of the box. Custom domains aren't managed from inside Feather 123 yet, but every deploy is a real Vercel project, so you can attach one directly from your Vercel dashboard.",
   },
 ];
 
