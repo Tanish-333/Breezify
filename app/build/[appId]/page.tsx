@@ -314,10 +314,10 @@ function AppWorkspace() {
             </div>
           ) : hasFiles ? (
             pane === "preview" ? (
-              <AppPreview files={files} />
+              <AppPreview files={files} removeBadge={plan !== "free"} />
             ) : (
               <div className="h-full overflow-auto p-4">
-                <CodePreview files={files} appName={app.name} />
+                <CodePreview files={files} appName={app.name} removeBadge={plan !== "free"} />
               </div>
             )
           ) : null}
@@ -328,6 +328,7 @@ function AppWorkspace() {
         <GithubPushDialog
           appId={app.id}
           defaultName={app.name}
+          removeBadge={plan !== "free"}
           onClose={() => setShowGithub(false)}
           onPushed={() => {}}
         />

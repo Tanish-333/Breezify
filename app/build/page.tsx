@@ -233,7 +233,7 @@ function BuildContent() {
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </div>
-            <CodePreview files={result.files} appName={result.appName} />
+            <CodePreview files={result.files} appName={result.appName} removeBadge={plan !== "free"} />
           </div>
         )}
       </div>

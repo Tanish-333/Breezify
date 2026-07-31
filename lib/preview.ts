@@ -66,7 +66,8 @@ function collectCss(files: Record<string, string>) {
 
 export function buildPreview(
   files: Record<string, string>,
-  appUrl: string
+  appUrl: string,
+  showBadge: boolean = true
 ): PreviewResult {
   const htmlEntry = findHtmlEntry(files);
 
@@ -77,10 +78,12 @@ export function buildPreview(
     if (css && doc.includes("</head>")) {
       doc = doc.replace("</head>", `<style>${css}</style></head>`);
     }
-    const badge = watermarkSnippet(appUrl);
-    doc = doc.includes("</body>")
-      ? doc.replace("</body>", `${badge}</body>`)
-      : `${doc}${badge}`;
+    if (showBadge) {
+      const badge = watermarkSnippet(appUrl);
+      doc = doc.includes("</body>")
+        ? doc.replace("</body>", `${badge}</body>`)
+        : `${doc}${badge}`;
+    }
     return { kind: "html", doc };
   }
 
@@ -110,7 +113,7 @@ export function buildPreview(
   }
 
   const css = collectCss(files);
-  const badge = watermarkSnippet(appUrl);
+  const badge = showBadge ? watermarkSnippet(appUrl) : "";
 
   // The loader below runs inside the iframe. It transpiles each module on
   // demand, rewrites relative imports to blob URLs, and caches by path.
@@ -180,7 +183,10 @@ function toBlobUrl(path) {
   let code;
   try {
     code = Babel.transform(source, {
-      presets: [["typescript", { isTSX: true, allExtensions: true }], "react"],
+      presets: [
+        ["typescript", { isTSX: true, allExtensions: true }],
+        ["react", { runtime: "automatic" }],
+      ],
       filename: path,
     }).code;
   } catch (e) {

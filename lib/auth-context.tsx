@@ -9,7 +9,10 @@ import {
 } from "react";
 import {
   createUserWithEmailAndPassword,
+  GithubAuthProvider,
+  linkWithPopup,
   onAuthStateChanged,
+  reauthenticateWithPopup,
   sendEmailVerification,
   sendPasswordResetEmail,
   signInWithEmailAndPassword,
@@ -30,8 +33,10 @@ import {
   db,
   googleProvider,
   githubProvider,
+  githubRepoProvider,
   appleProvider,
 } from "@/lib/firebase";
+import { setGithubToken } from "@/lib/github-connect";
 import type { FeatherUser } from "@/lib/types";
 
 const SIGNUP_BONUS_CREDITS = 5.0;
@@ -45,6 +50,7 @@ interface AuthContextValue {
   signInWithGoogle: () => Promise<void>;
   signInWithGithub: () => Promise<void>;
   signInWithApple: () => Promise<void>;
+  connectGithub: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
   deleteAccount: () => Promise<void>;
@@ -166,6 +172,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await loadProfile(cred.user);
   }
 
+  /**
+   * Authorizes GitHub with repo access and stores the resulting OAuth token
+   * (see lib/github-connect.ts) so pushing a generated app never needs a
+   * manually pasted personal access token. Linking works when the account's
+   * primary sign-in isn't already GitHub; when it is, GitHub is re-consented
+   * via reauthentication instead, since you can't link a provider to itself.
+   */
+  async function connectGithub(): Promise<void> {
+    if (!auth.currentUser) throw new Error("You must be signed in.");
+    let result;
+    try {
+      result = await linkWithPopup(auth.currentUser, githubRepoProvider);
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      if (code === "auth/credential-already-in-use" || code === "auth/provider-already-linked") {
+        result = await reauthenticateWithPopup(auth.currentUser, githubRepoProvider);
+      } else {
+        throw err;
+      }
+    }
+    const credential = GithubAuthProvider.credentialFromResult(result);
+    if (!credential?.accessToken) {
+      throw new Error("GitHub didn't return an access token. Please try again.");
+    }
+    setGithubToken(credential.accessToken);
+  }
+
   async function resetPassword(email: string) {
     await sendPasswordResetEmail(auth, email);
   }
@@ -202,6 +235,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signInWithGoogle: () => oauthSignIn(googleProvider),
     signInWithGithub: () => oauthSignIn(githubProvider),
     signInWithApple: () => oauthSignIn(appleProvider),
+    connectGithub,
     resetPassword,
     changePassword,
     deleteAccount,
