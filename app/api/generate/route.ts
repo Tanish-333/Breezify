@@ -216,6 +216,7 @@ export async function POST(req: NextRequest) {
                 model,
                 status: "generating",
                 createdAt,
+                visits: 0,
               }),
             ],
             idToken

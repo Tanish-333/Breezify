@@ -32,6 +32,7 @@ import { GithubIcon } from "@/components/oauth-icons";
 import {
   AlertCircle,
   ArrowLeft,
+  BarChart3,
   Check,
   Code2,
   Copy,
@@ -249,6 +250,15 @@ function AppWorkspace() {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
+          {app.deployedUrl && PLAN_RANK[plan] >= PLAN_RANK.pro && (
+            <span
+              title="Page loads on the deployed app"
+              className="flex items-center gap-1 rounded-full border border-border px-2 py-1 text-xs text-muted-foreground"
+            >
+              <BarChart3 className="h-3 w-3" />
+              {app.visits ?? 0}
+            </span>
+          )}
           {hasFiles && app.deployedUrl && (
             <a href={app.deployedUrl} target="_blank" rel="noreferrer">
               <Button variant="ghost" size="sm">

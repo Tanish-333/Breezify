@@ -52,6 +52,7 @@ function toApp(id: string, data: any): FeatherApp {
     githubUrl: data.githubUrl,
     subdomain: data.subdomain,
     errorMessage: data.errorMessage,
+    visits: typeof data.visits === "number" ? data.visits : undefined,
     createdAt: toMillis(data.createdAt) ?? Date.now(),
     deployedAt: toMillis(data.deployedAt),
   };
@@ -108,6 +109,7 @@ export async function duplicateApp(app: FeatherApp, uid: string): Promise<string
     turns: [],
     generatedCode: app.generatedCode ?? { files: {} },
     createdAt: serverTimestamp(),
+    visits: 0,
   });
   return ref.id;
 }
