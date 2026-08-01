@@ -17,8 +17,8 @@ interface Row {
 }
 
 const MODELS: Record<PlanId, string> = {
-  free: "Haiku 4.5",
-  plus: "+ Sonnet 4.5, Gemini Flash",
+  free: "Haiku 4.5, Llama 3.1 8B",
+  plus: "+ Sonnet 4.5, Gemini Flash, Llama 3.3 70B",
   pro: "+ Opus 5, Gemini Pro",
   max: "Every model",
 };

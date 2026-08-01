@@ -33,7 +33,8 @@ export async function generateWithGemini(
   userContent: string,
   model: ModelId,
   maxOutputTokens: number,
-  onProgress?: ProgressFn
+  onProgress?: ProgressFn,
+  signal?: AbortSignal
 ): Promise<ProviderResult> {
   const ai = getClient();
   const apiModel = MODEL_INFO[model].apiModel;
@@ -47,6 +48,7 @@ export async function generateWithGemini(
       // Gemini can hard-guarantee JSON output, so we don't have to rely on
       // the model honoring the "no markdown fences" instruction.
       responseMimeType: "application/json",
+      abortSignal: signal,
     },
   });
 

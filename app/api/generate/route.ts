@@ -178,6 +178,8 @@ export async function POST(req: NextRequest) {
         if (!existing && !clarified) {
           send({ type: "status", message: "Reviewing your request" });
           const clarity = await checkClarity(prompt);
+          // Don't charge for a question nobody is around to answer.
+          if (req.signal.aborted) return;
           if (clarity.needsClarification) {
             // Charge a small flat fee for asking rather than the full model
             // cost, since no generation actually ran. 0.5 is always covered:
@@ -235,8 +237,8 @@ export async function POST(req: NextRequest) {
         };
 
         const result = existing
-          ? await refineApp(existing.prompt, existing.files, prompt, model, plan, onProgress)
-          : await generateApp(prompt, model, plan, onProgress);
+          ? await refineApp(existing.prompt, existing.files, prompt, model, plan, onProgress, req.signal)
+          : await generateApp(prompt, model, plan, onProgress, req.signal);
 
         send({ type: "status", message: "Saving your app" });
 
@@ -287,6 +289,25 @@ export async function POST(req: NextRequest) {
           files: result.files,
         });
       } catch (err) {
+        // req.signal aborts when the client disconnects (including an
+        // explicit Cancel click, since that aborts the client's fetch).
+        // The generation call is threaded with this same signal, so it
+        // stops immediately rather than running to completion and
+        // charging credits for a result nobody will see.
+        if (req.signal.aborted) {
+          if (!existing) {
+            try {
+              await commit(
+                [updateWrite(appPath, { userId: uid, name: prompt.slice(0, 60), prompt, model, status: "stopped", createdAt }, ["userId", "name", "prompt", "model", "status", "createdAt"])],
+                idToken
+              );
+            } catch {
+              // Client is long gone either way; nothing to surface this to.
+            }
+          }
+          return;
+        }
+
         const message =
           err instanceof Error ? err.message : "Generation failed. Please try again.";
         // Only a fresh build leaves a half-created doc behind; a failed refine

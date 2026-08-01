@@ -1,6 +1,7 @@
 import { MODEL_INFO, type ModelId, type PlanId } from "@/lib/types";
 import { generateWithAnthropic } from "./anthropic";
 import { generateWithGemini, isGeminiConfigured } from "./gemini";
+import { generateWithGroq, isGroqConfigured } from "./groq";
 import {
   assertHasFiles,
   maxOutputTokensFor,
@@ -17,6 +18,7 @@ export type { GenerationResult, ProgressFn } from "./prompt";
 export function isModelAvailable(model: ModelId): boolean {
   const provider = MODEL_INFO[model].provider;
   if (provider === "anthropic") return Boolean(process.env.ANTHROPIC_API_KEY);
+  if (provider === "groq") return isGroqConfigured();
   return isGeminiConfigured();
 }
 
@@ -24,15 +26,18 @@ async function run(
   userContent: string,
   model: ModelId,
   plan: PlanId,
-  onProgress?: ProgressFn
+  onProgress?: ProgressFn,
+  signal?: AbortSignal
 ): Promise<GenerationResult> {
   const provider = MODEL_INFO[model].provider;
   const maxOutputTokens = maxOutputTokensFor(plan);
 
   const { raw, inputTokens, outputTokens, actualCostUSD } =
     provider === "anthropic"
-      ? await generateWithAnthropic(userContent, model, maxOutputTokens, onProgress)
-      : await generateWithGemini(userContent, model, maxOutputTokens, onProgress);
+      ? await generateWithAnthropic(userContent, model, maxOutputTokens, onProgress, signal)
+      : provider === "groq"
+        ? await generateWithGroq(userContent, model, maxOutputTokens, onProgress, signal)
+        : await generateWithGemini(userContent, model, maxOutputTokens, onProgress, signal);
 
   const parsed = parseGenerationJSON(raw);
   assertHasFiles(parsed);
@@ -55,9 +60,10 @@ export function generateApp(
   prompt: string,
   model: ModelId,
   plan: PlanId,
-  onProgress?: ProgressFn
+  onProgress?: ProgressFn,
+  signal?: AbortSignal
 ) {
-  return run(userPrompt(prompt), model, plan, onProgress);
+  return run(userPrompt(prompt), model, plan, onProgress, signal);
 }
 
 /** Apply a follow-up change to an app that already has generated files. */
@@ -67,7 +73,8 @@ export function refineApp(
   instruction: string,
   model: ModelId,
   plan: PlanId,
-  onProgress?: ProgressFn
+  onProgress?: ProgressFn,
+  signal?: AbortSignal
 ) {
-  return run(refinePrompt(originalPrompt, files, instruction), model, plan, onProgress);
+  return run(refinePrompt(originalPrompt, files, instruction), model, plan, onProgress, signal);
 }
