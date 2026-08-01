@@ -8,14 +8,21 @@ export interface GenerateResult {
   files: Record<string, string>;
 }
 
+export interface ClarifyQuestion {
+  question: string;
+  options: string[];
+}
+
 export interface GenerateHandlers {
   onStatus?: (message: string) => void;
   onProgress?: (progress: { chars: number; files: string[] }) => void;
 }
 
 /**
- * Streams a generation over SSE. Resolves with the finished app, or rejects
- * with the server's error message.
+ * Streams a generation over SSE. Resolves with the finished app, or with a
+ * clarifying question the model needs answered before it can build (only
+ * possible on a first-time build, never a refine), or rejects with the
+ * server's error message.
  */
 export async function generateAppRequest(
   prompt: string,
@@ -23,8 +30,10 @@ export async function generateAppRequest(
   handlers: GenerateHandlers = {},
   signal?: AbortSignal,
   /** Pass an app id to refine that app instead of building a new one. */
-  appId?: string
-): Promise<GenerateResult> {
+  appId?: string,
+  /** Set once the user has already answered a clarifying question. */
+  clarified?: boolean
+): Promise<GenerateResult | { clarify: ClarifyQuestion }> {
   const user = auth.currentUser;
   if (!user) throw new Error("You must be signed in to generate an app.");
 
@@ -39,6 +48,7 @@ export async function generateAppRequest(
       prompt,
       model,
       ...(appId ? { appId } : {}),
+      ...(clarified ? { clarified: true } : {}),
     }),
     signal,
   });
@@ -49,6 +59,7 @@ export async function generateAppRequest(
   const decoder = new TextDecoder();
   let buffer = "";
   let result: GenerateResult | null = null;
+  let clarify: ClarifyQuestion | null = null;
   let error: string | null = null;
 
   while (true) {
@@ -74,11 +85,14 @@ export async function generateAppRequest(
       else if (event.type === "progress")
         handlers.onProgress?.({ chars: event.chars, files: event.files });
       else if (event.type === "done") result = event;
+      else if (event.type === "clarify")
+        clarify = { question: event.question, options: event.options };
       else if (event.type === "error") error = event.error;
     }
   }
 
   if (error) throw new Error(error);
+  if (clarify) return { clarify };
   if (!result) throw new Error("Generation ended unexpectedly. Please try again.");
   return result;
 }

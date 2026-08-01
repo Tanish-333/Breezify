@@ -44,6 +44,38 @@ export interface DeployResult {
 }
 
 /**
+ * Aliases a finished deployment to `{slug}.DEPLOY_DOMAIN`, e.g.
+ * my-app.feather123.app instead of a *.vercel.app URL. Only attempted when
+ * DEPLOY_DOMAIN is set, and the domain must already be added and verified
+ * on the Vercel project/team for this to succeed. Best-effort: any failure
+ * (domain not configured yet, not verified, network error) is swallowed and
+ * logged, and the deploy falls back to its default *.vercel.app URL rather
+ * than failing outright.
+ */
+async function tryCustomAlias(deploymentId: string, slug: string): Promise<string | null> {
+  const domain = process.env.DEPLOY_DOMAIN;
+  if (!domain) return null;
+  const alias = `${slug}.${domain}`;
+  try {
+    const res = await vercelFetch(`/v2/deployments/${deploymentId}/aliases${scopeQuery()}`, {
+      method: "POST",
+      body: JSON.stringify({ alias }),
+    });
+    if (!res.ok) {
+      console.warn(
+        `[vercel-deploy] Couldn't alias to ${alias}:`,
+        res.body?.error?.message || res.body?.message
+      );
+      return null;
+    }
+    return alias;
+  } catch (err) {
+    console.warn(`[vercel-deploy] Couldn't alias to ${alias}:`, err);
+    return null;
+  }
+}
+
+/**
  * Creates a deployment from raw file contents (no git repo, no CLI) and
  * polls until Vercel finishes building it. Vercel auto-creates the project
  * (named after `slug`) on first deploy and reuses it on every later one, so
@@ -89,7 +121,8 @@ export async function deployToVercel(
     const state = check.body.readyState as string;
     url = check.body.url ?? url;
     if (state === "READY") {
-      return { url: `https://${url}`, id };
+      const customAlias = await tryCustomAlias(id, slug);
+      return { url: `https://${customAlias ?? url}`, id };
     }
     if (state === "ERROR" || state === "CANCELED") {
       throw new Error(

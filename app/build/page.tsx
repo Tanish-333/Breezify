@@ -11,7 +11,12 @@ import { GenerationProgress } from "@/components/generation-progress";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
-import { fetchModelAvailability, generateAppRequest, type GenerateResult } from "@/lib/api-client";
+import {
+  fetchModelAvailability,
+  generateAppRequest,
+  type ClarifyQuestion,
+  type GenerateResult,
+} from "@/lib/api-client";
 import { takePendingPrompt } from "@/lib/pending-prompt";
 import {
   MODEL_INFO,
@@ -44,6 +49,8 @@ function BuildContent() {
   const [progress, setProgress] = useState({ chars: 0, files: [] as string[] });
   const [error, setError] = useState("");
   const [result, setResult] = useState<GenerateResult | null>(null);
+  const [clarify, setClarify] = useState<ClarifyQuestion | null>(null);
+  const [clarifyAnswer, setClarifyAnswer] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
   useEffect(() => {
@@ -64,17 +71,20 @@ function BuildContent() {
   const overLimit = prompt.trim().length > charLimit;
   const canSubmit = prompt.trim().length >= 5 && !overLimit && !insufficientCredits;
 
-  async function handleGenerate() {
-    if (prompt.trim().length < 5) {
+  async function handleGenerate(overridePrompt?: string, isClarified = false) {
+    const text = overridePrompt ?? prompt;
+    if (text.trim().length < 5) {
       setError("Describe your app in a bit more detail.");
       return;
     }
-    if (overLimit) {
+    if (text.length > charLimit) {
       setError(`${PLANS[plan]?.name ?? "Free"} plan prompts are limited to ${charLimit.toLocaleString()} characters.`);
       return;
     }
     setError("");
     setResult(null);
+    setClarify(null);
+    setClarifyAnswer("");
     setProgress({ chars: 0, files: [] });
     setStatus("Starting");
     setLoading(true);
@@ -84,16 +94,22 @@ function BuildContent() {
 
     try {
       const res = await generateAppRequest(
-        prompt,
+        text,
         model,
         {
           onStatus: setStatus,
           onProgress: setProgress,
         },
-        controller.signal
+        controller.signal,
+        undefined,
+        isClarified
       );
-      setResult(res);
       await refreshProfile();
+      if ("clarify" in res) {
+        setClarify(res.clarify);
+      } else {
+        setResult(res);
+      }
     } catch (err) {
       if ((err as Error)?.name === "AbortError") {
         setError("Generation cancelled.");
@@ -104,6 +120,13 @@ function BuildContent() {
       setLoading(false);
       abortRef.current = null;
     }
+  }
+
+  function answerClarify(answer: string) {
+    if (!clarify || !answer.trim()) return;
+    const combined = `${prompt}\n\n${clarify.question} ${answer.trim()}`;
+    setPrompt(combined);
+    handleGenerate(combined, true);
   }
 
   function cancel() {
@@ -223,7 +246,7 @@ function BuildContent() {
                 Cancel
               </Button>
             )}
-            <Button onClick={handleGenerate} loading={loading} disabled={!canSubmit}>
+            <Button onClick={() => handleGenerate()} loading={loading} disabled={!canSubmit}>
               {!loading && <Wand2 className="h-4 w-4" />}
               {insufficientCredits
                 ? "Not enough credits"
@@ -241,6 +264,43 @@ function BuildContent() {
             files={progress.files}
             modelLabel={MODEL_INFO[model].label}
           />
+        )}
+
+        {clarify && !loading && (
+          <div className="animate-in space-y-3 rounded-lg border border-border bg-muted/20 p-4">
+            <p className="text-sm font-medium">{clarify.question}</p>
+            <p className="text-xs text-muted-foreground">
+              Answering costs nothing extra beyond the 0.50 credits already used to ask.
+            </p>
+            {clarify.options.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {clarify.options.map((opt) => (
+                  <button
+                    key={opt}
+                    type="button"
+                    onClick={() => answerClarify(opt)}
+                    className="rounded-full border border-border px-3 py-1.5 text-xs transition-colors hover:border-foreground hover:text-foreground"
+                  >
+                    {opt}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="flex gap-2">
+              <input
+                value={clarifyAnswer}
+                onChange={(e) => setClarifyAnswer(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter" && clarifyAnswer.trim()) answerClarify(clarifyAnswer);
+                }}
+                placeholder="Or type your own answer..."
+                className="flex h-9 w-full rounded border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground"
+              />
+              <Button size="sm" disabled={!clarifyAnswer.trim()} onClick={() => answerClarify(clarifyAnswer)}>
+                Continue
+              </Button>
+            </div>
+          </div>
         )}
 
         {result && (

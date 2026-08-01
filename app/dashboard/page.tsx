@@ -12,7 +12,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth-context";
 import { useUserApps, deleteApp } from "@/lib/use-apps";
-import { fetchModelAvailability, generateAppRequest } from "@/lib/api-client";
+import { fetchModelAvailability, generateAppRequest, type ClarifyQuestion } from "@/lib/api-client";
 import { takePendingPrompt } from "@/lib/pending-prompt";
 import { formatDate } from "@/lib/utils";
 import { MODEL_INFO, planAllowsModel, type ModelId, type PlanId } from "@/lib/types";
@@ -39,6 +39,8 @@ function DashboardContent() {
   const [status, setStatus] = useState("");
   const [progress, setProgress] = useState({ chars: 0, files: [] as string[] });
   const [error, setError] = useState("");
+  const [clarify, setClarify] = useState<ClarifyQuestion | null>(null);
+  const [clarifyAnswer, setClarifyAnswer] = useState("");
   const [search, setSearch] = useState("");
   const [showAll, setShowAll] = useState(false);
 
@@ -57,22 +59,40 @@ function DashboardContent() {
 
   const firstName = user?.displayName?.split(" ")[0];
 
-  async function handleGenerate(composedPrompt: string) {
+  async function handleGenerate(composedPrompt: string, isClarified = false) {
     setError("");
+    setClarify(null);
+    setClarifyAnswer("");
     setProgress({ chars: 0, files: [] });
     setStatus("Starting");
     setGenerating(true);
     try {
-      const res = await generateAppRequest(composedPrompt, model, {
-        onStatus: setStatus,
-        onProgress: setProgress,
-      });
+      const res = await generateAppRequest(
+        composedPrompt,
+        model,
+        { onStatus: setStatus, onProgress: setProgress },
+        undefined,
+        undefined,
+        isClarified
+      );
       await refreshProfile();
-      router.push(`/build/${res.appId}`);
+      if ("clarify" in res) {
+        setClarify(res.clarify);
+        setGenerating(false);
+      } else {
+        router.push(`/build/${res.appId}`);
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Generation failed.");
       setGenerating(false);
     }
+  }
+
+  function answerClarify(answer: string) {
+    if (!clarify || !answer.trim()) return;
+    const combined = `${prompt}\n\n${clarify.question} ${answer.trim()}`;
+    setPrompt(combined);
+    handleGenerate(combined, true);
   }
 
   // Everything the user owns must stay reachable from here, so search filters
@@ -129,6 +149,40 @@ function DashboardContent() {
             <div className="mt-4 flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
               <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
               <span>{error}</span>
+            </div>
+          )}
+
+          {clarify && !generating && (
+            <div className="mt-4 animate-in space-y-3 rounded-lg border border-border bg-muted/20 p-4 text-left">
+              <p className="text-sm font-medium">{clarify.question}</p>
+              {clarify.options.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {clarify.options.map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      onClick={() => answerClarify(opt)}
+                      className="rounded-full border border-border px-3 py-1.5 text-xs transition-colors hover:border-foreground hover:text-foreground"
+                    >
+                      {opt}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-2">
+                <Input
+                  value={clarifyAnswer}
+                  onChange={(e) => setClarifyAnswer(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && clarifyAnswer.trim()) answerClarify(clarifyAnswer);
+                  }}
+                  placeholder="Or type your own answer..."
+                  className="h-9"
+                />
+                <Button size="sm" disabled={!clarifyAnswer.trim()} onClick={() => answerClarify(clarifyAnswer)}>
+                  Continue
+                </Button>
+              </div>
             </div>
           )}
 
