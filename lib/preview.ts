@@ -1,4 +1,5 @@
 import { watermarkSnippet } from "@/lib/watermark";
+import { unsupportedReason } from "@/lib/app-support";
 
 /**
  * Builds a self-contained HTML document that runs a generated app inside a
@@ -69,6 +70,9 @@ export function buildPreview(
   appUrl: string,
   showBadge: boolean = true
 ): PreviewResult {
+  const unsupported = unsupportedReason(files, "preview");
+  if (unsupported) return { kind: "unsupported", reason: unsupported };
+
   const htmlEntry = findHtmlEntry(files);
 
   // Plain static site: use it directly.
@@ -92,16 +96,6 @@ export function buildPreview(
     return {
       kind: "unsupported",
       reason: "This project has no HTML page or front-end entry file to preview.",
-    };
-  }
-
-  const hasServerOnly =
-    !Object.keys(files).some((p) => SCRIPT_EXT.test(p) && p.startsWith("src/")) &&
-    Object.keys(files).some((p) => /server|api|routes/i.test(p));
-  if (hasServerOnly) {
-    return {
-      kind: "unsupported",
-      reason: "This app needs a running server, so it can't preview in the browser.",
     };
   }
 

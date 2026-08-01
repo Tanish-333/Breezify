@@ -3,6 +3,7 @@ import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, getDoc, updateWrite } from "@/lib/firestore-rest";
 import { withWatermark } from "@/lib/watermark";
 import { deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
+import { unsupportedReason } from "@/lib/app-support";
 import type { PlanId } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -62,16 +63,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "This app has no files to deploy." }, { status: 400 });
     }
 
-    // Apps with a real backend need a running server; there's nothing to
-    // statically deploy them to here (same limitation the live preview has).
-    const hasServerOnly =
-      !Object.keys(rawFiles).some((p) => /\.(tsx?|jsx?)$/.test(p) && p.startsWith("src/")) &&
-      Object.keys(rawFiles).some((p) => /server|api|routes/i.test(p));
-    if (hasServerOnly) {
-      return NextResponse.json(
-        { error: "This app needs a running server, so it can't be deployed as a static site." },
-        { status: 400 }
-      );
+    // Same limitation the live preview has: no real server, no provisioned
+    // secrets, so anything assuming either would just silently fail if we
+    // deployed it anyway.
+    const unsupported = unsupportedReason(rawFiles, "deploy");
+    if (unsupported) {
+      return NextResponse.json({ error: unsupported }, { status: 400 });
     }
 
     let userPlan: PlanId = "free";
