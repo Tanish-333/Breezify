@@ -68,16 +68,10 @@ export async function POST(req: NextRequest) {
   // When present, this is a follow-up change to an existing app rather than a
   // brand new build.
   const refineAppId = typeof body?.appId === "string" ? body.appId : null;
-  // A user-supplied provider key. Used for this request only; never logged or
-  // persisted. When present the user pays their provider directly, so we skip
-  // both plan gating and credit deduction.
-  const overrideKey =
-    typeof body?.apiKey === "string" && body.apiKey.trim() ? body.apiKey.trim() : undefined;
 
   // Unverified accounts cost nothing to create, so they're the cheapest way
-  // to farm free signup credit against our own key. A user bringing their
-  // own key isn't spending ours, so this doesn't apply to them.
-  if (!overrideKey && !emailVerified) {
+  // to farm free signup credit against our own key.
+  if (!emailVerified) {
     return errorStream("Please verify your email before generating apps. Check your inbox for the link.");
   }
 
@@ -89,10 +83,8 @@ export async function POST(req: NextRequest) {
     );
   }
   if (!isModelId(model)) return errorStream("Invalid model selection.");
-  if (!overrideKey && !isModelAvailable(model)) {
-    return errorStream(
-      `${MODEL_INFO[model].label} isn't available on this deployment yet. Add your own API key in Settings, or pick another model.`
-    );
+  if (!isModelAvailable(model)) {
+    return errorStream(`${MODEL_INFO[model].label} isn't available on this deployment yet.`);
   }
 
   const userPath = `users/${uid}`;
@@ -109,27 +101,25 @@ export async function POST(req: NextRequest) {
 
   // Caps how much text (including any attached file context the client
   // appended) can be sent per request. Scales with plan so a free account
-  // can't submit a huge prompt against our own key; a bring-your-own-key
-  // request pays its own bill, so it isn't capped here.
+  // can't submit a huge prompt against the platform's own key.
   const charLimit = PROMPT_CHAR_LIMIT[plan];
-  if (!overrideKey && prompt.length > charLimit) {
+  if (prompt.length > charLimit) {
     return errorStream(
       `${PLANS[plan]?.name ?? "Free"} plan prompts are limited to ${charLimit.toLocaleString()} characters (this one is ${prompt.length.toLocaleString()}). Upgrade for a higher limit, or trim it down.`
     );
   }
 
-  if (!overrideKey && !planAllowsModel(plan, model)) {
+  if (!planAllowsModel(plan, model)) {
     const needed = requiredPlanFor(model);
     return errorStream(
-      `${MODEL_INFO[model].label} is available on the ${needed.name} plan. You're on ${PLANS[plan]?.name ?? "Free"}. You can also use your own API key.`
+      `${MODEL_INFO[model].label} is available on the ${needed.name} plan. You're on ${PLANS[plan]?.name ?? "Free"}.`
     );
   }
 
-  // Own key means own bill, so nothing is charged here.
-  const cost = overrideKey ? 0 : MODEL_INFO[model].credits;
+  const cost = MODEL_INFO[model].credits;
   const currentCredits =
     typeof userDoc.fields.credits === "number" ? userDoc.fields.credits : 0;
-  if (!overrideKey && currentCredits < cost) {
+  if (currentCredits < cost) {
     return errorStream("Not enough credits. Top up your balance to keep building.");
   }
 
@@ -214,8 +204,8 @@ export async function POST(req: NextRequest) {
         };
 
         const result = existing
-          ? await refineApp(existing.prompt, existing.files, prompt, model, plan, onProgress, overrideKey)
-          : await generateApp(prompt, model, plan, onProgress, overrideKey);
+          ? await refineApp(existing.prompt, existing.files, prompt, model, plan, onProgress)
+          : await generateApp(prompt, model, plan, onProgress);
 
         send({ type: "status", message: "Saving your app" });
 
@@ -245,16 +235,13 @@ export async function POST(req: NextRequest) {
               createdAt: existing ? (existing.createdAt as Date) ?? createdAt : createdAt,
               generatedCode: { files: result.files },
             }),
-            ...(cost > 0 ? [incrementWrite(userPath, "credits", -cost)] : []),
+            incrementWrite(userPath, "credits", -cost),
             createWrite(`transactions/${txId}`, {
               userId: uid,
               type: "generation",
               creditsUsed: cost,
               model,
-              // With a user-supplied key the spend lands on their provider
-              // account, not ours, so there is no platform cost to track.
-              actualCostUSD: overrideKey ? 0 : result.actualCostUSD,
-              ownKey: Boolean(overrideKey),
+              actualCostUSD: result.actualCostUSD,
               createdAt: new Date(),
             }),
           ],

@@ -2,9 +2,9 @@
 
 /**
  * Stores the GitHub OAuth access token obtained by connecting a GitHub
- * account (see connectGithub() in auth-context.tsx), the same way BYOK
- * provider keys are handled: kept in the browser only, sent with individual
- * push requests, never written to Firestore or any server-side store.
+ * account (see connectGithub() in auth-context.tsx): kept in the browser
+ * only, sent with individual push requests, never written to Firestore or
+ * any server-side store.
  */
 
 const STORAGE_KEY = "feather:github-token";

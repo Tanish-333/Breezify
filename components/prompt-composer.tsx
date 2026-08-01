@@ -12,7 +12,6 @@ import {
   type ModelId,
   type PlanId,
 } from "@/lib/types";
-import { hasApiKey, isByokEnabled } from "@/lib/byok";
 import {
   ArrowUp,
   Check,
@@ -20,7 +19,6 @@ import {
   FileText,
   Loader2,
   Lock,
-  KeyRound,
   Mic,
   Paperclip,
   Square,
@@ -72,8 +70,6 @@ export function PromptComposer({
   const [listening, setListening] = useState(false);
   const [micSupported, setMicSupported] = useState(false);
   const [micError, setMicError] = useState("");
-  // Which providers the user has supplied a key for, with BYOK switched on.
-  const [ownKeyFor, setOwnKeyFor] = useState<Record<string, boolean>>({});
 
   const menuRef = useRef<HTMLDivElement>(null);
   const fileRef = useRef<HTMLInputElement>(null);
@@ -81,14 +77,10 @@ export function PromptComposer({
   const baseTextRef = useRef("");
 
   const info = MODEL_INFO[model];
-  const usingOwnKey = ownKeyFor[info.provider] === true;
-  // Your own key means your own bill, so the plan's character cap doesn't apply.
-  const charLimit = usingOwnKey ? Infinity : PROMPT_CHAR_LIMIT[plan];
+  const charLimit = PROMPT_CHAR_LIMIT[plan];
   const composedLength = value.trim().length + attachmentContext(attachments).length;
   const overLimit = composedLength > charLimit;
-  // A missing balance shouldn't block you when you're paying your own bill.
-  const canSubmit =
-    value.trim().length >= 5 && !overLimit && !loading && (!disabled || usingOwnKey);
+  const canSubmit = value.trim().length >= 5 && !overLimit && !loading && !disabled;
 
   // Feature-detect only. Constructing a recognizer does not prompt for the
   // microphone; permission is requested when start() runs on click.
@@ -103,19 +95,6 @@ export function PromptComposer({
         // Already stopped.
       }
     };
-  }, []);
-
-  useEffect(() => {
-    function refresh() {
-      const on = isByokEnabled();
-      setOwnKeyFor({
-        anthropic: on && hasApiKey("anthropic"),
-        google: on && hasApiKey("google"),
-      });
-    }
-    refresh();
-    window.addEventListener("feather:byok-changed", refresh);
-    return () => window.removeEventListener("feather:byok-changed", refresh);
   }, []);
 
   useEffect(() => {
@@ -185,11 +164,7 @@ export function PromptComposer({
         continue;
       }
       if (budget <= 0) {
-        setAttachError(
-          Number.isFinite(charLimit)
-            ? "You've reached your plan's character limit. Upgrade for more room, or remove an attachment."
-            : `${file.name} wasn't attached.`
-        );
+        setAttachError("You've reached your plan's character limit. Upgrade for more room, or remove an attachment.");
         continue;
       }
       const text = await file.text();
@@ -277,14 +252,7 @@ export function PromptComposer({
                 className="flex items-center gap-1.5 rounded-lg border border-border px-2.5 py-1.5 text-xs text-muted-foreground transition-colors hover:border-muted-foreground hover:text-foreground disabled:opacity-50"
               >
                 <span className="font-medium text-foreground">{info.label}</span>
-                {usingOwnKey ? (
-                  <span className="inline-flex items-center gap-1 text-success">
-                    <KeyRound className="h-2.5 w-2.5" />
-                    0.00
-                  </span>
-                ) : (
-                  <span className="tabular-nums">{info.credits.toFixed(2)}</span>
-                )}
+                <span className="tabular-nums">{info.credits.toFixed(2)}</span>
                 <ChevronDown className="h-3 w-3" />
               </button>
 
@@ -292,12 +260,8 @@ export function PromptComposer({
                 <div className="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-xl">
                   {MODEL_IDS.map((id) => {
                     const m = MODEL_INFO[id];
-                    const ownKey = ownKeyFor[m.provider] === true;
-                    // Your own key means your own bill, so plan limits and
-                    // whether Feather has a key for this provider don't apply.
-                    const unlocked = ownKey || planAllowsModel(plan, id);
-                    const configured =
-                      ownKey || (availability ? availability[id] !== false : true);
+                    const unlocked = planAllowsModel(plan, id);
+                    const configured = availability ? availability[id] !== false : true;
                     const usable = unlocked && configured;
                     return (
                       <button
@@ -323,17 +287,15 @@ export function PromptComposer({
                           </div>
                           <p className="truncate text-[11px] text-muted-foreground">
                             {m.providerLabel}
-                            {ownKey
-                              ? " · your key"
-                              : !unlocked
-                                ? ` · ${requiredPlanFor(id).name} plan`
-                                : !configured
-                                  ? " · not configured"
-                                  : ""}
+                            {!unlocked
+                              ? ` · ${requiredPlanFor(id).name} plan`
+                              : !configured
+                                ? " · not configured"
+                                : ""}
                           </p>
                         </div>
                         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {ownKey ? "0.00" : m.credits.toFixed(2)}
+                          {m.credits.toFixed(2)}
                         </span>
                       </button>
                     );
@@ -405,7 +367,7 @@ export function PromptComposer({
           </Link>
         </p>
       )}
-      {!attachError && !micError && !overLimit && Number.isFinite(charLimit) && composedLength > charLimit * 0.7 && (
+      {!attachError && !micError && !overLimit && value.trim().length >= 5 && (
         <p className="mt-2 text-xs text-muted-foreground">
           {composedLength.toLocaleString()} / {charLimit.toLocaleString()} characters
         </p>

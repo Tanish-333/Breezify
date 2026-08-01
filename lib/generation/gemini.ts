@@ -9,17 +9,10 @@ import {
 
 let client: GoogleGenAI | null = null;
 
-/**
- * `overrideKey` is a user-supplied key sent with a single request. It is used
- * for that request only and never cached on the shared client.
- */
-function getClient(overrideKey?: string) {
-  if (overrideKey) return new GoogleGenAI({ apiKey: overrideKey });
+function getClient() {
   const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY;
   if (!apiKey) {
-    throw new Error(
-      "Gemini models aren't configured on this deployment yet. Add your own API key in Settings, or set GEMINI_API_KEY."
-    );
+    throw new Error("Gemini models aren't configured on this deployment yet. Set GEMINI_API_KEY.");
   }
   if (!client) client = new GoogleGenAI({ apiKey });
   return client;
@@ -40,10 +33,9 @@ export async function generateWithGemini(
   userContent: string,
   model: ModelId,
   maxOutputTokens: number,
-  onProgress?: ProgressFn,
-  overrideKey?: string
+  onProgress?: ProgressFn
 ): Promise<ProviderResult> {
-  const ai = getClient(overrideKey);
+  const ai = getClient();
   const apiModel = MODEL_INFO[model].apiModel;
 
   const stream = await ai.models.generateContentStream({
