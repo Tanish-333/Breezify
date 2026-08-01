@@ -28,17 +28,21 @@ export async function generateWithAnthropic(
   userContent: string,
   model: ModelId,
   maxOutputTokens: number,
-  onProgress?: ProgressFn
+  onProgress?: ProgressFn,
+  signal?: AbortSignal
 ): Promise<ProviderResult> {
   const anthropic = getClient();
   const apiModel = MODEL_INFO[model].apiModel;
 
-  const stream = anthropic.messages.stream({
-    model: apiModel,
-    max_tokens: maxOutputTokens,
-    system: SYSTEM_PROMPT,
-    messages: [{ role: "user", content: userContent }],
-  });
+  const stream = anthropic.messages.stream(
+    {
+      model: apiModel,
+      max_tokens: maxOutputTokens,
+      system: SYSTEM_PROMPT,
+      messages: [{ role: "user", content: userContent }],
+    },
+    { signal }
+  );
 
   let raw = "";
   if (onProgress) {

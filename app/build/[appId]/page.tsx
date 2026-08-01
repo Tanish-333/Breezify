@@ -418,6 +418,15 @@ function AppWorkspace() {
                 <span>{app.errorMessage || "Something went wrong generating this app."}</span>
               </div>
             </div>
+          ) : app.status === "stopped" && !hasFiles ? (
+            <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+              <p className="text-sm text-muted-foreground">
+                Generation was cancelled before it finished. No credits were charged.
+              </p>
+              <Button variant="secondary" size="sm" onClick={() => router.push("/dashboard")}>
+                Back to dashboard
+              </Button>
+            </div>
           ) : hasFiles ? (
             pane === "preview" ? (
               <AppPreview files={files} removeBadge={plan !== "free"} />

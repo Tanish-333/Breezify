@@ -1,6 +1,13 @@
-export type Provider = "anthropic" | "google";
+export type Provider = "anthropic" | "google" | "groq";
 
-export type ModelId = "haiku" | "gemini-flash" | "sonnet" | "gemini-pro" | "opus";
+export type ModelId =
+  | "haiku"
+  | "gemini-flash"
+  | "groq-llama-8b"
+  | "sonnet"
+  | "gemini-pro"
+  | "groq-llama-70b"
+  | "opus";
 
 export type PlanId = "free" | "plus" | "pro" | "max";
 
@@ -42,6 +49,16 @@ export const MODEL_INFO: Record<ModelId, ModelInfo> = {
     minPlan: "plus",
     tier: "Plus",
   },
+  "groq-llama-8b": {
+    label: "Llama 3.1 8B",
+    provider: "groq",
+    providerLabel: "Groq",
+    description: "Near-instant inference on Groq's LPUs. Great for quick, simple apps.",
+    credits: 0.5,
+    apiModel: "llama-3.1-8b-instant",
+    minPlan: "free",
+    tier: "Included free",
+  },
   sonnet: {
     label: "Sonnet 4.5",
     provider: "anthropic",
@@ -61,6 +78,16 @@ export const MODEL_INFO: Record<ModelId, ModelInfo> = {
     apiModel: "gemini-3.1-pro-preview",
     minPlan: "pro",
     tier: "Pro",
+  },
+  "groq-llama-70b": {
+    label: "Llama 3.3 70B",
+    provider: "groq",
+    providerLabel: "Groq",
+    description: "Near-instant responses with strong general reasoning.",
+    credits: 0.5,
+    apiModel: "llama-3.3-70b-versatile",
+    minPlan: "plus",
+    tier: "Plus",
   },
   opus: {
     label: "Opus 5",
@@ -113,7 +140,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     credits: 5,
     features: [
       "5.00 credits, one time",
-      "Haiku 4.5",
+      "Haiku 4.5 and Llama 3.1 8B (Groq)",
       "Live preview only",
       "Community support",
     ],
@@ -127,7 +154,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     credits: 40,
     features: [
       "40.00 credits every month",
-      "Adds Sonnet 4.5 and Gemini 3.6 Flash",
+      "Adds Sonnet 4.5, Gemini 3.6 Flash, and Llama 3.3 70B (Groq)",
       "View, copy & export code, badge-free",
       "Email support",
     ],
