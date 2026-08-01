@@ -3,6 +3,7 @@ import { NextRequest } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, createWrite, getDoc, incrementWrite, updateWrite } from "@/lib/firestore-rest";
 import { generateApp, isModelAvailable, refineApp } from "@/lib/generation";
+import { checkClarity } from "@/lib/generation/clarify";
 import {
   MODEL_INFO,
   PLANS,
@@ -20,6 +21,7 @@ type Event =
   | { type: "status"; message: string }
   | { type: "progress"; chars: number; files: string[] }
   | { type: "done"; appId: string; appName: string; summary: string; files: Record<string, string> }
+  | { type: "clarify"; question: string; options: string[] }
   | { type: "error"; error: string };
 
 function sse(event: Event) {
@@ -68,6 +70,9 @@ export async function POST(req: NextRequest) {
   // When present, this is a follow-up change to an existing app rather than a
   // brand new build.
   const refineAppId = typeof body?.appId === "string" ? body.appId : null;
+  // Set once the client has already answered a clarifying question, so the
+  // clarity check below only ever runs once per build.
+  const clarified = body?.clarified === true;
 
   // Unverified accounts cost nothing to create, so they're the cheapest way
   // to farm free signup credit against our own key.
@@ -170,6 +175,32 @@ export async function POST(req: NextRequest) {
       };
 
       try {
+        if (!existing && !clarified) {
+          send({ type: "status", message: "Reviewing your request" });
+          const clarity = await checkClarity(prompt);
+          if (clarity.needsClarification) {
+            // Charge a small flat fee for asking rather than the full model
+            // cost, since no generation actually ran. 0.5 is always covered:
+            // the credits check above already required currentCredits >= cost,
+            // and every model's cost is >= 0.5.
+            const clarifyTxId = randomUUID();
+            await commit(
+              [
+                incrementWrite(userPath, "credits", -0.5),
+                createWrite(`transactions/${clarifyTxId}`, {
+                  userId: uid,
+                  type: "generation",
+                  creditsUsed: 0.5,
+                  createdAt: new Date(),
+                }),
+              ],
+              idToken
+            );
+            send({ type: "clarify", question: clarity.question, options: clarity.options });
+            return;
+          }
+        }
+
         if (existing) {
           send({ type: "status", message: "Reading your current files" });
         } else {

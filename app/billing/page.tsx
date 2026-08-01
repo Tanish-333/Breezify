@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { PricingTable } from "@/components/pricing-table";
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { useTransactions } from "@/lib/use-transactions";
@@ -190,6 +191,11 @@ function BillingContent() {
             );
           })}
         </div>
+      </div>
+
+      <div>
+        <h2 className="mb-4 text-lg font-medium">Compare every plan</h2>
+        <PricingTable />
       </div>
 
       <Card>

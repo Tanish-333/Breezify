@@ -268,7 +268,13 @@ function AppWorkspace() {
             ) : plan === "free" ? (
               <Link href="/billing" title="Upgrade to Plus to push to GitHub">
                 <Button variant="ghost" size="sm">
-                  <Lock className="h-4 w-4" />
+                  <span className="relative inline-flex">
+                    <GithubIcon className="h-4 w-4" />
+                    <Lock
+                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
+                      strokeWidth={3}
+                    />
+                  </span>
                   <span className="hidden sm:inline">Push to GitHub</span>
                 </Button>
               </Link>
