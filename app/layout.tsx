@@ -11,12 +11,29 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 // prerendering so builds don't require Firebase env vars to be present.
 export const dynamic = "force-dynamic";
 
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://feather-123.vercel.app";
+const TITLE = "Feather 123: Build and ship apps with AI";
+const DESCRIPTION =
+  "Feather 123 turns a plain-English prompt into a production-ready app, deployed in seconds. No code required.";
+
 export const metadata: Metadata = {
-  title: "Feather 123: Build and ship apps with AI",
-  description:
-    "Feather 123 turns a plain-English prompt into a production-ready app, deployed in seconds. No code required.",
+  metadataBase: new URL(SITE_URL),
+  title: TITLE,
+  description: DESCRIPTION,
   icons: {
     icon: "/favicon.svg",
+  },
+  openGraph: {
+    title: TITLE,
+    description: DESCRIPTION,
+    url: SITE_URL,
+    siteName: "Feather 123",
+    type: "website",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
   },
 };
 
