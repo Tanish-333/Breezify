@@ -181,6 +181,20 @@ export const PROMPT_CHAR_LIMIT: Record<PlanId, number> = {
 /** Lowest plan that can duplicate an app (a real perk: costs nothing to offer, no AI call involved). */
 export const DUPLICATE_MIN_PLAN: PlanId = "pro";
 
+/**
+ * Deploys don't cost credits (they're a Vercel build/bandwidth cost, not an
+ * AI cost), so without a separate cap a free account could redeploy
+ * unlimited times a day at zero cost to them. Capped per plan instead of
+ * charged, since normal iteration (redeploying the same app repeatedly)
+ * shouldn't feel metered.
+ */
+export const DEPLOY_DAILY_LIMIT: Record<PlanId, number> = {
+  free: 10,
+  plus: 30,
+  pro: 75,
+  max: 200,
+};
+
 export function planAllowsModel(plan: PlanId, model: ModelId): boolean {
   return PLAN_RANK[plan] >= PLAN_RANK[MODEL_INFO[model].minPlan];
 }

@@ -4,7 +4,9 @@ import { commit, getDoc, updateWrite } from "@/lib/firestore-rest";
 import { withWatermark } from "@/lib/watermark";
 import { deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
 import { unsupportedReason } from "@/lib/app-support";
-import type { PlanId } from "@/lib/types";
+import { DEPLOY_DAILY_LIMIT, PLANS, type PlanId } from "@/lib/types";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 export const runtime = "nodejs";
 export const maxDuration = 180;
@@ -72,11 +74,36 @@ export async function POST(req: NextRequest) {
     }
 
     let userPlan: PlanId = "free";
+    // Deploys aren't credit-gated (they cost Vercel build/bandwidth, not AI
+    // tokens), so track a rolling 24h count directly on the user doc instead.
+    // Defaults keep the deploy going if the user doc can't be read at all,
+    // rather than blocking on our own error.
+    let deployCount = 0;
+    let windowStart = new Date();
     try {
       const userDoc = await getDoc(`users/${uid}`, idToken);
       userPlan = (userDoc?.fields.plan as PlanId) ?? "free";
+      const rawWindowStart = userDoc?.fields.deployWindowStart;
+      const windowStartMs =
+        typeof rawWindowStart === "string" ? Date.parse(rawWindowStart) : NaN;
+      const windowActive = !Number.isNaN(windowStartMs) && Date.now() - windowStartMs < DAY_MS;
+      if (windowActive) {
+        windowStart = new Date(windowStartMs);
+        deployCount = typeof userDoc?.fields.deployCount === "number" ? userDoc.fields.deployCount : 0;
+      }
     } catch {
       // Default to "free" (show the badge) rather than block the deploy.
+    }
+
+    const dailyLimit = DEPLOY_DAILY_LIMIT[userPlan];
+    if (deployCount >= dailyLimit) {
+      const resetInHours = Math.max(1, Math.ceil((windowStart.getTime() + DAY_MS - Date.now()) / (60 * 60 * 1000)));
+      return NextResponse.json(
+        {
+          error: `You've hit today's deploy limit (${dailyLimit}/day on the ${PLANS[userPlan]?.name ?? "Free"} plan). Try again in about ${resetInHours}h, or upgrade for a higher limit.`,
+        },
+        { status: 429 }
+      );
     }
 
     const name = (appDoc.fields.name as string) || "feather-app";
@@ -93,6 +120,11 @@ export async function POST(req: NextRequest) {
             `apps/${appId}`,
             { status: "live", deployedUrl: result.url, deployedAt: new Date() },
             ["status", "deployedUrl", "deployedAt"]
+          ),
+          updateWrite(
+            `users/${uid}`,
+            { deployCount: deployCount + 1, deployWindowStart: windowStart },
+            ["deployCount", "deployWindowStart"]
           ),
         ],
         idToken
