@@ -16,10 +16,17 @@ import { TurnCard } from "@/components/turn-card";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useApp } from "@/lib/use-apps";
+import { useApp, duplicateApp } from "@/lib/use-apps";
 import { useAuth } from "@/lib/auth-context";
 import { fetchModelAvailability, generateAppRequest } from "@/lib/api-client";
-import { MODEL_INFO, planAllowsModel, type ModelId, type PlanId } from "@/lib/types";
+import {
+  DUPLICATE_MIN_PLAN,
+  MODEL_INFO,
+  PLAN_RANK,
+  planAllowsModel,
+  type ModelId,
+  type PlanId,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 import { GithubIcon } from "@/components/oauth-icons";
 import {
@@ -27,6 +34,7 @@ import {
   ArrowLeft,
   Check,
   Code2,
+  Copy,
   Eye,
   ExternalLink,
   Loader2,
@@ -42,8 +50,9 @@ function AppWorkspace() {
   const params = useParams<{ appId: string }>();
   const router = useRouter();
   const { app, loading } = useApp(params.appId);
-  const { profile, refreshProfile } = useAuth();
+  const { user, profile, refreshProfile } = useAuth();
   const plan: PlanId = profile?.plan ?? "free";
+  const canDuplicate = PLAN_RANK[plan] >= PLAN_RANK[DUPLICATE_MIN_PLAN];
 
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<ModelId>("haiku");
@@ -55,6 +64,7 @@ function AppWorkspace() {
   const [showGithub, setShowGithub] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState("");
+  const [duplicating, setDuplicating] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [pane, setPane] = useState<Pane>("preview");
@@ -163,6 +173,18 @@ function AppWorkspace() {
     }
   }
 
+  async function duplicate() {
+    if (!app || !user) return;
+    setDuplicating(true);
+    try {
+      const newId = await duplicateApp(app, user.uid);
+      router.push(`/build/${newId}`);
+    } catch {
+      setError("Couldn't duplicate this app.");
+      setDuplicating(false);
+    }
+  }
+
   return (
     <div className="-mx-5 -my-8 flex h-[calc(100vh-3.5rem)] flex-col md:-mx-10 md:-my-10 md:h-screen">
       {/* Workspace header */}
@@ -255,6 +277,21 @@ function AppWorkspace() {
                 <GithubIcon className="h-4 w-4" />
                 <span className="hidden sm:inline">Push to GitHub</span>
               </Button>
+            ))}
+
+          {hasFiles &&
+            (canDuplicate ? (
+              <Button variant="ghost" size="sm" onClick={duplicate} loading={duplicating}>
+                {!duplicating && <Copy className="h-4 w-4" />}
+                <span className="hidden sm:inline">Duplicate</span>
+              </Button>
+            ) : (
+              <Link href="/billing" title="Upgrade to Pro to duplicate this app">
+                <Button variant="ghost" size="sm">
+                  <Lock className="h-4 w-4" />
+                  <span className="hidden sm:inline">Duplicate</span>
+                </Button>
+              </Link>
             ))}
 
           {hasFiles && (

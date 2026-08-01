@@ -3,6 +3,7 @@ import { SiteHeader } from "@/components/site-header";
 import { PromptHero } from "@/components/prompt-hero";
 import { BuilderMockup } from "@/components/builder-mockup";
 import { FaqAccordion } from "@/components/faq-accordion";
+import { PricingTable } from "@/components/pricing-table";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PLANS, PLAN_IDS } from "@/lib/types";
@@ -190,6 +191,13 @@ export default function LandingPage() {
               </Card>
               );
             })}
+          </div>
+
+          <div className="mt-14">
+            <h3 className="mb-5 text-sm font-medium text-muted-foreground">
+              Compare every plan
+            </h3>
+            <PricingTable />
           </div>
         </div>
       </section>

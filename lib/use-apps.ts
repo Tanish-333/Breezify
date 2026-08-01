@@ -8,6 +8,8 @@ import {
   onSnapshot,
   orderBy,
   query,
+  serverTimestamp,
+  setDoc,
   where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -84,6 +86,28 @@ export function useUserApps(uid: string | undefined) {
 
 export async function deleteApp(appId: string) {
   await deleteDoc(doc(db, "apps", appId));
+}
+
+/**
+ * Copies an app's prompt, model, and generated files into a brand new app,
+ * with a clean history (no turns, no deploy/GitHub links carried over). No
+ * AI call involved, so it costs nothing to offer as a plan perk.
+ */
+export async function duplicateApp(app: FeatherApp, uid: string): Promise<string> {
+  const ref = doc(collection(db, "apps"));
+  await setDoc(ref, {
+    userId: uid,
+    name: `${app.name} (copy)`,
+    prompt: app.prompt,
+    model: app.model,
+    status: "ready",
+    summary: app.summary ?? "",
+    suggestions: [],
+    turns: [],
+    generatedCode: app.generatedCode ?? { files: {} },
+    createdAt: serverTimestamp(),
+  });
+  return ref.id;
 }
 
 export function useApp(appId: string | undefined) {

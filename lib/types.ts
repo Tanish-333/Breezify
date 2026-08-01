@@ -124,9 +124,9 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     price: "$20",
     period: "per month",
     description: "For builders shipping apps regularly.",
-    credits: 25,
+    credits: 50,
     features: [
-      "25.00 credits every month",
+      "50.00 credits every month",
       "Adds Sonnet 4.5 and Gemini 3.6 Flash",
       "View, copy & export code, badge-free",
       "Email support",
@@ -139,10 +139,11 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     price: "$50",
     period: "per month",
     description: "Every model, including the frontier ones.",
-    credits: 70,
+    credits: 150,
     features: [
-      "70.00 credits every month",
+      "150.00 credits every month",
       "Adds Opus 5 and Gemini 3.1 Pro",
+      "Duplicate any app to experiment freely",
       "Priority support",
     ],
   },
@@ -152,11 +153,12 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     price: "$200",
     period: "per month",
     description: "For scaling up production usage.",
-    credits: 300,
+    credits: 600,
     features: [
-      "300.00 credits every month",
+      "600.00 credits every month",
       "Every model",
       "Larger token budget per generation",
+      "Duplicate any app to experiment freely",
       "Dedicated support",
     ],
   },
@@ -175,6 +177,9 @@ export const PROMPT_CHAR_LIMIT: Record<PlanId, number> = {
   pro: 5000,
   max: 10000,
 };
+
+/** Lowest plan that can duplicate an app (a real perk: costs nothing to offer, no AI call involved). */
+export const DUPLICATE_MIN_PLAN: PlanId = "pro";
 
 export function planAllowsModel(plan: PlanId, model: ModelId): boolean {
   return PLAN_RANK[plan] >= PLAN_RANK[MODEL_INFO[model].minPlan];
