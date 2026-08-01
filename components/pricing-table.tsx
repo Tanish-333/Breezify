@@ -74,6 +74,10 @@ const ROWS: Row[] = [
     values: { free: false, plus: true, pro: true, max: true },
   },
   {
+    label: "Import an existing GitHub repo",
+    values: { free: false, plus: true, pro: true, max: true },
+  },
+  {
     label: "No Feather 123 badge",
     values: { free: false, plus: true, pro: true, max: true },
   },
