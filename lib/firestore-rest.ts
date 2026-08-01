@@ -73,11 +73,11 @@ function docName(path: string) {
   return `projects/${PROJECT_ID}/databases/(default)/documents/${path}`;
 }
 
-async function firestoreFetch(url: string, idToken: string, init?: RequestInit) {
+async function firestoreFetch(url: string, idToken: string | null, init?: RequestInit) {
   const res = await fetch(url, {
     ...init,
     headers: {
-      Authorization: `Bearer ${idToken}`,
+      ...(idToken ? { Authorization: `Bearer ${idToken}` } : {}),
       "Content-Type": "application/json",
       ...(init?.headers ?? {}),
     },
@@ -109,8 +109,14 @@ export interface FirestoreWrite {
   delete?: string;
 }
 
-export async function commit(writes: FirestoreWrite[], idToken: string): Promise<void> {
-  const res = await firestoreFetch(`${BASE}:commit`, idToken, {
+/**
+ * idToken is optional so a handful of narrow, unauthenticated writes (see
+ * the public visit-counter increment in app/api/track) can go through as
+ * request.auth == null in firestore.rules, which then must scope exactly
+ * what an anonymous caller is allowed to touch.
+ */
+export async function commit(writes: FirestoreWrite[], idToken?: string | null): Promise<void> {
+  const res = await firestoreFetch(`${BASE}:commit`, idToken ?? null, {
     method: "POST",
     body: JSON.stringify({ writes }),
   });

@@ -47,8 +47,18 @@ service cloud.firestore {
     match /apps/{appId} {
       allow read: if isOwner(resource.data.userId);
       allow create: if isOwner(request.resource.data.userId);
-      allow update: if isOwner(resource.data.userId)
-        && request.resource.data.userId == resource.data.userId;
+      allow update: if (
+        isOwner(resource.data.userId)
+        && request.resource.data.userId == resource.data.userId
+      ) || (
+        // Public visit-counter increments for deployed-app analytics
+        // (see app/api/track): no auth required, but this is the ONLY
+        // thing an anonymous caller may ever do here, an exact +1 to
+        // "visits" and nothing else, so it can't be used to touch
+        // anything else on the document.
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(["visits"])
+        && request.resource.data.visits == resource.data.visits + 1
+      );
       allow delete: if isOwner(resource.data.userId);
 
       match /events/{eventId} {

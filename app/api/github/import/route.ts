@@ -184,6 +184,7 @@ export async function POST(req: NextRequest) {
           turns: [turn],
           createdAt,
           generatedCode: { files },
+          visits: 0,
         }),
         createWrite(`apps/${appId}/versions/${turnId}`, { files, createdAt }),
       ],

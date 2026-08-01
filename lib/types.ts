@@ -171,6 +171,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
       "100.00 credits every month",
       "Adds Opus 5 and Gemini 3.1 Pro",
       "Duplicate any app to experiment freely",
+      "Visit analytics on deployed apps",
       "Priority support",
     ],
   },
@@ -280,6 +281,8 @@ export interface FeatherApp {
   errorMessage?: string;
   createdAt: number;
   deployedAt?: number;
+  /** Page-load count on the deployed app. Only tracked for Pro+ owners. */
+  visits?: number;
 }
 
 export interface FeatherUser {

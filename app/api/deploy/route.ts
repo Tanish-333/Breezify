@@ -2,9 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, getDoc, updateWrite } from "@/lib/firestore-rest";
 import { withWatermark } from "@/lib/watermark";
+import { withAnalytics } from "@/lib/analytics-snippet";
 import { deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
 import { unsupportedReason } from "@/lib/app-support";
-import { DEPLOY_DAILY_LIMIT, PLANS, type PlanId } from "@/lib/types";
+import { DEPLOY_DAILY_LIMIT, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -108,7 +109,8 @@ export async function POST(req: NextRequest) {
 
     const name = (appDoc.fields.name as string) || "feather-app";
     const slug = slugify(appId, name);
-    const files = withWatermark(rawFiles, userPlan === "free");
+    const analyticsEnabled = PLAN_RANK[userPlan] >= PLAN_RANK.pro;
+    const files = withAnalytics(withWatermark(rawFiles, userPlan === "free"), appId, analyticsEnabled);
 
     await commit([updateWrite(`apps/${appId}`, { status: "deploying" }, ["status"])], idToken);
 
