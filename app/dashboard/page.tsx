@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { PromptComposer } from "@/components/prompt-composer";
+import { TemplateGallery } from "@/components/template-gallery";
 import { GenerationProgress } from "@/components/generation-progress";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -18,13 +19,6 @@ import { formatDate } from "@/lib/utils";
 import { MODEL_INFO, planAllowsModel, type ModelId, type PlanId } from "@/lib/types";
 import { AlertCircle, FolderOpen, Loader2, Search, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
-
-const STARTERS = [
-  "A habit tracker with streaks and a calendar heatmap",
-  "An invoice generator with a client list",
-  "A markdown notes app with tags and search",
-  "A team standup board with async check-ins",
-];
 
 function DashboardContent() {
   const router = useRouter();
@@ -187,16 +181,8 @@ function DashboardContent() {
           )}
 
           {!generating && !prompt && (
-            <div className="mt-4 flex flex-wrap justify-center gap-2">
-              {STARTERS.map((s) => (
-                <button
-                  key={s}
-                  onClick={() => setPrompt(s)}
-                  className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-muted-foreground hover:text-foreground"
-                >
-                  {s}
-                </button>
-              ))}
+            <div className="mt-6">
+              <TemplateGallery onSelect={setPrompt} />
             </div>
           )}
 
