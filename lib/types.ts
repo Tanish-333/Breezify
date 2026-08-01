@@ -208,6 +208,9 @@ export const PROMPT_CHAR_LIMIT: Record<PlanId, number> = {
 /** Lowest plan that can duplicate an app (a real perk: costs nothing to offer, no AI call involved). */
 export const DUPLICATE_MIN_PLAN: PlanId = "pro";
 
+/** Lowest plan that can import an existing GitHub repo as a new app. */
+export const IMPORT_MIN_PLAN: PlanId = "plus";
+
 /**
  * Deploys don't cost credits (they're a Vercel build/bandwidth cost, not an
  * AI cost), so without a separate cap a free account could redeploy

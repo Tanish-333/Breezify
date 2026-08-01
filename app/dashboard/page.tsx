@@ -8,6 +8,8 @@ import { ProtectedRoute } from "@/components/protected-route";
 import { PromptComposer } from "@/components/prompt-composer";
 import { TemplateGallery } from "@/components/template-gallery";
 import { GenerationProgress } from "@/components/generation-progress";
+import { GithubImportDialog } from "@/components/github-import-dialog";
+import { GithubIcon } from "@/components/oauth-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
@@ -16,8 +18,15 @@ import { useUserApps, deleteApp } from "@/lib/use-apps";
 import { fetchModelAvailability, generateAppRequest, type ClarifyQuestion } from "@/lib/api-client";
 import { takePendingPrompt } from "@/lib/pending-prompt";
 import { formatDate } from "@/lib/utils";
-import { MODEL_INFO, planAllowsModel, type ModelId, type PlanId } from "@/lib/types";
-import { AlertCircle, FolderOpen, Loader2, Search, Trash2 } from "lucide-react";
+import {
+  IMPORT_MIN_PLAN,
+  MODEL_INFO,
+  PLAN_RANK,
+  planAllowsModel,
+  type ModelId,
+  type PlanId,
+} from "@/lib/types";
+import { AlertCircle, FolderOpen, Loader2, Lock, Search, Trash2 } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 function DashboardContent() {
@@ -25,6 +34,8 @@ function DashboardContent() {
   const { user, profile, refreshProfile } = useAuth();
   const { apps, loading: appsLoading } = useUserApps(user?.uid);
   const plan: PlanId = profile?.plan ?? "free";
+  const canImport = PLAN_RANK[plan] >= PLAN_RANK[IMPORT_MIN_PLAN];
+  const [showImport, setShowImport] = useState(false);
 
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState<ModelId>("haiku");
@@ -115,6 +126,34 @@ function DashboardContent() {
         <p className="mt-2.5 text-sm text-muted-foreground">
           Describe an app and Feather 123 writes the whole codebase.
         </p>
+
+        <div className="mt-4 flex justify-center">
+          {canImport ? (
+            <button
+              type="button"
+              onClick={() => setShowImport(true)}
+              className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-muted-foreground hover:text-foreground"
+            >
+              <GithubIcon className="h-3.5 w-3.5" />
+              Import from GitHub
+            </button>
+          ) : (
+            <Link
+              href="/billing"
+              title="Upgrade to Plus to import from GitHub"
+              className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-muted-foreground hover:text-foreground"
+            >
+              <span className="relative inline-flex">
+                <GithubIcon className="h-3.5 w-3.5" />
+                <Lock
+                  className="absolute -bottom-1 -right-1.5 h-2 w-2 rounded-full bg-background text-muted-foreground"
+                  strokeWidth={3}
+                />
+              </span>
+              Import from GitHub
+            </Link>
+          )}
+        </div>
 
         <div className="mx-auto mt-8 max-w-2xl text-left">
           <PromptComposer
@@ -290,6 +329,8 @@ function DashboardContent() {
           </div>
         )}
       </section>
+
+      {showImport && <GithubImportDialog onClose={() => setShowImport(false)} />}
     </div>
   );
 }
