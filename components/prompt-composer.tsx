@@ -361,7 +361,7 @@ export function PromptComposer({
       {!attachError && !micError && overLimit && (
         <p className="mt-2 text-xs text-warning">
           {composedLength.toLocaleString()} / {charLimit.toLocaleString()} characters — over your
-          plan's limit.{" "}
+          plan&apos;s limit.{" "}
           <Link href="/billing" className="font-medium underline">
             Upgrade for more room
           </Link>
