@@ -277,6 +277,11 @@ export async function POST(req: NextRequest) {
               actualCostUSD: result.actualCostUSD,
               createdAt: new Date(),
             }),
+            // A snapshot of this turn's files, so it can be reverted to later.
+            createWrite(`${appPath}/versions/${turn.id}`, {
+              files: result.files,
+              createdAt: new Date(),
+            }),
           ],
           idToken
         );

@@ -241,8 +241,11 @@ export type AppStatus =
 
 export interface AppTurn {
   id: string;
-  /** "build" is the original generation; "refine" is a follow-up change. */
-  kind: "build" | "refine";
+  /**
+   * "build" is the original generation, "refine" is a follow-up change,
+   * "revert" restores an earlier version and costs nothing (no AI call).
+   */
+  kind: "build" | "refine" | "revert";
   /** The user's words for this turn. */
   instruction: string;
   /** What the model says it did. */
