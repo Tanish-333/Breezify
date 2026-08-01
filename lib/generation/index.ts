@@ -24,16 +24,15 @@ async function run(
   userContent: string,
   model: ModelId,
   plan: PlanId,
-  onProgress?: ProgressFn,
-  overrideKey?: string
+  onProgress?: ProgressFn
 ): Promise<GenerationResult> {
   const provider = MODEL_INFO[model].provider;
   const maxOutputTokens = maxOutputTokensFor(plan);
 
   const { raw, inputTokens, outputTokens, actualCostUSD } =
     provider === "anthropic"
-      ? await generateWithAnthropic(userContent, model, maxOutputTokens, onProgress, overrideKey)
-      : await generateWithGemini(userContent, model, maxOutputTokens, onProgress, overrideKey);
+      ? await generateWithAnthropic(userContent, model, maxOutputTokens, onProgress)
+      : await generateWithGemini(userContent, model, maxOutputTokens, onProgress);
 
   const parsed = parseGenerationJSON(raw);
   assertHasFiles(parsed);
@@ -56,10 +55,9 @@ export function generateApp(
   prompt: string,
   model: ModelId,
   plan: PlanId,
-  onProgress?: ProgressFn,
-  overrideKey?: string
+  onProgress?: ProgressFn
 ) {
-  return run(userPrompt(prompt), model, plan, onProgress, overrideKey);
+  return run(userPrompt(prompt), model, plan, onProgress);
 }
 
 /** Apply a follow-up change to an app that already has generated files. */
@@ -69,8 +67,7 @@ export function refineApp(
   instruction: string,
   model: ModelId,
   plan: PlanId,
-  onProgress?: ProgressFn,
-  overrideKey?: string
+  onProgress?: ProgressFn
 ) {
-  return run(refinePrompt(originalPrompt, files, instruction), model, plan, onProgress, overrideKey);
+  return run(refinePrompt(originalPrompt, files, instruction), model, plan, onProgress);
 }

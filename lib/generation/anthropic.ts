@@ -9,16 +9,9 @@ import {
 
 let client: Anthropic | null = null;
 
-/**
- * `overrideKey` is a user-supplied key sent with a single request. It is used
- * for that request only and never cached on the shared client.
- */
-function getClient(overrideKey?: string) {
-  if (overrideKey) return new Anthropic({ apiKey: overrideKey });
+function getClient() {
   if (!process.env.ANTHROPIC_API_KEY) {
-    throw new Error(
-      "Anthropic models aren't configured on this deployment yet. Add your own API key in Settings, or set ANTHROPIC_API_KEY."
-    );
+    throw new Error("Anthropic models aren't configured on this deployment yet. Set ANTHROPIC_API_KEY.");
   }
   if (!client) client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
   return client;
@@ -35,10 +28,9 @@ export async function generateWithAnthropic(
   userContent: string,
   model: ModelId,
   maxOutputTokens: number,
-  onProgress?: ProgressFn,
-  overrideKey?: string
+  onProgress?: ProgressFn
 ): Promise<ProviderResult> {
-  const anthropic = getClient(overrideKey);
+  const anthropic = getClient();
   const apiModel = MODEL_INFO[model].apiModel;
 
   const stream = anthropic.messages.stream({
