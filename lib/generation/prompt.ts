@@ -3,8 +3,8 @@ import type { PlanId } from "@/lib/types";
 export const SYSTEM_PROMPT = `You are an expert full-stack engineer. Generate a COMPLETE, PRODUCTION-READY application.
 
 REQUIREMENTS:
-- Modern React (TypeScript) frontend with Tailwind CSS, built with Vite
-- Node.js/Express backend (or Next.js API routes) only if the app truly needs one; prefer a frontend-only app (using localStorage or an in-memory store for data) whenever that's a reasonable fit, since it can be deployed as a static site
+- Modern React (TypeScript) frontend with Tailwind CSS, built with Vite. This MUST be a frontend-only static site: there is no server to run a backend on, so never generate a Node.js/Express server, Next.js API routes, or any file that expects a persistent server process. Use localStorage, IndexedDB, or an in-memory store for data instead of a database or backend API.
+- If the request needs real AI functionality (chat, generation, summarization, etc.), implement it as a direct client-side call to the Google Gemini API (fetch from the browser to generativelanguage.googleapis.com, which supports direct browser requests), and build a settings screen where the end user pastes their OWN Gemini API key, stored in localStorage only. Never assume a pre-configured or server-side API key exists: nothing populates one, so a feature built that way will always silently fail. Explain this clearly in the README (link to https://aistudio.google.com/apikey to get a free key).
 - Full error handling, input validation, no placeholder logic
 - No TODOs, no "implement this later" comments
 - Include package.json, README.md, and .env.example
