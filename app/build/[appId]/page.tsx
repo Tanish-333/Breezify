@@ -16,7 +16,7 @@ import { TurnCard } from "@/components/turn-card";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useApp, duplicateApp } from "@/lib/use-apps";
+import { useApp, duplicateApp, revertToVersion } from "@/lib/use-apps";
 import { useAuth } from "@/lib/auth-context";
 import { fetchModelAvailability, generateAppRequest } from "@/lib/api-client";
 import {
@@ -65,6 +65,7 @@ function AppWorkspace() {
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState("");
   const [duplicating, setDuplicating] = useState(false);
+  const [reverting, setReverting] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [pane, setPane] = useState<Pane>("preview");
@@ -182,6 +183,19 @@ function AppWorkspace() {
     } catch {
       setError("Couldn't duplicate this app.");
       setDuplicating(false);
+    }
+  }
+
+  async function revert(turnId: string) {
+    if (!app) return;
+    setReverting(turnId);
+    setError("");
+    try {
+      await revertToVersion(app, turnId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't revert to that version.");
+    } finally {
+      setReverting(null);
     }
   }
 
@@ -343,8 +357,15 @@ function AppWorkspace() {
               </div>
             )}
 
-            {turns.map((turn) => (
-              <TurnCard key={turn.id} turn={turn} files={files} />
+            {turns.map((turn, i) => (
+              <TurnCard
+                key={turn.id}
+                turn={turn}
+                files={files}
+                isLatest={i === turns.length - 1}
+                onRevert={() => revert(turn.id)}
+                reverting={reverting === turn.id}
+              />
             ))}
 
             {refining && (

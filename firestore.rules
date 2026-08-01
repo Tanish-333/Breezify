@@ -55,6 +55,14 @@ service cloud.firestore {
         allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
         allow write: if false;
       }
+
+      // versions/{turnId}: a file snapshot taken after each turn, so a turn
+      // can be reverted to later. One per turn, immutable once written.
+      match /versions/{turnId} {
+        allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
+        allow create: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
+        allow update, delete: if false;
+      }
     }
 
     // transactions/{txId}: billing/credit history. Immutable once written.

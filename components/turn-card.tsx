@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { cn } from "@/lib/utils";
 import { MODEL_INFO, type AppTurn } from "@/lib/types";
-import { Check, Copy, FileCode2 } from "lucide-react";
+import { Check, Copy, FileCode2, History, Loader2 } from "lucide-react";
 
 type Tab = "details" | "files";
 
@@ -17,15 +17,29 @@ function timeAgo(ms: number) {
   return `${Math.floor(hours / 24)}d ago`;
 }
 
+const KIND_LABEL: Record<AppTurn["kind"], string> = {
+  build: "Built your app",
+  refine: "Applied your change",
+  revert: "Reverted to an earlier version",
+};
+
 export function TurnCard({
   turn,
   files,
+  isLatest,
+  onRevert,
+  reverting,
 }: {
   turn: AppTurn;
   files: Record<string, string>;
+  /** The current, live state, reverting to it would be a no-op. */
+  isLatest?: boolean;
+  onRevert?: () => void;
+  reverting?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("details");
   const [copied, setCopied] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   const paths = Object.keys(files).sort();
 
@@ -51,9 +65,7 @@ export function TurnCard({
       {/* What the model did */}
       <div className="rounded-lg border border-border">
         <div className="flex items-center justify-between gap-2 px-3 pt-3">
-          <p className="truncate text-sm font-medium">
-            {turn.kind === "build" ? "Built your app" : "Applied your change"}
-          </p>
+          <p className="truncate text-sm font-medium">{KIND_LABEL[turn.kind]}</p>
           <span className="shrink-0 text-[11px] text-muted-foreground">
             {timeAgo(turn.createdAt)}
           </span>
@@ -110,6 +122,44 @@ export function TurnCard({
             </div>
           )}
         </div>
+
+        {!isLatest && onRevert && (
+          <div className="border-t border-border px-3 py-2">
+            {confirming ? (
+              <div className="flex items-center gap-2 text-[11px]">
+                <span className="text-muted-foreground">Revert to this version?</span>
+                <button
+                  onClick={() => {
+                    setConfirming(false);
+                    onRevert();
+                  }}
+                  className="font-medium text-foreground hover:underline"
+                >
+                  Yes, revert
+                </button>
+                <button
+                  onClick={() => setConfirming(false)}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  Cancel
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setConfirming(true)}
+                disabled={reverting}
+                className="flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+              >
+                {reverting ? (
+                  <Loader2 className="h-3 w-3 animate-spin" />
+                ) : (
+                  <History className="h-3 w-3" />
+                )}
+                {reverting ? "Reverting..." : "Revert to this version"}
+              </button>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
