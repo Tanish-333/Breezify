@@ -9,9 +9,11 @@ import {
 } from "react";
 import {
   createUserWithEmailAndPassword,
+  EmailAuthProvider,
   GithubAuthProvider,
   linkWithPopup,
   onAuthStateChanged,
+  reauthenticateWithCredential,
   reauthenticateWithPopup,
   sendEmailVerification,
   sendPasswordResetEmail,
@@ -62,6 +64,7 @@ interface AuthContextValue {
   connectGithub: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
+  reauthenticateWithPassword: (currentPassword: string) => Promise<void>;
   deleteAccount: () => Promise<void>;
   signOut: () => Promise<void>;
   refreshProfile: () => Promise<void>;
@@ -256,6 +259,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await updatePassword(auth.currentUser, newPassword);
   }
 
+  /**
+   * Firebase requires a "recent" sign-in for sensitive changes like a
+   * password update; changePassword throws auth/requires-recent-login once
+   * the session's gotten old enough. This re-proves identity with the
+   * account's current password so the caller can retry immediately instead
+   * of forcing a full sign-out/sign-in round trip.
+   */
+  async function reauthenticateWithPassword(currentPassword: string) {
+    if (!auth.currentUser?.email) throw new Error("Not signed in");
+    const credential = EmailAuthProvider.credential(auth.currentUser.email, currentPassword);
+    await reauthenticateWithCredential(auth.currentUser, credential);
+  }
+
   async function deleteAccount() {
     if (!auth.currentUser) throw new Error("Not signed in");
     const token = await auth.currentUser.getIdToken();
@@ -285,6 +301,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     connectGithub,
     resetPassword,
     changePassword,
+    reauthenticateWithPassword,
     deleteAccount,
     signOut,
     refreshProfile,
