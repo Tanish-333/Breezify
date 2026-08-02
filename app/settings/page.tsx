@@ -10,8 +10,9 @@ import { Input, Label } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth-context";
 import { friendlyAuthError } from "@/lib/auth-errors";
+import { downloadUserData } from "@/lib/export-data";
 import { formatCredits } from "@/lib/utils";
-import { AlertCircle, CheckCircle2, ShieldCheck } from "lucide-react";
+import { AlertCircle, CheckCircle2, Download, ShieldCheck } from "lucide-react";
 
 const PROVIDER_LABELS: Record<string, string> = {
   "password": "Email & password",
@@ -22,13 +23,25 @@ const PROVIDER_LABELS: Record<string, string> = {
 
 function SettingsContent() {
   const router = useRouter();
-  const { user, profile, changePassword, deleteAccount, signOut } = useAuth();
+  const { user, profile, changePassword, reauthenticateWithPassword, deleteAccount, signOut } =
+    useAuth();
   const [newPassword, setNewPassword] = useState("");
   const [pwError, setPwError] = useState("");
   const [pwSuccess, setPwSuccess] = useState(false);
   const [pwLoading, setPwLoading] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [exportError, setExportError] = useState("");
+  const [exportLoading, setExportLoading] = useState(false);
+
+  // Firebase rejects a password change once the session's gotten old enough
+  // (auth/requires-recent-login) until identity is re-proven. Rather than
+  // dead-ending on that error, ask for the current password inline and
+  // retry the same change right after.
+  const [needsReauth, setNeedsReauth] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [reauthError, setReauthError] = useState("");
+  const [reauthLoading, setReauthLoading] = useState(false);
 
   const providers = profile?.authProviders ?? [];
   const hasPassword = providers.includes("password");
@@ -43,9 +56,44 @@ function SettingsContent() {
       setPwSuccess(true);
       setNewPassword("");
     } catch (err) {
-      setPwError(friendlyAuthError(err));
+      if ((err as { code?: string })?.code === "auth/requires-recent-login") {
+        setNeedsReauth(true);
+      } else {
+        setPwError(friendlyAuthError(err));
+      }
     } finally {
       setPwLoading(false);
+    }
+  }
+
+  async function handleReauth(e: React.FormEvent) {
+    e.preventDefault();
+    setReauthError("");
+    setReauthLoading(true);
+    try {
+      await reauthenticateWithPassword(currentPassword);
+      await changePassword(newPassword);
+      setNeedsReauth(false);
+      setCurrentPassword("");
+      setNewPassword("");
+      setPwSuccess(true);
+    } catch (err) {
+      setReauthError(friendlyAuthError(err));
+    } finally {
+      setReauthLoading(false);
+    }
+  }
+
+  async function handleExport() {
+    if (!user) return;
+    setExportError("");
+    setExportLoading(true);
+    try {
+      await downloadUserData(user.uid, profile);
+    } catch {
+      setExportError("Couldn't export your data. Please try again.");
+    } finally {
+      setExportLoading(false);
     }
   }
 
@@ -157,9 +205,60 @@ function SettingsContent() {
                 Update
               </Button>
             </form>
+
+            {needsReauth && (
+              <form onSubmit={handleReauth} className="mt-4 space-y-3 border-t border-border pt-4">
+                <p className="text-sm text-muted-foreground">
+                  For your security, confirm your current password to continue.
+                </p>
+                {reauthError && (
+                  <div className="flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
+                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <span>{reauthError}</span>
+                  </div>
+                )}
+                <div className="flex items-end gap-3">
+                  <div className="flex-1">
+                    <Label htmlFor="current-password">Current password</Label>
+                    <Input
+                      id="current-password"
+                      type="password"
+                      required
+                      value={currentPassword}
+                      onChange={(e) => setCurrentPassword(e.target.value)}
+                      placeholder="Your current password"
+                    />
+                  </div>
+                  <Button type="submit" loading={reauthLoading}>
+                    Confirm
+                  </Button>
+                </div>
+              </form>
+            )}
           </CardContent>
         </Card>
       )}
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Your data</CardTitle>
+          <CardDescription>
+            Download everything Breezify has stored about your account as a single file.
+          </CardDescription>
+        </CardHeader>
+        <CardContent>
+          {exportError && (
+            <div className="mb-4 flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
+              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+              <span>{exportError}</span>
+            </div>
+          )}
+          <Button variant="secondary" onClick={handleExport} loading={exportLoading}>
+            <Download className="h-4 w-4" />
+            Download my data
+          </Button>
+        </CardContent>
+      </Card>
 
       <Card className="border-error/30">
         <CardHeader>
