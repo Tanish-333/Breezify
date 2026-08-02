@@ -6,7 +6,7 @@ export const runtime = "nodejs";
 /**
  * Public, unauthenticated visit-counter beacon for deployed apps (see
  * lib/analytics-snippet.ts). No auth is expected or possible here, the
- * caller is a visitor's browser, not a signed-in Feather user, so safety
+ * caller is a visitor's browser, not a signed-in Breezify user, so safety
  * comes entirely from firestore.rules scoping this exact write (a +1 to
  * "visits" and nothing else) rather than from anything checked in this
  * route. A bad or missing appId just fails the Firestore write silently,

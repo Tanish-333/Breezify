@@ -1,6 +1,6 @@
 // Firebase's public web client config. Not secret, safe in the browser
 // bundle and safe to read on the server without any admin credentials.
-// Env vars override these for portability; the literals are Feather 123's
+// Env vars override these for portability; the literals are Breezify's
 // own project so the app runs with zero required configuration.
 export const FIREBASE_PUBLIC_CONFIG = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY || "AIzaSyDJJUs4d0CC4RhAY2YfQPDSWX9MxOcm5hI",

@@ -124,7 +124,7 @@ function DashboardContent() {
           {firstName ? `Let's build something, ${firstName}` : "Let's build something"}
         </h1>
         <p className="mt-2.5 text-sm text-muted-foreground">
-          Describe an app and Feather 123 writes the whole codebase.
+          Describe an app and Breezify writes the whole codebase.
         </p>
 
         <div className="mt-4 flex justify-center">
@@ -166,7 +166,7 @@ function DashboardContent() {
             onSubmit={handleGenerate}
             loading={generating}
             disabled={insufficient}
-            placeholder={`Ask Feather 123 to build...`}
+            placeholder={`Ask Breezify to build...`}
           />
 
           {insufficient && !generating && (

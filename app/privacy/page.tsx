@@ -2,14 +2,14 @@ import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal-page";
 
 export const metadata: Metadata = {
-  title: "Privacy Policy: Feather 123",
+  title: "Privacy Policy: Breezify",
 };
 
 export default function PrivacyPage() {
   return (
     <LegalPage title="Privacy Policy" updated="July 30, 2026">
       <p>
-        This Privacy Policy describes how Feather 123 (&quot;we,&quot; &quot;us,&quot; or &quot;our&quot;)
+        This Privacy Policy describes how Breezify (&quot;we,&quot; &quot;us,&quot; or &quot;our&quot;)
         collects, uses, and shares information when you use our website, dashboard, and
         related services (the &quot;Service&quot;).
       </p>
@@ -44,11 +44,11 @@ export default function PrivacyPage() {
 
       <h2>3. How we share your information</h2>
       <p>
-        We share information with service providers who help us operate Feather 123,
+        We share information with service providers who help us operate Breezify,
         including Firebase and Google Cloud (authentication and data storage), Anthropic
         (processing prompts to generate applications), and Vercel (hosting deployed
         applications). We do not sell your personal information. We may disclose information
-        if required by law or to protect the rights, property, or safety of Feather 123, our
+        if required by law or to protect the rights, property, or safety of Breezify, our
         users, or the public.
       </p>
 

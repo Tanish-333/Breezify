@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Logo, FeatherMark } from "@/components/logo";
+import { Logo, BreezeMark } from "@/components/logo";
 import { CommandPalette } from "@/components/command-palette";
 import { AccountMenu } from "@/components/account-menu";
 import { ThemeToggle } from "@/components/theme-toggle";
@@ -110,7 +110,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         >
           <Link href="/dashboard" className="flex items-center">
-            {collapsed ? <FeatherMark className="h-5 w-5" /> : <Logo />}
+            {collapsed ? <BreezeMark className="h-5 w-5" /> : <Logo />}
           </Link>
           {!collapsed && (
             <div className="ml-auto flex items-center gap-0.5">

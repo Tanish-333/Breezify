@@ -10,7 +10,7 @@
  * by anyone who scripts requests against it directly.
  */
 
-const SNIPPET_ID = "feather-123-analytics";
+const SNIPPET_ID = "breezify-analytics";
 
 function appUrl() {
   return process.env.NEXT_PUBLIC_APP_URL || "https://feather-123.vercel.app";

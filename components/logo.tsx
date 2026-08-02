@@ -1,6 +1,6 @@
 import { cn } from "@/lib/utils";
 
-export function FeatherMark({ className }: { className?: string }) {
+export function BreezeMark({ className }: { className?: string }) {
   return (
     <svg
       viewBox="0 0 24 24"
@@ -8,13 +8,9 @@ export function FeatherMark({ className }: { className?: string }) {
       className={cn("h-5 w-5", className)}
       xmlns="http://www.w3.org/2000/svg"
     >
-      <path
-        d="M20.5 3.5C14 3.5 4 8 4 17c0 1.1.9 2 2 2h1.5l1.8-4.2 2.5 1-1.6 3.7c4.9-1 9-4.7 10.3-9.6.6-2.3.9-4.5.5-6.4Z"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <path d="M12 19 20.5 3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M4 7c2-2 4 2 6 0s4 2 6 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M2 12c3-3 6 3 9 0s6 3 9 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M4 17c2-2 4 2 6 0s4 2 6 0" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
     </svg>
   );
 }
@@ -22,8 +18,8 @@ export function FeatherMark({ className }: { className?: string }) {
 export function Logo({ className, wordmark = true }: { className?: string; wordmark?: boolean }) {
   return (
     <span className={cn("inline-flex items-center gap-2 font-semibold tracking-tight", className)}>
-      <FeatherMark />
-      {wordmark && <span>Feather 123</span>}
+      <BreezeMark />
+      {wordmark && <span>Breezify</span>}
     </span>
   );
 }

@@ -1,5 +1,5 @@
 // Firebase Admin SDK, used ONLY by the Stripe webhook (and nowhere else in
-// this app). Every other Firestore write in Feather 123 goes through
+// this app). Every other Firestore write in Breezify goes through
 // lib/firestore-rest.ts authenticated as the calling user, so security rules
 // are the enforcement (see firestore.rules). A Stripe webhook has no user
 // token at all, it's Stripe's server calling ours directly, so there's no

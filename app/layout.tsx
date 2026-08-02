@@ -12,9 +12,9 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 export const dynamic = "force-dynamic";
 
 const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://feather-123.vercel.app";
-const TITLE = "Feather 123: Build and ship apps with AI";
+const TITLE = "Breezify: Build and ship apps with AI";
 const DESCRIPTION =
-  "Feather 123 turns a plain-English prompt into a production-ready app, deployed in seconds. No code required.";
+  "Breezify turns a plain-English prompt into a production-ready app, deployed in seconds. No code required.";
 
 export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
@@ -27,7 +27,7 @@ export const metadata: Metadata = {
     title: TITLE,
     description: DESCRIPTION,
     url: SITE_URL,
-    siteName: "Feather 123",
+    siteName: "Breezify",
     type: "website",
   },
   twitter: {
