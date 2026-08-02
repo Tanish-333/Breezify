@@ -24,6 +24,7 @@ import {
 import {
   doc,
   getDoc,
+  onSnapshot,
   serverTimestamp,
   setDoc,
   updateDoc,
@@ -40,12 +41,22 @@ import type { FeatherUser } from "@/lib/types";
 
 const SIGNUP_BONUS_CREDITS = 5.0;
 
+/**
+ * True for password accounts that haven't clicked their verification link
+ * yet. OAuth accounts (Google, GitHub) are excluded: Firebase only sets
+ * emailVerified from what the provider itself already confirmed, so there's
+ * no verification step of ours for them to complete.
+ */
+export function isUnverifiedEmailUser(user: User): boolean {
+  return user.providerData.some((p) => p.providerId === "password") && !user.emailVerified;
+}
+
 interface AuthContextValue {
   user: User | null;
   profile: FeatherUser | null;
   loading: boolean;
-  signUpWithEmail: (email: string, password: string, displayName?: string) => Promise<void>;
-  signInWithEmail: (email: string, password: string) => Promise<void>;
+  signUpWithEmail: (email: string, password: string, displayName?: string) => Promise<User>;
+  signInWithEmail: (email: string, password: string) => Promise<User>;
   signInWithGoogle: () => Promise<void>;
   signInWithGithub: () => Promise<void>;
   connectGithub: () => Promise<void>;
@@ -114,18 +125,27 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // network hangs (flaky connection, blocked request) we still need to stop
     // showing a spinner and fall back to the signed-out UI rather than hang forever.
     const failSafe = setTimeout(() => setLoading(false), 4000);
+    let unsubProfile: (() => void) | undefined;
 
     const unsub = onAuthStateChanged(
       auth,
       async (u) => {
         setUser(u);
+        unsubProfile?.();
+        unsubProfile = undefined;
         if (u) {
           try {
             await ensureUserDoc(u);
-            await loadProfile(u);
           } catch {
             // Profile sync failed (offline, permissions); still let the user in.
           }
+          // A live listener rather than a one-time fetch, so a plan upgrade
+          // (Stripe webhook writes it via the admin SDK, not this client)
+          // or a credit deduction from another tab shows up immediately
+          // instead of only after the next manual refreshProfile() call.
+          unsubProfile = onSnapshot(doc(db, "users", u.uid), (snap) => {
+            if (snap.exists()) setProfile(toProfile(u.uid, snap.data()));
+          });
         } else {
           setProfile(null);
         }
@@ -140,6 +160,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       clearTimeout(failSafe);
       unsub();
+      unsubProfile?.();
     };
   }, []);
 
@@ -147,21 +168,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (auth.currentUser) await loadProfile(auth.currentUser);
   }
 
-  async function signUpWithEmail(email: string, password: string, displayName?: string) {
-    const cred = await createUserWithEmailAndPassword(auth, email, password);
-    if (displayName) {
-      const { updateProfile } = await import("firebase/auth");
-      await updateProfile(cred.user, { displayName });
+  async function signUpWithEmail(email: string, password: string, displayName?: string): Promise<User> {
+    try {
+      const cred = await createUserWithEmailAndPassword(auth, email, password);
+      if (displayName) {
+        const { updateProfile } = await import("firebase/auth");
+        await updateProfile(cred.user, { displayName });
+      }
+      await ensureUserDoc(cred.user);
+      await sendEmailVerification(cred.user);
+      await loadProfile(cred.user);
+      return cred.user;
+    } catch (err) {
+      const code = (err as { code?: string })?.code;
+      if (code !== "auth/email-already-in-use") throw err;
+
+      // Firebase can't tell us whether that existing account was ever
+      // verified without a password, so try signing into it with what was
+      // just submitted. If it works and it's still unverified, this is the
+      // same person picking up an abandoned signup, so resend the link and
+      // resume onboarding instead of dead-ending on "account already
+      // exists". A wrong password (or an already-verified account) falls
+      // through to the normal error.
+      let cred;
+      try {
+        cred = await signInWithEmailAndPassword(auth, email, password);
+      } catch {
+        throw err;
+      }
+      if (cred.user.emailVerified) {
+        await firebaseSignOut(auth);
+        throw err;
+      }
+      await ensureUserDoc(cred.user);
+      await sendEmailVerification(cred.user);
+      await loadProfile(cred.user);
+      return cred.user;
     }
-    await ensureUserDoc(cred.user);
-    await sendEmailVerification(cred.user);
-    await loadProfile(cred.user);
   }
 
-  async function signInWithEmail(email: string, password: string) {
+  async function signInWithEmail(email: string, password: string): Promise<User> {
     const cred = await signInWithEmailAndPassword(auth, email, password);
     await ensureUserDoc(cred.user);
     await loadProfile(cred.user);
+    return cred.user;
   }
 
   async function oauthSignIn(provider: typeof googleProvider) {

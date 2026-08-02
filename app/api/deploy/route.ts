@@ -39,7 +39,14 @@ export async function POST(req: NextRequest) {
 
     let uid: string;
     try {
-      uid = (await verifyIdToken(idToken)).uid;
+      const verified = await verifyIdToken(idToken);
+      if (!verified.emailVerified) {
+        return NextResponse.json(
+          { error: "Please verify your email before deploying apps." },
+          { status: 403 }
+        );
+      }
+      uid = verified.uid;
     } catch {
       return NextResponse.json(
         { error: "Your session has expired. Please sign in again." },

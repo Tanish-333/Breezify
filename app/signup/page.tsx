@@ -7,7 +7,7 @@ import { AuthLayout } from "@/components/auth-layout";
 import { OAuthButtons } from "@/components/oauth-buttons";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
-import { useAuth } from "@/lib/auth-context";
+import { useAuth, isUnverifiedEmailUser } from "@/lib/auth-context";
 import { friendlyAuthError } from "@/lib/auth-errors";
 import { AlertCircle } from "lucide-react";
 
@@ -22,6 +22,10 @@ export default function SignupPage() {
 
   useEffect(() => {
     if (!user) return;
+    if (isUnverifiedEmailUser(user)) {
+      router.push("/verify-email");
+      return;
+    }
     const hasPendingPrompt = sessionStorage.getItem("feather:pending-prompt");
     router.push(hasPendingPrompt ? "/build" : "/dashboard");
   }, [user, router]);
@@ -31,9 +35,13 @@ export default function SignupPage() {
     setError("");
     setLoading(true);
     try {
-      await signUpWithEmail(email, password, name || undefined);
-      const hasPendingPrompt = sessionStorage.getItem("feather:pending-prompt");
-      router.push(hasPendingPrompt ? "/build" : "/verify-email");
+      const signedUpUser = await signUpWithEmail(email, password, name || undefined);
+      if (isUnverifiedEmailUser(signedUpUser)) {
+        router.push("/verify-email");
+      } else {
+        const hasPendingPrompt = sessionStorage.getItem("feather:pending-prompt");
+        router.push(hasPendingPrompt ? "/build" : "/dashboard");
+      }
     } catch (err) {
       setError(friendlyAuthError(err));
     } finally {
