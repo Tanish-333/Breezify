@@ -2,15 +2,15 @@ import type { Metadata } from "next";
 import { LegalPage } from "@/components/legal-page";
 
 export const metadata: Metadata = {
-  title: "Terms of Service: Feather 123",
+  title: "Terms of Service: Breezify",
 };
 
 export default function TermsPage() {
   return (
     <LegalPage title="Terms of Service" updated="July 30, 2026">
       <p>
-        These Terms of Service (&quot;Terms&quot;) govern your access to and use of Feather
-        123 (&quot;Feather 123,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;), including our
+        These Terms of Service (&quot;Terms&quot;) govern your access to and use of Breezify
+        (&quot;Breezify,&quot; &quot;we,&quot; &quot;us,&quot; or &quot;our&quot;), including our
         website, dashboard, and any applications generated through the service
         (collectively, the &quot;Service&quot;). By creating an account or otherwise using the
         Service, you agree to these Terms. If you do not agree, do not use the Service.
@@ -83,7 +83,7 @@ export default function TermsPage() {
 
       <h2>8. Limitation of liability</h2>
       <p>
-        To the maximum extent permitted by law, Feather 123 and its affiliates will not be
+        To the maximum extent permitted by law, Breezify and its affiliates will not be
         liable for any indirect, incidental, special, consequential, or punitive damages, or
         any loss of profits or data, arising from your use of the Service, even if advised of
         the possibility of such damages.

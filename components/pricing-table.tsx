@@ -78,7 +78,7 @@ const ROWS: Row[] = [
     values: { free: false, plus: true, pro: true, max: true },
   },
   {
-    label: "No Feather 123 badge",
+    label: "No Breezify badge",
     values: { free: false, plus: true, pro: true, max: true },
   },
   {

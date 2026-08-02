@@ -138,7 +138,7 @@ function BuildContent() {
       <div className="mb-8">
         <h1 className="text-2xl font-semibold tracking-tight">Build a new app</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Describe what you want. Feather 123 writes the full, working codebase.
+          Describe what you want. Breezify writes the full, working codebase.
         </p>
       </div>
 

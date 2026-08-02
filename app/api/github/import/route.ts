@@ -151,7 +151,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Same check deploy/preview run: no point importing an app Feather can't
+    // Same check deploy/preview run: no point importing an app Breezify can't
     // actually run, since there's no server here to run a backend on.
     const unsupported = unsupportedReason(files, "deploy");
     if (unsupported) {

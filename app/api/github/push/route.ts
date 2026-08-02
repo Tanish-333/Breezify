@@ -11,7 +11,7 @@ const GH = "https://api.github.com";
 
 /**
  * The caller's GitHub token is used for this request only and never persisted.
- * Feather stores the resulting repo URL, not the credential.
+ * Breezify stores the resulting repo URL, not the credential.
  */
 function ghHeaders(token: string) {
   return {
@@ -117,7 +117,7 @@ export async function POST(req: NextRequest) {
         name,
         private: Boolean(isPrivate),
         auto_init: false,
-        description: (appDoc.fields.summary as string) || "Built with Feather 123",
+        description: (appDoc.fields.summary as string) || "Built with Breezify",
       }),
     });
     if (!created.ok) {
@@ -167,7 +167,7 @@ export async function POST(req: NextRequest) {
     const commitRes = await gh(`/repos/${owner}/${name}/git/commits`, githubToken, {
       method: "POST",
       body: JSON.stringify({
-        message: "Initial commit from Feather 123",
+        message: "Initial commit from Breezify",
         tree: tree.body.sha,
         parents: [],
       }),

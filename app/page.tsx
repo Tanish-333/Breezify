@@ -23,7 +23,7 @@ const FEATURES = [
   {
     icon: Wand2,
     title: "Describe, don't code",
-    body: "Write what you want in plain English. Feather 123 generates a complete, production-ready app: frontend, backend, and config.",
+    body: "Write what you want in plain English. Breezify generates a complete, production-ready app: frontend, backend, and config.",
     span: "sm:col-span-2",
   },
   {
@@ -61,12 +61,12 @@ const FEATURES = [
 
 const FAQS = [
   {
-    q: "What is Feather 123?",
-    a: "Feather 123 is an AI app builder. Describe what you want in plain English and Feather 123 writes a complete, working codebase for it, then deploys it to a live URL.",
+    q: "What is Breezify?",
+    a: "Breezify is an AI app builder. Describe what you want in plain English and Breezify writes a complete, working codebase for it, then deploys it to a live URL.",
   },
   {
-    q: "How is Feather 123 different from other app builders?",
-    a: "Feather 123 gives you full, inspectable source code for everything it generates. It's not a black box. On the Plus plan and above, you can open any file in the built-in editor, understand exactly what was built, and export or push it to GitHub to keep iterating.",
+    q: "How is Breezify different from other app builders?",
+    a: "Breezify gives you full, inspectable source code for everything it generates. It's not a black box. On the Plus plan and above, you can open any file in the built-in editor, understand exactly what was built, and export or push it to GitHub to keep iterating.",
   },
   {
     q: "What kind of apps can I build?",
@@ -82,7 +82,7 @@ const FAQS = [
   },
   {
     q: "Can I use my own domain?",
-    a: "Every generated app deploys to a free *.vercel.app URL out of the box. Custom domains aren't managed from inside Feather 123 yet, but every deploy is a real Vercel project, so you can attach one directly from your Vercel dashboard.",
+    a: "Every generated app deploys to a free *.vercel.app URL out of the box. Custom domains aren't managed from inside Breezify yet, but every deploy is a real Vercel project, so you can attach one directly from your Vercel dashboard.",
   },
 ];
 
@@ -96,10 +96,10 @@ export default function LandingPage() {
           <h1 className="max-w-3xl text-balance text-4xl font-semibold tracking-tight md:text-6xl animate-in">
             Describe your app.
             <br />
-            Feather 123 builds it.
+            Breezify builds it.
           </h1>
           <p className="max-w-xl text-balance text-lg text-muted-foreground animate-in">
-            Paste your idea below. Feather 123 writes the full codebase and deploys it
+            Paste your idea below. Breezify writes the full codebase and deploys it
             to a live URL. No setup required.
           </p>
           <PromptHero />
@@ -119,7 +119,7 @@ export default function LandingPage() {
               Everything you need to ship, nothing you don&apos;t
             </h2>
             <p className="mt-3 text-muted-foreground">
-              Feather 123 is built for people who want a finished product, not a demo.
+              Breezify is built for people who want a finished product, not a demo.
             </p>
           </div>
           <div className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
@@ -208,7 +208,7 @@ export default function LandingPage() {
             <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
               Frequently asked questions
             </h2>
-            <p className="mt-3 text-muted-foreground">Everything you need to know before building with Feather 123.</p>
+            <p className="mt-3 text-muted-foreground">Everything you need to know before building with Breezify.</p>
           </div>
           <FaqAccordion items={FAQS} />
         </div>
@@ -230,7 +230,7 @@ export default function LandingPage() {
 
       <footer className="border-t border-border py-10">
         <div className="container flex flex-col items-center justify-between gap-4 text-sm text-muted-foreground md:flex-row">
-          <span>© {new Date().getFullYear()} Feather 123. All rights reserved.</span>
+          <span>© {new Date().getFullYear()} Breezify. All rights reserved.</span>
           <div className="flex flex-wrap items-center justify-center gap-6">
             <Link href="/terms" className="hover:text-foreground transition-colors">
               Terms

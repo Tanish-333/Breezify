@@ -1,5 +1,5 @@
 /**
- * Feather 123 only ever runs a generated app as a static frontend: the live
+ * Breezify only ever runs a generated app as a static frontend: the live
  * preview is a sandboxed browser iframe with no server behind it, and Deploy
  * publishes a static Vite build to Vercel. Neither can run a real backend
  * process, and neither can supply a secret the generated code assumes

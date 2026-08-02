@@ -99,7 +99,7 @@ export default function SignupPage() {
         </Button>
       </form>
       <p className="mt-5 text-center text-xs text-muted-foreground">
-        By signing up, you agree to Feather 123&apos;s{" "}
+        By signing up, you agree to Breezify&apos;s{" "}
         <Link href="/terms" className="text-foreground hover:underline">
           Terms
         </Link>{" "}
