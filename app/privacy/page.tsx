@@ -18,8 +18,8 @@ export default function PrivacyPage() {
       <ul>
         <li>
           <strong className="text-foreground">Account information:</strong> your name, email
-          address, profile photo, and authentication provider (email, Google, GitHub, or
-          Apple), collected when you sign up.
+          address, profile photo, and authentication provider (email, Google, or GitHub),
+          collected when you sign up.
         </li>
         <li>
           <strong className="text-foreground">Usage data:</strong> the prompts you submit,

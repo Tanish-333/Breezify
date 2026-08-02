@@ -31,7 +31,7 @@ export default function TermsPage() {
         You are responsible for maintaining the confidentiality of your account credentials
         and for all activity that occurs under your account. Notify us immediately if you
         suspect unauthorized use of your account. We support account creation via email and
-        password, and via Google, GitHub, and Apple sign-in.
+        password, and via Google and GitHub sign-in.
       </p>
 
       <h2>3. Credits, billing, and generation</h2>
