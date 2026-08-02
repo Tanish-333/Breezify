@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
@@ -20,6 +20,12 @@ import {
 } from "@/lib/types";
 import { AlertCircle, Check, CheckCircle2, Loader2, Receipt, TrendingDown } from "lucide-react";
 
+interface SubscriptionInfo {
+  status: string;
+  cancelAtPeriodEnd: boolean;
+  currentPeriodEnd: number;
+}
+
 function BillingContent() {
   const { user, profile } = useAuth();
   const { transactions, loading } = useTransactions(user?.uid);
@@ -30,6 +36,10 @@ function BillingContent() {
   const [portalLoading, setPortalLoading] = useState(false);
   const [billingError, setBillingError] = useState("");
   const checkoutResult = searchParams.get("checkout");
+
+  const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
+  const [subLoading, setSubLoading] = useState(false);
+  const [cancelLoading, setCancelLoading] = useState(false);
 
   const creditsUsed = transactions.reduce((sum, t) => sum + (t.creditsUsed ?? 0), 0);
 
@@ -44,6 +54,31 @@ function BillingContent() {
     if (!res.ok) throw new Error(data.error || "Something went wrong.");
     return data;
   }
+
+  // Pulled live from Stripe rather than mirrored in Firestore, so this can
+  // never show a stale renew/cancel date, refetched whenever the plan
+  // changes or the user lands back here from a Stripe checkout/portal trip.
+  useEffect(() => {
+    if (plan === "free" || !user) {
+      setSubscription(null);
+      return;
+    }
+    let cancelled = false;
+    setSubLoading(true);
+    authedFetch("/api/stripe/subscription")
+      .then((data) => {
+        if (!cancelled) setSubscription(data.subscription ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setSubscription(null);
+      })
+      .finally(() => {
+        if (!cancelled) setSubLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [plan, user, checkoutResult]);
 
   async function startCheckout(targetPlan: PlanId) {
     setBillingError("");
@@ -66,6 +101,21 @@ function BillingContent() {
     } catch (err) {
       setBillingError(err instanceof Error ? err.message : "Couldn't open the billing portal.");
       setPortalLoading(false);
+    }
+  }
+
+  async function setAutoRenew(cancel: boolean) {
+    setBillingError("");
+    setCancelLoading(true);
+    try {
+      const data = await authedFetch("/api/stripe/cancel-subscription", { cancel });
+      setSubscription(data.subscription ?? null);
+    } catch (err) {
+      setBillingError(
+        err instanceof Error ? err.message : "Couldn't update your subscription."
+      );
+    } finally {
+      setCancelLoading(false);
     }
   }
 
@@ -124,6 +174,72 @@ function BillingContent() {
           </CardContent>
         </Card>
       </div>
+
+      {plan !== "free" && (
+        <Card>
+          <CardHeader>
+            <CardTitle>Subscription</CardTitle>
+            <CardDescription>Auto-renew and cancellation, straight from Stripe.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {subLoading ? (
+              <div className="flex h-9 items-center">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            ) : subscription ? (
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-muted-foreground">
+                  {subscription.cancelAtPeriodEnd ? (
+                    <>
+                      Auto-renew is off. Your plan ends on{" "}
+                      <span className="font-medium text-foreground">
+                        {formatDate(subscription.currentPeriodEnd * 1000)}
+                      </span>
+                      , then you&apos;ll drop to Free.
+                    </>
+                  ) : (
+                    <>
+                      Auto-renew is on. Your plan renews on{" "}
+                      <span className="font-medium text-foreground">
+                        {formatDate(subscription.currentPeriodEnd * 1000)}
+                      </span>
+                      .
+                    </>
+                  )}
+                </p>
+                {subscription.cancelAtPeriodEnd ? (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => setAutoRenew(false)}
+                    loading={cancelLoading}
+                  >
+                    Turn auto-renew back on
+                  </Button>
+                ) : (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => setAutoRenew(true)}
+                    loading={cancelLoading}
+                  >
+                    Cancel plan
+                  </Button>
+                )}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                No active Stripe subscription found for this plan. If you were upgraded manually,
+                use{" "}
+                <button type="button" onClick={openPortal} className="underline hover:text-foreground">
+                  Manage billing
+                </button>{" "}
+                or contact support to set up billing.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
 
       <div>
         <h2 className="mb-4 text-lg font-medium">Plans</h2>
