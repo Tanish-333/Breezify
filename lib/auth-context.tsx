@@ -34,7 +34,6 @@ import {
   googleProvider,
   githubProvider,
   githubRepoProvider,
-  appleProvider,
 } from "@/lib/firebase";
 import { setGithubToken } from "@/lib/github-connect";
 import type { FeatherUser } from "@/lib/types";
@@ -49,7 +48,6 @@ interface AuthContextValue {
   signInWithEmail: (email: string, password: string) => Promise<void>;
   signInWithGoogle: () => Promise<void>;
   signInWithGithub: () => Promise<void>;
-  signInWithApple: () => Promise<void>;
   connectGithub: () => Promise<void>;
   resetPassword: (email: string) => Promise<void>;
   changePassword: (newPassword: string) => Promise<void>;
@@ -234,7 +232,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signInWithEmail,
     signInWithGoogle: () => oauthSignIn(googleProvider),
     signInWithGithub: () => oauthSignIn(githubProvider),
-    signInWithApple: () => oauthSignIn(appleProvider),
     connectGithub,
     resetPassword,
     changePassword,
