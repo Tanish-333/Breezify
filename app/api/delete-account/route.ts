@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { commit, deleteWrite, queryCollection } from "@/lib/firestore-rest";
+import { commit, deleteWrite, getDoc, queryCollection } from "@/lib/firestore-rest";
 import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
+import { getStripe, isStripeConfigured } from "@/lib/stripe";
 
 export const runtime = "nodejs";
 
@@ -20,10 +21,40 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Your session has expired. Please sign in again." }, { status: 401 });
     }
 
-    const [apps, transactions] = await Promise.all([
+    const [apps, transactions, userDoc] = await Promise.all([
       queryCollection("apps", "userId", uid, idToken),
       queryCollection("transactions", "userId", uid, idToken),
+      getDoc(`users/${uid}`, idToken),
     ]);
+
+    // Deleting the account also deletes the only record of stripeCustomerId,
+    // so if an active subscription isn't cancelled first, the user loses any
+    // way to ever find or cancel it again and keeps getting billed forever
+    // with no account. Cancel first and fail loudly if that doesn't work,
+    // rather than deleting the account out from under a live subscription.
+    const customerId =
+      typeof userDoc?.fields.stripeCustomerId === "string"
+        ? (userDoc.fields.stripeCustomerId as string)
+        : undefined;
+    if (customerId && isStripeConfigured()) {
+      try {
+        const stripe = getStripe();
+        const subs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 100 });
+        const active = subs.data.filter(
+          (s) => s.status !== "canceled" && s.status !== "incomplete_expired"
+        );
+        await Promise.all(active.map((s) => stripe.subscriptions.cancel(s.id)));
+      } catch (err) {
+        console.error("[delete-account] Failed to cancel Stripe subscription:", err);
+        return NextResponse.json(
+          {
+            error:
+              "Couldn't cancel your active subscription. Please cancel it from the Billing page, then try deleting your account again.",
+          },
+          { status: 500 }
+        );
+      }
+    }
 
     const writes = [
       ...apps.map((a) => deleteWrite(`apps/${a.id}`)),
