@@ -7,7 +7,8 @@ export type ModelId =
   | "sonnet"
   | "gemini-pro"
   | "groq-llama-70b"
-  | "opus";
+  | "opus"
+  | "groq-gpt-oss-120b";
 
 export type PlanId = "free" | "plus" | "pro" | "max";
 
@@ -98,6 +99,16 @@ export const MODEL_INFO: Record<ModelId, ModelInfo> = {
     apiModel: "claude-opus-5",
     minPlan: "pro",
     tier: "Pro",
+  },
+  "groq-gpt-oss-120b": {
+    label: "GPT-OSS 120B",
+    provider: "groq",
+    providerLabel: "Groq",
+    description: "OpenAI's flagship open-weight model, with near-instant Groq inference.",
+    credits: 1.0,
+    apiModel: "openai/gpt-oss-120b",
+    minPlan: "max",
+    tier: "Max",
   },
 };
 

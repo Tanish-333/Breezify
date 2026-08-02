@@ -20,7 +20,7 @@ const MODELS: Record<PlanId, string> = {
   free: "Haiku 4.5",
   plus: "+ Sonnet 4.5, Gemini Flash, Llama 3.1 8B (Groq)",
   pro: "+ Opus 5, Gemini Pro, Llama 3.3 70B (Groq)",
-  max: "Every model",
+  max: "+ GPT-OSS 120B (Groq)",
 };
 
 const SUPPORT: Record<PlanId, string> = {

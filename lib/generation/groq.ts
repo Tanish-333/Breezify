@@ -14,6 +14,7 @@ export function isGroqConfigured() {
 const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
   "llama-3.1-8b-instant": { input: 0.05, output: 0.08 },
   "llama-3.3-70b-versatile": { input: 0.59, output: 0.79 },
+  "openai/gpt-oss-120b": { input: 0.15, output: 0.75 },
 };
 
 export async function generateWithGroq(
