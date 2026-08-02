@@ -1,0 +1,80 @@
+import { NextRequest, NextResponse } from "next/server";
+import { verifyIdToken } from "@/lib/verify-id-token";
+import { getDoc } from "@/lib/firestore-rest";
+import { getStripe, isStripeConfigured } from "@/lib/stripe";
+
+export const runtime = "nodejs";
+
+const LIVE_STATUSES = new Set(["active", "trialing", "past_due"]);
+
+/**
+ * Toggles cancel_at_period_end on the caller's own subscription: cancel:true
+ * turns auto-renew off (access continues until the period ends, then
+ * customer.subscription.deleted drops them to free), cancel:false turns it
+ * back on. The subscription is always looked up server-side from the
+ * caller's own stripeCustomerId, never taken from the request, so there's
+ * no way to target anyone else's subscription.
+ */
+export async function POST(req: NextRequest) {
+  try {
+    if (!isStripeConfigured()) {
+      return NextResponse.json(
+        { error: "Payments aren't configured on this deployment yet." },
+        { status: 400 }
+      );
+    }
+
+    const authHeader = req.headers.get("authorization") ?? "";
+    const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
+    if (!idToken) {
+      return NextResponse.json({ error: "Missing authorization token." }, { status: 401 });
+    }
+
+    let uid: string;
+    try {
+      uid = (await verifyIdToken(idToken)).uid;
+    } catch {
+      return NextResponse.json(
+        { error: "Your session has expired. Please sign in again." },
+        { status: 401 }
+      );
+    }
+
+    const { cancel } = await req.json();
+    if (typeof cancel !== "boolean") {
+      return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+    }
+
+    const userDoc = await getDoc(`users/${uid}`, idToken);
+    const customerId =
+      typeof userDoc?.fields.stripeCustomerId === "string"
+        ? (userDoc.fields.stripeCustomerId as string)
+        : undefined;
+    if (!customerId) {
+      return NextResponse.json(
+        { error: "No billing account found yet. Subscribe to a plan first." },
+        { status: 400 }
+      );
+    }
+
+    const stripe = getStripe();
+    const subs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 10 });
+    const active = subs.data.find((s) => LIVE_STATUSES.has(s.status));
+    if (!active) {
+      return NextResponse.json({ error: "No active subscription found." }, { status: 404 });
+    }
+
+    const updated = await stripe.subscriptions.update(active.id, { cancel_at_period_end: cancel });
+
+    return NextResponse.json({
+      subscription: {
+        status: updated.status,
+        cancelAtPeriodEnd: updated.cancel_at_period_end,
+        currentPeriodEnd: updated.current_period_end,
+      },
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Failed to update your subscription.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
