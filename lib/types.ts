@@ -189,12 +189,12 @@ export const PLANS: Record<PlanId, PlanInfo> = {
   max: {
     id: "max",
     name: "Max",
-    price: "$200",
+    price: "$85",
     period: "per month",
     description: "For scaling up production usage.",
-    credits: 500,
+    credits: 200,
     features: [
-      "500.00 credits every month",
+      "200.00 credits every month",
       "Every model",
       "Larger token budget per generation",
       "Duplicate any app to experiment freely",
