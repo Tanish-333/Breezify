@@ -523,7 +523,7 @@ function AppWorkspace() {
           appId={app.id}
           repoUrl={app.githubUrl}
           onClose={() => setShowSync(false)}
-          onSynced={() => setShowSync(false)}
+          onSynced={() => {}}
         />
       )}
 

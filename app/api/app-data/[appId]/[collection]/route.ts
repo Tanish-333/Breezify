@@ -1,7 +1,7 @@
 import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { commit, createWrite, listCollection } from "@/lib/firestore-rest";
+import { commit, createWrite, firestoreErrorStatus, listCollection } from "@/lib/firestore-rest";
 
 export const runtime = "nodejs";
 
@@ -37,9 +37,8 @@ export async function GET(
     return NextResponse.json({
       records: docs.map((d) => ({ id: d.id, ...d.fields })),
     });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to list records.";
-    return NextResponse.json({ error: message }, { status: 500 });
+  } catch {
+    return NextResponse.json({ error: "Failed to list records." }, { status: 500 });
   }
 }
 
@@ -86,7 +85,8 @@ export async function POST(
     await commit([createWrite(`app_data/${appId}/${collection}/${docId}`, data)], idToken);
     return NextResponse.json({ id: docId, ...data });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to create record.";
-    return NextResponse.json({ error: message }, { status: 500 });
+    const status = firestoreErrorStatus(err);
+    const message = status === 403 ? "You don't have permission to create this record." : "Failed to create record.";
+    return NextResponse.json({ error: message }, { status });
   }
 }

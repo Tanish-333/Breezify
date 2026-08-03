@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { commit, deleteWrite, updateWrite } from "@/lib/firestore-rest";
+import { commit, deleteWrite, firestoreErrorStatus, updateWrite } from "@/lib/firestore-rest";
 
 export const runtime = "nodejs";
 
@@ -62,8 +62,10 @@ export async function PATCH(
     );
     return NextResponse.json({ id: docId, ...fields });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to update record.";
-    return NextResponse.json({ error: message }, { status: 403 });
+    const status = firestoreErrorStatus(err);
+    const message =
+      status === 403 ? "You don't have permission to edit this record." : "Failed to update record.";
+    return NextResponse.json({ error: message }, { status });
   }
 }
 
@@ -89,7 +91,9 @@ export async function DELETE(
     await commit([deleteWrite(`app_data/${appId}/${collection}/${docId}`)], idToken);
     return new NextResponse(null, { status: 204 });
   } catch (err) {
-    const message = err instanceof Error ? err.message : "Failed to delete record.";
-    return NextResponse.json({ error: message }, { status: 403 });
+    const status = firestoreErrorStatus(err);
+    const message =
+      status === 403 ? "You don't have permission to delete this record." : "Failed to delete record.";
+    return NextResponse.json({ error: message }, { status });
   }
 }

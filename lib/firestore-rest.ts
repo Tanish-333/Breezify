@@ -126,6 +126,17 @@ export async function commit(writes: FirestoreWrite[], idToken?: string | null):
   }
 }
 
+/**
+ * Pulls the underlying HTTP status back out of an error thrown by commit()
+ * or getDoc() (both format as "... failed (STATUS): body"), so a route that
+ * caught the error can report the real cause (e.g. a rules rejection is a
+ * 403, not a generic 500) instead of guessing.
+ */
+export function firestoreErrorStatus(err: unknown, fallback = 500): number {
+  const match = err instanceof Error ? /\((\d{3})\)/.exec(err.message) : null;
+  return match ? Number(match[1]) : fallback;
+}
+
 export function updateWrite(
   path: string,
   fields: Record<string, unknown>,
