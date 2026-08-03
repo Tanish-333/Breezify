@@ -238,8 +238,17 @@ export async function POST(req: NextRequest) {
         };
 
         const result = existing
-          ? await refineApp(existing.prompt, existing.files, prompt, model, plan, onProgress, req.signal)
-          : await generateApp(prompt, model, plan, onProgress, req.signal);
+          ? await refineApp(
+              existing.prompt,
+              existing.files,
+              prompt,
+              appId,
+              model,
+              plan,
+              onProgress,
+              req.signal
+            )
+          : await generateApp(prompt, appId, model, plan, onProgress, req.signal);
 
         send({ type: "status", message: "Saving your app" });
 

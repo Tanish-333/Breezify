@@ -258,9 +258,10 @@ export interface AppTurn {
   id: string;
   /**
    * "build" is the original generation, "refine" is a follow-up change,
-   * "revert" restores an earlier version and costs nothing (no AI call).
+   * "revert" restores an earlier version and costs nothing (no AI call),
+   * "sync" pulls the latest commit from the linked GitHub repo.
    */
-  kind: "build" | "refine" | "revert";
+  kind: "build" | "refine" | "revert" | "sync";
   /** The user's words for this turn. */
   instruction: string;
   /** What the model says it did. */
@@ -292,8 +293,16 @@ export interface FeatherApp {
   errorMessage?: string;
   createdAt: number;
   deployedAt?: number;
-  /** Page-load count on the deployed app. Only tracked for Pro+ owners. */
+  /** Page-load count on the deployed app. */
   visits?: number;
+}
+
+/** A key/value pair scoped to one app, e.g. an API key the generated app calls out with. */
+export interface AppSecret {
+  id: string;
+  key: string;
+  value: string;
+  createdAt: number;
 }
 
 export interface FeatherUser {

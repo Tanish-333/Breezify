@@ -154,6 +154,29 @@ export function deleteWrite(path: string): FirestoreWrite {
   return { delete: docName(path) };
 }
 
+/**
+ * Lists every document directly inside a collection at `path` (e.g.
+ * "app_data/{appId}/{collection}"), unauthenticated by default so public
+ * reads (see firestore.rules' `app_data` match) work without a token.
+ */
+export async function listCollection(
+  path: string,
+  idToken?: string | null,
+  pageSize = 200
+): Promise<{ id: string; fields: Record<string, unknown> }[]> {
+  const res = await firestoreFetch(`${BASE}/${path}?pageSize=${pageSize}`, idToken ?? null);
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Firestore list ${path} failed (${res.status}): ${body}`);
+  }
+  const data = (await res.json()) as { documents?: { name: string; fields?: Record<string, any> }[] };
+  return (data.documents ?? []).map((d) => ({
+    id: d.name.split("/").pop()!,
+    fields: fromFirestoreFields(d.fields ?? {}),
+  }));
+}
+
 export async function queryCollection(
   collectionId: string,
   field: string,

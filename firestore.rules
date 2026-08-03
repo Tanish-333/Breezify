@@ -73,6 +73,27 @@ service cloud.firestore {
         allow create: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
         allow update, delete: if false;
       }
+
+      // secrets/{secretId}: key/value pairs the app owner configures for
+      // their generated app (e.g. an API key it calls out with). Owner-only
+      // in both directions, never read by anyone but the app's own owner.
+      match /secrets/{secretId} {
+        allow read, write: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
+      }
+    }
+
+    // app_data/{appId}/{collection}/{docId}: the generic per-app data store
+    // generated apps can use for real persistence (see app/api/app-data),
+    // instead of localStorage-only. Any signed-in visitor (including
+    // anonymous Firebase auth, which generated apps use) may create a
+    // record they own; only that visitor may edit or delete it later.
+    // Reads are public because a generated app's own UI is usually the only
+    // thing querying this, and it commonly needs to show everyone's data
+    // (e.g. a shared list), not just the current visitor's.
+    match /app_data/{appId}/{collection}/{docId} {
+      allow read: if true;
+      allow create: if isSignedIn() && request.resource.data.ownerUid == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
     }
 
     // transactions/{txId}: billing/credit history. Immutable once written.

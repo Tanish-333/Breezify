@@ -12,6 +12,8 @@ import { AppPreview } from "@/components/app-preview";
 import { PromptComposer } from "@/components/prompt-composer";
 import { GenerationProgress } from "@/components/generation-progress";
 import { GithubPushDialog } from "@/components/github-push-dialog";
+import { GithubSyncDialog } from "@/components/github-sync-dialog";
+import { AppSecretsDialog } from "@/components/app-secrets-dialog";
 import { TurnCard } from "@/components/turn-card";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -21,6 +23,7 @@ import { useAuth } from "@/lib/auth-context";
 import { fetchModelAvailability, generateAppRequest } from "@/lib/api-client";
 import {
   DUPLICATE_MIN_PLAN,
+  IMPORT_MIN_PLAN,
   MODEL_INFO,
   PLAN_RANK,
   planAllowsModel,
@@ -38,9 +41,11 @@ import {
   Copy,
   Eye,
   ExternalLink,
+  KeyRound,
   Loader2,
   Lock,
   Pencil,
+  RefreshCw,
   Rocket,
   X,
 } from "lucide-react";
@@ -54,6 +59,9 @@ function AppWorkspace() {
   const { user, profile, refreshProfile } = useAuth();
   const plan: PlanId = profile?.plan ?? "free";
   const canDuplicate = PLAN_RANK[plan] >= PLAN_RANK[DUPLICATE_MIN_PLAN];
+  // GitHub sync shares Push/Import's Plus-and-up gate (also enforced
+  // server-side in app/api/github/sync).
+  const canSyncGithub = PLAN_RANK[plan] >= PLAN_RANK[IMPORT_MIN_PLAN];
 
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<ModelId>("haiku");
@@ -63,6 +71,8 @@ function AppWorkspace() {
   const [progress, setProgress] = useState({ chars: 0, files: [] as string[] });
   const [error, setError] = useState("");
   const [showGithub, setShowGithub] = useState(false);
+  const [showSync, setShowSync] = useState(false);
+  const [showSecrets, setShowSecrets] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState("");
   const [duplicating, setDuplicating] = useState(false);
@@ -250,7 +260,7 @@ function AppWorkspace() {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {app.deployedUrl && PLAN_RANK[plan] >= PLAN_RANK.pro && (
+          {app.deployedUrl && (
             <span
               title="Page loads on the deployed app"
               className="flex items-center gap-1 rounded-full border border-border px-2 py-1 text-xs text-muted-foreground"
@@ -278,6 +288,28 @@ function AppWorkspace() {
               {!(deploying || app.status === "deploying") && <Rocket className="h-4 w-4" />}
               <span className="hidden sm:inline">{app.deployedUrl ? "Redeploy" : "Deploy"}</span>
             </Button>
+          )}
+
+          {hasFiles && app.githubUrl && (
+            canSyncGithub ? (
+              <Button variant="ghost" size="sm" onClick={() => setShowSync(true)}>
+                <RefreshCw className="h-4 w-4" />
+                <span className="hidden sm:inline">Sync</span>
+              </Button>
+            ) : (
+              <Link href="/billing" title="Upgrade to Plus to pull the latest commit">
+                <Button variant="ghost" size="sm">
+                  <span className="relative inline-flex">
+                    <RefreshCw className="h-4 w-4" />
+                    <Lock
+                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
+                      strokeWidth={3}
+                    />
+                  </span>
+                  <span className="hidden sm:inline">Sync</span>
+                </Button>
+              </Link>
+            )
           )}
 
           {hasFiles &&
@@ -323,6 +355,13 @@ function AppWorkspace() {
                 </Button>
               </Link>
             ))}
+
+          {hasFiles && (
+            <Button variant="ghost" size="sm" onClick={() => setShowSecrets(true)}>
+              <KeyRound className="h-4 w-4" />
+              <span className="hidden sm:inline">Secrets</span>
+            </Button>
+          )}
 
           {hasFiles && (
             <div className="flex items-center rounded-lg border border-border p-0.5">
@@ -478,6 +517,17 @@ function AppWorkspace() {
           onPushed={() => {}}
         />
       )}
+
+      {showSync && app.githubUrl && (
+        <GithubSyncDialog
+          appId={app.id}
+          repoUrl={app.githubUrl}
+          onClose={() => setShowSync(false)}
+          onSynced={() => setShowSync(false)}
+        />
+      )}
+
+      {showSecrets && <AppSecretsDialog appId={app.id} onClose={() => setShowSecrets(false)} />}
     </div>
   );
 }

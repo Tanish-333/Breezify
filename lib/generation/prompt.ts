@@ -1,9 +1,28 @@
 import type { PlanId } from "@/lib/types";
+import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
+
+function appBaseUrl() {
+  return process.env.NEXT_PUBLIC_APP_URL || "https://feather-123.vercel.app";
+}
+
+function backendDataApiBlock(appId: string) {
+  return `\n\nBACKEND DATA API (use only if this app needs persistence or shared data, see system prompt):
+APP_ID: ${appId}
+Base URL: ${appBaseUrl()}
+FIREBASE_API_KEY: ${FIREBASE_PUBLIC_CONFIG.apiKey}`;
+}
 
 export const SYSTEM_PROMPT = `You are an expert full-stack engineer. Generate a COMPLETE, PRODUCTION-READY application.
 
 REQUIREMENTS:
-- Modern React (TypeScript) frontend with Tailwind CSS, built with Vite. This MUST be a frontend-only static site: there is no server to run a backend on, so never generate a Node.js/Express server, Next.js API routes, or any file that expects a persistent server process. Use localStorage, IndexedDB, or an in-memory store for data instead of a database or backend API.
+- Modern React (TypeScript) frontend with Tailwind CSS, built with Vite. This MUST be a frontend-only static site: there is no server to run a backend on, so never generate a Node.js/Express server, Next.js API routes, or any file that expects a persistent server process.
+- If the app needs data to persist across sessions or be shared between visitors (e.g. a todo list, a guestbook, comments, a shared poll), use Breezify's built-in data API instead of only localStorage:
+  - Base URL and APP_ID are given in the user message below as "BACKEND DATA API". The full collection URL is \`<base URL>/api/app-data/<APP_ID>/<collection>\`, where "<collection>" is any short name you choose per kind of record (e.g. "todos").
+  - Before calling it, sign the visitor in anonymously so writes have an identity: POST to \`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=<FIREBASE_API_KEY>\` (FIREBASE_API_KEY is also given below) with JSON body \`{"returnSecureToken": true}\`, cache the returned \`idToken\`/\`localId\` in localStorage, and refresh it with the \`refreshToken\` (via the standard Firebase \`securetoken.googleapis.com/v1/token\` endpoint) when it's close to expiring (tokens last about an hour).
+  - GET the collection URL (no auth needed) to list every record as \`{ "records": [{ "id": ..., ...fields }] }\`.
+  - POST to the collection URL with \`Authorization: Bearer <idToken>\` and a JSON object body to create a record; the server stamps \`id\`, \`ownerUid\`, and \`createdAt\` on it.
+  - PATCH or DELETE \`<collection URL>/<id>\` with the same Bearer token to edit or remove a record — only the visitor who created it can, everyone else's request is rejected.
+  - Purely local/ephemeral state (form drafts, UI toggles, a single-player game's current state) should still just use localStorage/IndexedDB; reach for the data API only when persistence or sharing across visitors is actually part of the request.
 - If the request needs real AI functionality (chat, generation, summarization, etc.), implement it as a direct client-side call to the Google Gemini API (fetch from the browser to generativelanguage.googleapis.com, which supports direct browser requests), and build a settings screen where the end user pastes their OWN Gemini API key, stored in localStorage only. Never assume a pre-configured or server-side API key exists: nothing populates one, so a feature built that way will always silently fail. Explain this clearly in the README (link to https://aistudio.google.com/apikey to get a free key).
 - Full error handling, input validation, no placeholder logic
 - No TODOs, no "implement this later" comments
@@ -25,8 +44,8 @@ Output your response as a single JSON object (no markdown fences, no commentary)
 
 Output complete file contents, not fragments or diffs. Every file referenced by package.json or by an import must be present in "files".`;
 
-export function userPrompt(prompt: string) {
-  return `USER REQUEST: ${prompt}`;
+export function userPrompt(prompt: string, appId: string) {
+  return `USER REQUEST: ${prompt}${backendDataApiBlock(appId)}`;
 }
 
 /**
@@ -37,7 +56,8 @@ export function userPrompt(prompt: string) {
 export function refinePrompt(
   originalPrompt: string,
   files: Record<string, string>,
-  instruction: string
+  instruction: string,
+  appId: string
 ) {
   const listing = Object.entries(files)
     .map(([path, content]) => `--- ${path} ---\n${content}`)
@@ -51,7 +71,7 @@ ${listing}
 
 CHANGE REQUESTED: ${instruction}
 
-Apply the requested change. Return the COMPLETE updated file set in the same JSON shape as before, including files you did not modify and a fresh "suggestions" list. Delete a file by omitting it. Keep the app runnable. In "summary", describe what you changed in this update rather than what the app does overall.`;
+Apply the requested change. Return the COMPLETE updated file set in the same JSON shape as before, including files you did not modify and a fresh "suggestions" list. Delete a file by omitting it. Keep the app runnable. In "summary", describe what you changed in this update rather than what the app does overall.${backendDataApiBlock(appId)}`;
 }
 
 /**

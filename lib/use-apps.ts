@@ -15,7 +15,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import type { AppTurn, FeatherApp } from "@/lib/types";
+import type { AppSecret, AppTurn, FeatherApp } from "@/lib/types";
 
 /**
  * Firestore timestamps come back as Timestamp objects from the client SDK,
@@ -155,6 +155,50 @@ export async function revertToVersion(app: FeatherApp, versionTurnId: string): P
       createdAt: new Date(),
     }),
   ]);
+}
+
+function toSecret(id: string, data: any): AppSecret {
+  return {
+    id,
+    key: data.key,
+    value: data.value,
+    createdAt: toMillis(data.createdAt) ?? Date.now(),
+  };
+}
+
+/** Key/value pairs configured for one app, e.g. an API key the generated app calls out with. */
+export function useAppSecrets(appId: string | undefined) {
+  const [secrets, setSecrets] = useState<AppSecret[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!appId) {
+      setSecrets([]);
+      setLoading(false);
+      return;
+    }
+    const q = query(collection(db, "apps", appId, "secrets"), orderBy("createdAt", "asc"));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setSecrets(snap.docs.map((d) => toSecret(d.id, d.data())));
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
+    return () => unsub();
+  }, [appId]);
+
+  return { secrets, loading };
+}
+
+export async function addAppSecret(appId: string, key: string, value: string): Promise<void> {
+  const ref = doc(collection(db, "apps", appId, "secrets"));
+  await setDoc(ref, { key, value, createdAt: serverTimestamp() });
+}
+
+export async function deleteAppSecret(appId: string, secretId: string): Promise<void> {
+  await deleteDoc(doc(db, "apps", appId, "secrets", secretId));
 }
 
 export function useApp(appId: string | undefined) {

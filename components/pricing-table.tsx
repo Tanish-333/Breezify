@@ -92,7 +92,7 @@ const ROWS: Row[] = [
   },
   {
     label: "Deployed-app visit analytics",
-    values: { free: false, plus: false, pro: true, max: true },
+    values: { free: true, plus: true, pro: true, max: true },
   },
   {
     label: "Larger generation token budget",

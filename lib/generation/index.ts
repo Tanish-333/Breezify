@@ -58,12 +58,13 @@ async function run(
 /** Build a brand new app from a prompt. */
 export function generateApp(
   prompt: string,
+  appId: string,
   model: ModelId,
   plan: PlanId,
   onProgress?: ProgressFn,
   signal?: AbortSignal
 ) {
-  return run(userPrompt(prompt), model, plan, onProgress, signal);
+  return run(userPrompt(prompt, appId), model, plan, onProgress, signal);
 }
 
 /** Apply a follow-up change to an app that already has generated files. */
@@ -71,10 +72,17 @@ export function refineApp(
   originalPrompt: string,
   files: Record<string, string>,
   instruction: string,
+  appId: string,
   model: ModelId,
   plan: PlanId,
   onProgress?: ProgressFn,
   signal?: AbortSignal
 ) {
-  return run(refinePrompt(originalPrompt, files, instruction), model, plan, onProgress, signal);
+  return run(
+    refinePrompt(originalPrompt, files, instruction, appId),
+    model,
+    plan,
+    onProgress,
+    signal
+  );
 }
