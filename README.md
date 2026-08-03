@@ -58,7 +58,10 @@ Breezify needs exactly one real secret: `ANTHROPIC_API_KEY`. Firebase requires n
 - Prompt-first dashboard with a sidebar, ⌘K command palette, file attachments, and optional voice dictation (the microphone is only requested when you click it, never on page load)
 - Build flow: prompt + model selector → the model generates a full app as structured files → live Monaco preview
 - Refine an existing app with a follow-up instruction; the model gets the current files and returns the updated set
-- Push any generated app to a new GitHub repository. The token is used for that one request and never stored; only the resulting repo URL is saved.
+- Push any generated app to a new GitHub repository, and pull the latest commit back in later ("Sync"). The token is used for that one request and never stored; only the resulting repo URL is saved. Both are Plus-and-up, enforced server-side.
+- Per-app secrets: a key/value store (`apps/{id}/secrets`) for anything the generated app calls out with, visible only to the app's owner.
+- Real persistence for generated apps via `/api/app-data`: a generic per-app data API backed by Firestore (`app_data/{appId}/{collection}`), scoped by ownership through `firestore.rules` rather than admin credentials. The generation prompt teaches the model this contract so it can opt in when an app needs to persist or share data across visitors, instead of being limited to localStorage.
+- Deployed-app visit analytics, visible on every plan.
 - Rename apps, download the whole app as a ZIP, copy individual files
 - Split workspace per app: change history on the left with per-turn Details/Files tabs and model-suggested follow-ups, live preview or code on the right
 - Live in-browser preview. Generated sources are transpiled with Babel standalone in a sandboxed iframe, so React apps run without a build step; apps needing a server show a clear fallback instead.
@@ -68,9 +71,8 @@ Breezify needs exactly one real secret: `ANTHROPIC_API_KEY`. Firebase requires n
 
 ## Not yet built (Phases 2 and 3)
 
-- Vercel deployment pipeline (`deployedUrl`, live status polling)
-- Per-app analytics (visits, errors, load time, traffic graph)
-- Stripe billing (credit top-ups, subscriptions)
+- Deeper per-app analytics (errors, load time, traffic graph beyond the visit count already tracked)
+- Stripe credit top-ups (subscriptions are live, see `app/api/stripe`)
 - Admin margin-tracking dashboard
 - "Made with Breezify" watermark injection
 
