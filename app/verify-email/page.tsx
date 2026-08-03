@@ -6,7 +6,7 @@ import { sendEmailVerification } from "firebase/auth";
 import { AuthLayout } from "@/components/auth-layout";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
-import { MailCheck } from "lucide-react";
+import { AlertTriangle, MailCheck } from "lucide-react";
 
 export default function VerifyEmailPage() {
   const router = useRouter();
@@ -52,6 +52,13 @@ export default function VerifyEmailPage() {
         <p className="text-sm text-muted-foreground">
           Click the link in that email, then continue below.
         </p>
+        <div className="flex w-full items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-left text-sm text-warning">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>
+            Don&apos;t see it? <strong>Check your spam or junk folder</strong> (and Trash) — it
+            sometimes lands there instead of your inbox.
+          </span>
+        </div>
         <div className="flex w-full flex-col gap-2.5">
           <Button className="w-full" onClick={checkVerified} loading={checking}>
             I&apos;ve verified, continue

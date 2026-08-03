@@ -257,53 +257,55 @@ export function PromptComposer({
               </button>
 
               {menuOpen && (
-                <div className="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-xl">
-                  {MODEL_IDS.map((id) => {
-                    const m = MODEL_INFO[id];
-                    const unlocked = planAllowsModel(plan, id);
-                    const configured = availability ? availability[id] !== false : true;
-                    const usable = unlocked && configured;
-                    return (
-                      <button
-                        key={id}
-                        type="button"
-                        disabled={!usable}
-                        onClick={() => {
-                          onModelChange(id);
-                          setMenuOpen(false);
-                        }}
-                        className={cn(
-                          "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors",
-                          usable ? "hover:bg-muted" : "cursor-not-allowed opacity-55"
-                        )}
-                      >
-                        <div className="min-w-0 flex-1">
-                          <div className="flex items-center gap-1.5">
-                            <span className="text-sm font-medium">{m.label}</span>
-                            {!unlocked && <Lock className="h-3 w-3 text-muted-foreground" />}
-                            {model === id && usable && (
-                              <Check className="h-3 w-3 text-muted-foreground" />
-                            )}
+                <div className="absolute bottom-full left-0 z-20 mb-2 w-72 overflow-hidden rounded-lg border border-border bg-background shadow-xl">
+                  <div className="max-h-72 overflow-y-auto p-1">
+                    {MODEL_IDS.map((id) => {
+                      const m = MODEL_INFO[id];
+                      const unlocked = planAllowsModel(plan, id);
+                      const configured = availability ? availability[id] !== false : true;
+                      const usable = unlocked && configured;
+                      return (
+                        <button
+                          key={id}
+                          type="button"
+                          disabled={!usable}
+                          onClick={() => {
+                            onModelChange(id);
+                            setMenuOpen(false);
+                          }}
+                          className={cn(
+                            "flex w-full items-start gap-2 rounded-md px-2.5 py-2 text-left transition-colors",
+                            usable ? "hover:bg-muted" : "cursor-not-allowed opacity-55"
+                          )}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-sm font-medium">{m.label}</span>
+                              {!unlocked && <Lock className="h-3 w-3 text-muted-foreground" />}
+                              {model === id && usable && (
+                                <Check className="h-3 w-3 text-muted-foreground" />
+                              )}
+                            </div>
+                            <p className="truncate text-[11px] text-muted-foreground">
+                              {m.providerLabel}
+                              {!unlocked
+                                ? ` · ${requiredPlanFor(id).name} plan`
+                                : !configured
+                                  ? " · not configured"
+                                  : ""}
+                            </p>
                           </div>
-                          <p className="truncate text-[11px] text-muted-foreground">
-                            {m.providerLabel}
-                            {!unlocked
-                              ? ` · ${requiredPlanFor(id).name} plan`
-                              : !configured
-                                ? " · not configured"
-                                : ""}
-                          </p>
-                        </div>
-                        <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {m.credits.toFixed(2)}
-                        </span>
-                      </button>
-                    );
-                  })}
+                          <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
+                            {m.credits.toFixed(2)}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
                   <Link
                     href="/billing"
                     onClick={() => setMenuOpen(false)}
-                    className="mt-1 block border-t border-border px-2.5 py-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
+                    className="block border-t border-border px-2.5 py-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
                   >
                     Compare plans and unlock more models
                   </Link>

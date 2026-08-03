@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { useAuth } from "@/lib/auth-context";
 import { friendlyAuthError } from "@/lib/auth-errors";
-import { AlertCircle, CheckCircle2 } from "lucide-react";
+import { AlertCircle, AlertTriangle, CheckCircle2 } from "lucide-react";
 
 export default function ForgotPasswordPage() {
   const { resetPassword } = useAuth();
@@ -41,9 +41,17 @@ export default function ForgotPasswordPage() {
       }
     >
       {sent ? (
-        <div className="flex items-start gap-2 rounded border border-success/30 bg-success/5 p-3 text-sm text-success">
-          <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
-          <span>Check {email} for a link to reset your password.</span>
+        <div className="space-y-3">
+          <div className="flex items-start gap-2 rounded border border-success/30 bg-success/5 p-3 text-sm text-success">
+            <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>Check {email} for a link to reset your password.</span>
+          </div>
+          <div className="flex items-start gap-2 rounded border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>
+              Don&apos;t see it? <strong>Check your spam or junk folder</strong> (and Trash).
+            </span>
+          </div>
         </div>
       ) : (
         <>
