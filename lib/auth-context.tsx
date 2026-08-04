@@ -29,6 +29,7 @@ import {
   getDoc,
   onSnapshot,
   serverTimestamp,
+  updateDoc,
   writeBatch,
 } from "firebase/firestore";
 import {
@@ -273,6 +274,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       throw new Error("GitHub didn't return an access token. Please try again.");
     }
     setGithubToken(credential.accessToken);
+    // linkWithPopup/reauthenticateWithPopup update auth.currentUser's own
+    // providerData immediately, but nothing else re-syncs that into the
+    // Firestore profile the Settings page's "Connected providers" card
+    // actually reads — normally that only happens on the next full
+    // sign-in, via ensureUserDoc. Mirror it here too so it shows up right
+    // away; the live profile listener picks up the write automatically.
+    const providers = auth.currentUser.providerData.map((p) => p.providerId);
+    await updateDoc(doc(db, "users", auth.currentUser.uid), { authProviders: providers }).catch(
+      () => {}
+    );
   }
 
   async function resetPassword(email: string) {
