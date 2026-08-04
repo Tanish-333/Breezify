@@ -221,7 +221,7 @@ export async function POST(req: NextRequest) {
           { generatedCode: { files: storedFiles }, turns: [...existingTurns, turn] },
           ["generatedCode", "turns"]
         ),
-        createWrite(`apps/${appId}/versions/${turnId}`, { files: storedFiles, createdAt }),
+        createWrite(`apps/${appId}/versions/${turnId}`, { userId: uid, files: storedFiles, createdAt }),
       ],
       idToken
     );

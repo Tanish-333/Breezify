@@ -204,28 +204,38 @@ export async function POST(req: NextRequest) {
     // apps/{appId} doc were created in the same batch, it would still look
     // like it doesn't exist yet and the versions write would be denied.
     // Creating the app doc first, in its own commit, avoids that.
-    await commit(
-      [
-        createWrite(`apps/${appId}`, {
-          userId: uid,
-          name: repo,
-          prompt: `Imported from github.com/${owner}/${repo}`,
-          model: "haiku",
-          status: "ready",
-          summary: turn.summary,
-          suggestions: [],
-          turns: [turn],
-          createdAt,
-          generatedCode: { files: storedFiles },
-          visits: 0,
-        }),
-      ],
-      idToken
-    );
-    await commit(
-      [createWrite(`apps/${appId}/versions/${turnId}`, { files: storedFiles, createdAt })],
-      idToken
-    );
+    try {
+      await commit(
+        [
+          createWrite(`apps/${appId}`, {
+            userId: uid,
+            name: repo,
+            prompt: `Imported from github.com/${owner}/${repo}`,
+            model: "haiku",
+            status: "ready",
+            summary: turn.summary,
+            suggestions: [],
+            turns: [turn],
+            createdAt,
+            generatedCode: { files: storedFiles },
+            visits: 0,
+          }),
+        ],
+        idToken
+      );
+    } catch (err) {
+      console.error(`[github/import] appId=${appId} uid=${uid} FAILED creating apps/${appId}:`, err);
+      throw err;
+    }
+    try {
+      await commit(
+        [createWrite(`apps/${appId}/versions/${turnId}`, { userId: uid, files: storedFiles, createdAt })],
+        idToken
+      );
+    } catch (err) {
+      console.error(`[github/import] appId=${appId} uid=${uid} FAILED creating apps/${appId}/versions/${turnId}:`, err);
+      throw err;
+    }
 
     return NextResponse.json({ appId, fileCount: Object.keys(files).length, skipped });
   } catch (err) {

@@ -303,6 +303,7 @@ export async function POST(req: NextRequest) {
             }),
             // A snapshot of this turn's files, so it can be reverted to later.
             createWrite(`${appPath}/versions/${turn.id}`, {
+              userId: uid,
               files: result.files,
               createdAt: new Date(),
             }),

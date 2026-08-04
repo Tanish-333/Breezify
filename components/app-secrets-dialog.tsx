@@ -2,11 +2,13 @@
 
 import { useState } from "react";
 import { useAppSecrets, addAppSecret, deleteAppSecret } from "@/lib/use-apps";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { AlertCircle, Eye, EyeOff, KeyRound, Trash2, X } from "lucide-react";
 
 export function AppSecretsDialog({ appId, onClose }: { appId: string; onClose: () => void }) {
+  const { user } = useAuth();
   const { secrets, loading } = useAppSecrets(appId);
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
@@ -17,6 +19,10 @@ export function AppSecretsDialog({ appId, onClose }: { appId: string; onClose: (
 
   async function add() {
     setError("");
+    if (!user) {
+      setError("You must be signed in.");
+      return;
+    }
     const trimmedKey = key.trim();
     if (!/^[A-Z][A-Z0-9_]*$/.test(trimmedKey)) {
       setError("Keys should look like an env var, e.g. STRIPE_SECRET_KEY.");
@@ -28,7 +34,7 @@ export function AppSecretsDialog({ appId, onClose }: { appId: string; onClose: (
     }
     setSaving(true);
     try {
-      await addAppSecret(appId, trimmedKey, value);
+      await addAppSecret(appId, user.uid, trimmedKey, value);
       setKey("");
       setValue("");
     } catch (err) {

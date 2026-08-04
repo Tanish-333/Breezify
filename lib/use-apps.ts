@@ -187,6 +187,7 @@ export async function revertToVersion(app: FeatherApp, versionTurnId: string): P
       turns: [...preservedTurns, newTurn],
     }),
     setDoc(doc(db, "apps", app.id, "versions", newTurn.id), {
+      userId: app.userId,
       files,
       createdAt: new Date(),
     }),
@@ -228,9 +229,14 @@ export function useAppSecrets(appId: string | undefined) {
   return { secrets, loading };
 }
 
-export async function addAppSecret(appId: string, key: string, value: string): Promise<void> {
+export async function addAppSecret(
+  appId: string,
+  userId: string,
+  key: string,
+  value: string
+): Promise<void> {
   const ref = doc(collection(db, "apps", appId, "secrets"));
-  await setDoc(ref, { key, value, createdAt: serverTimestamp() });
+  await setDoc(ref, { userId, key, value, createdAt: serverTimestamp() });
 }
 
 export async function deleteAppSecret(appId: string, secretId: string): Promise<void> {

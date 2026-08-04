@@ -91,17 +91,30 @@ service cloud.firestore {
 
       // versions/{turnId}: a file snapshot taken after each turn, so a turn
       // can be reverted to later. One per turn, immutable once written.
+      // Ownership lives directly on the document (userId, stamped by every
+      // writer) rather than being checked via get() on the parent apps/{appId}
+      // doc: a version is routinely created in the same request as its
+      // parent app doc, and within one Firestore commit, get() calls in
+      // rules only ever see the state from BEFORE that commit applies — so
+      // checking the parent that way could reject a version whose own
+      // parent was created moments earlier, depending on how the writes
+      // were batched. Checking a field on the write itself has no such
+      // ordering dependency.
       match /versions/{turnId} {
-        allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
-        allow create: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
+        allow read: if isOwner(resource.data.userId);
+        allow create: if isOwner(request.resource.data.userId);
         allow update, delete: if false;
       }
 
       // secrets/{secretId}: key/value pairs the app owner configures for
       // their generated app (e.g. an API key it calls out with). Owner-only
       // in both directions, never read by anyone but the app's own owner.
+      // Same reasoning as versions/{turnId} above: ownership is a field on
+      // the document itself, not a cross-document get().
       match /secrets/{secretId} {
-        allow read, write: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
+        allow read, delete: if isOwner(resource.data.userId);
+        allow create: if isOwner(request.resource.data.userId);
+        allow update: if isOwner(resource.data.userId) && request.resource.data.userId == resource.data.userId;
       }
     }
 
