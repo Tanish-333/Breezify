@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { commit, deleteWrite, getDoc, queryCollection } from "@/lib/firestore-rest";
+import { commit, deleteWrite, getDoc, listCollection, queryCollection, type FirestoreWrite } from "@/lib/firestore-rest";
 import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 
 export const runtime = "nodejs";
+
+// Firestore rejects a commit with more than 500 writes outright, so a
+// power user with a lot of apps/transactions needs their deletes split
+// across multiple commits rather than sent as one.
+const COMMIT_BATCH_SIZE = 450;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const out: T[][] = [];
+  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
+  return out;
+}
 
 export async function POST(req: NextRequest) {
   try {
@@ -82,7 +93,31 @@ export async function POST(req: NextRequest) {
       queryCollection("transactions", "userId", uid, idToken),
     ]);
 
-    const writes = [
+    // apps/{appId}/secrets and .../versions don't cascade-delete with their
+    // parent (Firestore never does), and both subcollections' own rules
+    // check ownership via get(apps/{appId}).data.userId — so if the parent
+    // app doc were deleted first, or in a way this missed, those documents
+    // wouldn't just be orphaned, they'd become permanently unreadable and
+    // undeletable by anyone, including the account owner. Secrets in
+    // particular can hold real third-party API keys, so this has to run
+    // for every app, not skipped as an optimization.
+    const subcollectionWrites = (
+      await Promise.all(
+        apps.map(async (a) => {
+          const [secrets, versions] = await Promise.all([
+            listCollection(`apps/${a.id}/secrets`, idToken).catch(() => []),
+            listCollection(`apps/${a.id}/versions`, idToken).catch(() => []),
+          ]);
+          return [
+            ...secrets.map((s) => deleteWrite(`apps/${a.id}/secrets/${s.id}`)),
+            ...versions.map((v) => deleteWrite(`apps/${a.id}/versions/${v.id}`)),
+          ];
+        })
+      )
+    ).flat();
+
+    const writes: FirestoreWrite[] = [
+      ...subcollectionWrites,
       ...apps.map((a) => deleteWrite(`apps/${a.id}`)),
       ...transactions.map((t) => deleteWrite(`transactions/${t.id}`)),
       deleteWrite(`users/${uid}`),
@@ -90,8 +125,16 @@ export async function POST(req: NextRequest) {
     if (writes.length > 0) {
       // Best-effort at this point: the Auth account is already gone, so a
       // failure here just leaves orphaned, unreachable Firestore documents
-      // rather than putting the user's account or data at risk.
-      await commit(writes, idToken).catch(() => {});
+      // rather than putting the user's account or data at risk. Still
+      // logged (not swallowed) so a failure is at least visible in Vercel's
+      // logs instead of silently claiming success while nothing was
+      // actually deleted.
+      const batches = chunk(writes, COMMIT_BATCH_SIZE);
+      for (const batch of batches) {
+        await commit(batch, idToken).catch((err) => {
+          console.error(`[delete-account] uid=${uid} failed to delete a batch of ${batch.length} writes:`, err);
+        });
+      }
     }
 
     return NextResponse.json({ ok: true });

@@ -17,12 +17,18 @@
 
 import posixPath from "node:path/posix";
 
+const CODE_EXT_RE = /\.(js|ts|mjs|cjs|jsx|tsx)$/i;
 const ENTRY_NAME_RE = /(^|\/)(server|backend|app|index)\.(js|ts|mjs|cjs)$/i;
 const EXPRESS_IMPORT_RE = /require\(["']express["']\)|from\s+["']express["']/;
 const LISTEN_CALL_RE = /\b([A-Za-z_$][\w$]*)\.listen\s*\(/;
 const WEBSOCKET_RE = /require\(["'](ws|socket\.io)["']\)|from\s+["'](ws|socket\.io)["']|WebSocketServer|\.upgrade\s*\(/;
 const FRONTEND_MARKER_RE = /\.html$|vite\.config\.[jt]s$/i;
 const RELATIVE_SPEC_RE = /(from\s+|require\(\s*)(["'])(\.[^"']+)\2/g;
+// __dirname/__filename and dynamic import()/fs reads of a relative path all
+// depend on the entry file's ORIGINAL location on disk; moving it to api/
+// would silently break any of these at runtime (wrong path, ENOENT/404),
+// so a file using them is left alone rather than risk a broken deploy.
+const PATH_DEPENDENT_RE = /__dirname\b|__filename\b|\bimport\s*\(|readFileSync\s*\(\s*["']\.|readFile\s*\(\s*["']\./;
 
 interface WrapResult {
   files: Record<string, string>;
@@ -34,15 +40,43 @@ function countMatches(re: RegExp, text: string): number {
   return (text.match(global) ?? []).length;
 }
 
-/** Balanced-paren scan from an opening "(" to its matching ")", string/template-literal aware. */
+/**
+ * Balanced-paren scan from an opening "(" to its matching ")", aware of
+ * strings/template literals AND // and /* *\/ comments — an apostrophe
+ * inside a comment (e.g. "// it's ready") would otherwise be misread as
+ * opening a string, throwing off every paren counted after it.
+ */
 function findMatchingParen(source: string, openIndex: number): number {
   let depth = 0;
   let quote: string | null = null;
+  let inLineComment = false;
+  let inBlockComment = false;
   for (let i = openIndex; i < source.length; i++) {
     const ch = source[i];
+    if (inLineComment) {
+      if (ch === "\n") inLineComment = false;
+      continue;
+    }
+    if (inBlockComment) {
+      if (ch === "*" && source[i + 1] === "/") {
+        inBlockComment = false;
+        i++;
+      }
+      continue;
+    }
     if (quote) {
       if (ch === "\\") i++;
       else if (ch === quote) quote = null;
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "/") {
+      inLineComment = true;
+      i++;
+      continue;
+    }
+    if (ch === "/" && source[i + 1] === "*") {
+      inBlockComment = true;
+      i++;
       continue;
     }
     if (ch === '"' || ch === "'" || ch === "`") {
@@ -111,24 +145,32 @@ function stripListenCall(
  */
 export function tryWrapExpressForVercel(files: Record<string, string>): WrapResult | null {
   const paths = Object.keys(files);
+  // README snippets, comments, etc. can mention "app.listen(" without it
+  // being real server code — only count matches inside files that are
+  // actually executed.
+  const codePaths = paths.filter((p) => CODE_EXT_RE.test(p));
 
   // A repo with its own frontend needs routing decisions this transform
   // doesn't attempt to make safely (which paths are static vs. API).
   if (paths.some((p) => FRONTEND_MARKER_RE.test(p))) return null;
 
-  const totalListenCalls = paths.reduce(
+  const totalListenCalls = codePaths.reduce(
     (sum, p) => sum + countMatches(LISTEN_CALL_RE, files[p]),
     0
   );
   if (totalListenCalls !== 1) return null;
 
-  const hasWebSocket = paths.some((p) => WEBSOCKET_RE.test(files[p]));
+  const hasWebSocket = codePaths.some((p) => WEBSOCKET_RE.test(files[p]));
   if (hasWebSocket) return null;
 
-  const entry = paths.find(
+  const entry = codePaths.find(
     (p) => ENTRY_NAME_RE.test(p) && EXPRESS_IMPORT_RE.test(files[p]) && LISTEN_CALL_RE.test(files[p])
   );
   if (!entry) return null;
+
+  // The entry file's own location matters for these, and it's about to
+  // move — safer to bail than guess at a rewrite.
+  if (PATH_DEPENDENT_RE.test(files[entry])) return null;
 
   const listenMatch = LISTEN_CALL_RE.exec(files[entry]);
   if (!listenMatch) return null;

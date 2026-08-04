@@ -99,11 +99,11 @@ async function ensureUserDoc(user: User) {
       photoURL: user.photoURL ?? snap.data().photoURL ?? null,
     });
   }
-  // Firestore rules require this marker to exist before granting the free
-  // signup credit on a `users/{uid}` create, so a deleted-and-recreated
-  // profile can't keep re-claiming it. Written here for both a brand new
-  // signup and, once, to grandfather in any account that predates this
-  // marker existing at all.
+  // Firestore rules only allow the free signup credit on a `users/{uid}`
+  // create when this marker does NOT already exist, so a deleted-and-
+  // recreated profile can't keep re-claiming it. Written here for both a
+  // brand new signup and, once, to grandfather in any account that
+  // predates this marker existing at all.
   if (!signupSnap.exists()) {
     batch.set(signupRef, { claimedAt: serverTimestamp() });
   }

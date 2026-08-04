@@ -186,7 +186,7 @@ export async function POST(req: NextRequest) {
         ],
         idToken
       );
-      return NextResponse.json({ url: result.url });
+      return NextResponse.json({ url: result.url, note: wrapped?.note });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Deploy failed.";
       await commit(

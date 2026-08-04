@@ -43,6 +43,13 @@ function errorStream(message: string) {
   });
 }
 
+/** getDoc() hands back a Firestore timestamp as an ISO string; turn it back into a real Date before writing it. */
+function parseExistingCreatedAt(value: unknown): Date | null {
+  if (typeof value !== "string") return null;
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? "";
   const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -275,7 +282,14 @@ export async function POST(req: NextRequest) {
               summary: result.summary,
               suggestions: result.suggestions,
               turns: [...(existing?.turns ?? []), turn],
-              createdAt: existing ? (existing.createdAt as Date) ?? createdAt : createdAt,
+              // getDoc() returns a Firestore timestamp as a plain ISO
+              // string (see fromFirestoreValue in lib/firestore-rest.ts),
+              // not a real Date — writing that string straight back would
+              // silently store it as stringValue instead of timestampValue,
+              // and Firestore sorts all timestamps before all strings, so
+              // orderBy("createdAt", "desc") on the dashboard would then
+              // pin this app above every genuinely newer one forever.
+              createdAt: existing ? parseExistingCreatedAt(existing.createdAt) ?? createdAt : createdAt,
               generatedCode: { files: result.files },
             }),
             incrementWrite(userPath, "credits", -cost),

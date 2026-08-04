@@ -12,8 +12,12 @@
  */
 
 const PERSISTENT_SERVER_ENTRY_RE = /^(server|backend)(\/|\.(js|ts|mjs|cjs)$)/i;
-const PERSISTENT_SERVER_CODE_RE =
-  /\b(express\s*\(|require\(["']express["']\)|from\s+["']express["']|createServer\s*\(|app\.listen\s*\()/;
+// Merely importing/instantiating Express is fine now — lib/express-adapter.ts
+// can turn a plain Express app (no .listen()) into a real Vercel serverless
+// function. What actually can't run anywhere is something that BINDS to a
+// port or keeps a connection open: createServer(...) or an actual .listen()
+// call still present (i.e. one the adapter didn't or couldn't strip).
+const PERSISTENT_SERVER_CODE_RE = /\b(createServer\s*\(|\.listen\s*\()/;
 const API_DIR_RE = /^api\//i;
 const ASSUMED_KEY_RE = /process\.env\.[A-Z0-9_]*API_KEY/;
 

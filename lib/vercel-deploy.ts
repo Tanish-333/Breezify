@@ -90,12 +90,21 @@ export async function deployToVercel(
 ): Promise<DeployResult> {
   onStatus?.("Uploading files");
 
+  // Forcing the "vite" framework unconditionally used to be safe (every
+  // deploy was a Vite frontend), but lib/express-adapter.ts can now produce
+  // a backend-only deploy (no index.html/vite.config at all) — telling
+  // Vercel to run a Vite build against that would just fail outright, so
+  // only claim "vite" when there's actually a frontend to build.
+  const hasFrontend = Object.keys(files).some(
+    (f) => /(^|\/)index\.html$/i.test(f) || /vite\.config\.[jt]s$/i.test(f)
+  );
+
   const created = await vercelFetch(`/v13/deployments${scopeQuery()}`, {
     method: "POST",
     body: JSON.stringify({
       name: slug,
       target: "production",
-      projectSettings: { framework: "vite" },
+      ...(hasFrontend ? { projectSettings: { framework: "vite" } } : {}),
       files: Object.entries(files).map(([file, data]) => ({
         file: file.replace(/^\/+/, ""),
         data,
