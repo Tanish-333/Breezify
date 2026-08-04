@@ -1,4 +1,4 @@
-import { onCLS, onFID, onFCP, onLCP, onTTFB, Metric } from "web-vitals";
+import { onCLS, onINP, onFCP, onLCP, onTTFB, Metric } from "web-vitals";
 
 export function trackWebVitals(
   callback?: (metric: Metric) => void
@@ -33,9 +33,11 @@ export function trackWebVitals(
     }
   };
 
-  // Register all Web Vitals
+  // Register all Web Vitals. FID was retired as a Core Web Vital in favor
+  // of INP (Interaction to Next Paint); the web-vitals package dropped
+  // onFID entirely starting with v4, so this tracks onINP instead.
   onCLS(trackMetric);
-  onFID(trackMetric);
+  onINP(trackMetric);
   onFCP(trackMetric);
   onLCP(trackMetric);
   onTTFB(trackMetric);

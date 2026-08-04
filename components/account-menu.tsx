@@ -7,7 +7,8 @@ import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { PLANS } from "@/lib/types";
 import { Button } from "@/components/ui/button";
-import { CreditCard, LogIn, LogOut, Settings, ChevronsUpDown } from "lucide-react";
+import { SupportDialog } from "@/components/support-dialog";
+import { CreditCard, LogIn, LogOut, MessageSquare, Settings, ChevronsUpDown } from "lucide-react";
 
 function initials(name?: string | null, email?: string | null) {
   const source = name?.trim() || email?.trim() || "";
@@ -20,6 +21,7 @@ export function AccountMenu({ collapsed }: { collapsed: boolean }) {
   const router = useRouter();
   const { user, profile, signOut } = useAuth();
   const [open, setOpen] = useState(false);
+  const [supportOpen, setSupportOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -140,6 +142,16 @@ export function AccountMenu({ collapsed }: { collapsed: boolean }) {
             Settings
           </Link>
           <button
+            onClick={() => {
+              setOpen(false);
+              setSupportOpen(true);
+            }}
+            className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <MessageSquare className="h-4 w-4" />
+            Send feedback
+          </button>
+          <button
             onClick={async () => {
               setOpen(false);
               await signOut();
@@ -152,6 +164,8 @@ export function AccountMenu({ collapsed }: { collapsed: boolean }) {
           </button>
         </div>
       )}
+
+      {supportOpen && <SupportDialog onClose={() => setSupportOpen(false)} />}
     </div>
   );
 }

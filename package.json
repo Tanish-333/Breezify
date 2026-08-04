@@ -12,6 +12,7 @@
     "@anthropic-ai/sdk": "^0.115.0",
     "@google/genai": "^2.14.0",
     "@monaco-editor/react": "^4.6.0",
+    "@sentry/nextjs": "^10.69.0",
     "@stripe/stripe-js": "^4.3.0",
     "@vercel/analytics": "^2.0.1",
     "class-variance-authority": "^0.7.0",
@@ -27,6 +28,7 @@
     "recharts": "^2.12.7",
     "stripe": "^16.6.0",
     "tailwind-merge": "^2.4.0",
+    "web-vitals": "^6.0.1",
     "zod": "^3.23.8"
   },
   "devDependencies": {

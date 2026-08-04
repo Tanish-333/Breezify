@@ -1,20 +1,14 @@
 "use client";
 
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { auth } from "@/lib/firebase";
+import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
-import { useAuth } from "@/lib/use-auth";
+import { Input, Label, Textarea } from "@/components/ui/input";
+import { AlertCircle, CheckCircle2, X } from "lucide-react";
 
-export function SupportDialog({
-  open,
-  onOpenChange,
-}: {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const { user, idToken } = useAuth();
+export function SupportDialog({ onClose }: { onClose: () => void }) {
+  const { user } = useAuth();
   const [subject, setSubject] = useState("");
   const [message, setMessage] = useState("");
   const [type, setType] = useState("general");
@@ -22,67 +16,70 @@ export function SupportDialog({
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState("");
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!subject.trim() || !message.trim()) {
-      setError("Please fill in all fields");
+      setError("Please fill in both fields.");
       return;
     }
-
-    setLoading(true);
     setError("");
-
+    setLoading(true);
     try {
+      const idToken = await auth.currentUser?.getIdToken();
+      if (!idToken) throw new Error("You must be signed in.");
       const res = await fetch("/api/feedback", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${idToken}`,
-        },
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ subject, message, type }),
       });
-
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Failed to submit feedback");
-      }
-
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Failed to send feedback.");
       setSuccess(true);
       setSubject("");
       setMessage("");
-      setTimeout(() => {
-        onOpenChange(false);
-        setSuccess(false);
-      }, 2000);
+      setTimeout(onClose, 2000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "An error occurred");
+      setError(err instanceof Error ? err.message : "Failed to send feedback.");
     } finally {
       setLoading(false);
     }
-  };
+  }
 
   if (!user) return null;
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Send us feedback</DialogTitle>
-        </DialogHeader>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
+      onMouseDown={onClose}
+    >
+      <div
+        className="w-full max-w-md rounded-xl border border-border bg-background p-6 shadow-2xl animate-in"
+        onMouseDown={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start justify-between gap-4">
+          <h2 className="font-semibold">Send us feedback</h2>
+          <button
+            onClick={onClose}
+            className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
         {success ? (
-          <div className="py-8 text-center">
-            <p className="text-sm font-medium text-green-600">
-              ✓ Thank you! We received your feedback.
-            </p>
+          <div className="mt-6 flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-success">
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+            <span>Thanks — we received your feedback.</span>
           </div>
         ) : (
-          <form onSubmit={handleSubmit} className="space-y-4">
+          <form onSubmit={handleSubmit} className="mt-6 space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-1">Type</label>
+              <Label htmlFor="feedback-type">Type</Label>
               <select
+                id="feedback-type"
                 value={type}
                 onChange={(e) => setType(e.target.value)}
-                className="w-full px-3 py-2 border border-input rounded-md text-sm"
+                className="flex h-10 w-full rounded border border-border bg-background px-3 text-sm focus:outline-none focus:ring-1 focus:ring-foreground"
               >
                 <option value="general">General feedback</option>
                 <option value="bug">Bug report</option>
@@ -90,8 +87,9 @@ export function SupportDialog({
               </select>
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Subject</label>
+              <Label htmlFor="feedback-subject">Subject</Label>
               <Input
+                id="feedback-subject"
                 value={subject}
                 onChange={(e) => setSubject(e.target.value)}
                 placeholder="Brief summary..."
@@ -99,8 +97,9 @@ export function SupportDialog({
               />
             </div>
             <div>
-              <label className="block text-sm font-medium mb-1">Message</label>
+              <Label htmlFor="feedback-message">Message</Label>
               <Textarea
+                id="feedback-message"
                 value={message}
                 onChange={(e) => setMessage(e.target.value)}
                 placeholder="Tell us more..."
@@ -108,13 +107,18 @@ export function SupportDialog({
                 rows={4}
               />
             </div>
-            {error && <p className="text-sm text-red-600">{error}</p>}
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? "Sending..." : "Send feedback"}
+            {error && (
+              <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{error}</span>
+              </div>
+            )}
+            <Button type="submit" className="w-full" loading={loading}>
+              Send feedback
             </Button>
           </form>
         )}
-      </DialogContent>
-    </Dialog>
+      </div>
+    </div>
   );
 }
