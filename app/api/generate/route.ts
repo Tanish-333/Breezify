@@ -325,6 +325,10 @@ export async function POST(req: NextRequest) {
 
         const message =
           err instanceof Error ? err.message : "Generation failed. Please try again.";
+        // Previously unlogged: a commit() failure here (e.g. a Firestore
+        // rules rejection) only ever reached the client as a generic error
+        // event, with nothing server-side to diagnose it from afterward.
+        console.error(`[generate] appId=${appId} uid=${uid} existing=${!!existing}:`, err);
         // Only a fresh build leaves a half-created doc behind; a failed refine
         // must leave the existing app untouched.
         if (!existing) {

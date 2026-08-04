@@ -5,6 +5,7 @@ import { withWatermark } from "@/lib/watermark";
 import { withAnalytics } from "@/lib/analytics-snippet";
 import { deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
 import { unsupportedReason } from "@/lib/app-support";
+import { tryWrapExpressForVercel } from "@/lib/express-adapter";
 import { ANALYTICS_MIN_PLAN, DEPLOY_DAILY_LIMIT, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -68,10 +69,18 @@ export async function POST(req: NextRequest) {
     }
 
     const generated = appDoc.fields.generatedCode as { files?: Record<string, string> } | undefined;
-    const rawFiles = generated?.files ?? {};
+    let rawFiles = generated?.files ?? {};
     if (Object.keys(rawFiles).length === 0) {
       return NextResponse.json({ error: "This app has no files to deploy." }, { status: 400 });
     }
+
+    // A simple, single-server-call Express backend can actually run on
+    // Vercel once app.listen() is stripped and the app is exported as a
+    // serverless function instead — see lib/express-adapter.ts. Anything
+    // more complex (its own frontend to route around, WebSockets, multiple
+    // servers) is left alone and falls through to the rejection below.
+    const wrapped = tryWrapExpressForVercel(rawFiles);
+    if (wrapped) rawFiles = wrapped.files;
 
     // api/ serverless functions and this app's own Secrets are real at
     // deploy time (see below); only a traditional always-on server process

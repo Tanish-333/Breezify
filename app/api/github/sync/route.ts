@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, createWrite, getDoc, updateWrite } from "@/lib/firestore-rest";
 import { unsupportedReason } from "@/lib/app-support";
+import { tryWrapExpressForVercel } from "@/lib/express-adapter";
 import { IMPORT_MIN_PLAN, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -192,7 +193,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const unsupported = unsupportedReason(files, "deploy");
+    const wrapped = tryWrapExpressForVercel(files);
+    const storedFiles = wrapped ? wrapped.files : files;
+
+    const unsupported = unsupportedReason(storedFiles, "deploy");
     if (unsupported) {
       return NextResponse.json({ error: unsupported }, { status: 400 });
     }
@@ -204,9 +208,9 @@ export async function POST(req: NextRequest) {
       id: turnId,
       kind: "sync",
       instruction: `Synced the latest commit from github.com/${owner}/${repo}`,
-      summary: `Pulled ${Object.keys(files).length} files from github.com/${owner}/${repo}${skipped ? ` (${skipped} files skipped: binary or too large)` : ""}.`,
+      summary: `Pulled ${Object.keys(files).length} files from github.com/${owner}/${repo}${skipped ? ` (${skipped} files skipped: binary or too large)` : ""}.${wrapped ? ` ${wrapped.note}` : ""}`,
       model: appDoc.fields.model ?? "haiku",
-      fileCount: Object.keys(files).length,
+      fileCount: Object.keys(storedFiles).length,
       createdAt,
     };
 
@@ -214,10 +218,10 @@ export async function POST(req: NextRequest) {
       [
         updateWrite(
           `apps/${appId}`,
-          { generatedCode: { files }, turns: [...existingTurns, turn] },
+          { generatedCode: { files: storedFiles }, turns: [...existingTurns, turn] },
           ["generatedCode", "turns"]
         ),
-        createWrite(`apps/${appId}/versions/${turnId}`, { files, createdAt }),
+        createWrite(`apps/${appId}/versions/${turnId}`, { files: storedFiles, createdAt }),
       ],
       idToken
     );

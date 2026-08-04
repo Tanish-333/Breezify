@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, createWrite, getDoc } from "@/lib/firestore-rest";
 import { unsupportedReason } from "@/lib/app-support";
+import { tryWrapExpressForVercel } from "@/lib/express-adapter";
 import { IMPORT_MIN_PLAN, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -169,9 +170,17 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // A simple, single-server-call Express backend can actually run on
+    // Vercel once app.listen() is stripped and the app is exported as a
+    // serverless function instead — see lib/express-adapter.ts. storedFiles
+    // is what actually gets deployed/stored; the import-count summary below
+    // still reflects what was fetched from the repo, not the transform.
+    const wrapped = tryWrapExpressForVercel(files);
+    const storedFiles = wrapped ? wrapped.files : files;
+
     // Same check deploy/preview run: no point importing an app Breezify can't
     // actually run, since there's no server here to run a backend on.
-    const unsupported = unsupportedReason(files, "deploy");
+    const unsupported = unsupportedReason(storedFiles, "deploy");
     if (unsupported) {
       return NextResponse.json({ error: unsupported }, { status: 400 });
     }
@@ -183,9 +192,9 @@ export async function POST(req: NextRequest) {
       id: turnId,
       kind: "build",
       instruction: `Imported from github.com/${owner}/${repo}`,
-      summary: `Imported ${Object.keys(files).length} files from ${owner}/${repo}${skipped ? ` (${skipped} files skipped: binary or too large)` : ""}.`,
+      summary: `Imported ${Object.keys(files).length} files from ${owner}/${repo}${skipped ? ` (${skipped} files skipped: binary or too large)` : ""}.${wrapped ? ` ${wrapped.note}` : ""}`,
       model: "haiku",
-      fileCount: Object.keys(files).length,
+      fileCount: Object.keys(storedFiles).length,
       createdAt,
     };
 
@@ -207,14 +216,14 @@ export async function POST(req: NextRequest) {
           suggestions: [],
           turns: [turn],
           createdAt,
-          generatedCode: { files },
+          generatedCode: { files: storedFiles },
           visits: 0,
         }),
       ],
       idToken
     );
     await commit(
-      [createWrite(`apps/${appId}/versions/${turnId}`, { files, createdAt })],
+      [createWrite(`apps/${appId}/versions/${turnId}`, { files: storedFiles, createdAt })],
       idToken
     );
 
