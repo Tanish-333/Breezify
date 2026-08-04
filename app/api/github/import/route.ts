@@ -189,6 +189,12 @@ export async function POST(req: NextRequest) {
       createdAt,
     };
 
+    // Two sequential commits, not one batch: firestore.rules' versions/{turnId}
+    // create rule does get(apps/$(appId)).data.userId to check ownership, and
+    // within a single commit that get() sees the pre-commit state — so if the
+    // apps/{appId} doc were created in the same batch, it would still look
+    // like it doesn't exist yet and the versions write would be denied.
+    // Creating the app doc first, in its own commit, avoids that.
     await commit(
       [
         createWrite(`apps/${appId}`, {
@@ -204,8 +210,11 @@ export async function POST(req: NextRequest) {
           generatedCode: { files },
           visits: 0,
         }),
-        createWrite(`apps/${appId}/versions/${turnId}`, { files, createdAt }),
       ],
+      idToken
+    );
+    await commit(
+      [createWrite(`apps/${appId}/versions/${turnId}`, { files, createdAt })],
       idToken
     );
 
