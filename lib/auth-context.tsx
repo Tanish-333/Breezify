@@ -29,8 +29,7 @@ import {
   getDoc,
   onSnapshot,
   serverTimestamp,
-  setDoc,
-  updateDoc,
+  writeBatch,
 } from "firebase/firestore";
 import {
   auth,
@@ -75,11 +74,13 @@ const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
 async function ensureUserDoc(user: User) {
   const ref = doc(db, "users", user.uid);
-  const snap = await getDoc(ref);
+  const signupRef = doc(db, "signups", user.uid);
+  const [snap, signupSnap] = await Promise.all([getDoc(ref), getDoc(signupRef)]);
   const providers = user.providerData.map((p) => p.providerId);
 
+  const batch = writeBatch(db);
   if (!snap.exists()) {
-    await setDoc(ref, {
+    batch.set(ref, {
       email: user.email,
       displayName: user.displayName,
       photoURL: user.photoURL,
@@ -90,13 +91,22 @@ async function ensureUserDoc(user: User) {
       authProviders: providers,
     });
   } else {
-    await updateDoc(ref, {
+    batch.update(ref, {
       lastLoginAt: serverTimestamp(),
       authProviders: providers,
       displayName: user.displayName ?? snap.data().displayName ?? null,
       photoURL: user.photoURL ?? snap.data().photoURL ?? null,
     });
   }
+  // Firestore rules require this marker to exist before granting the free
+  // signup credit on a `users/{uid}` create, so a deleted-and-recreated
+  // profile can't keep re-claiming it. Written here for both a brand new
+  // signup and, once, to grandfather in any account that predates this
+  // marker existing at all.
+  if (!signupSnap.exists()) {
+    batch.set(signupRef, { claimedAt: serverTimestamp() });
+  }
+  await batch.commit();
 }
 
 function toProfile(uid: string, data: any): FeatherUser {

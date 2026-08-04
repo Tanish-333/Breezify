@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { commit, incrementWrite } from "@/lib/firestore-rest";
+import { rateLimit } from "@/lib/rate-limit";
 
 export const runtime = "nodejs";
 
@@ -12,7 +13,7 @@ export const runtime = "nodejs";
  * route. A bad or missing appId just fails the Firestore write silently,
  * same as any other beacon.
  */
-export async function POST(req: NextRequest) {
+async function handler(req: NextRequest) {
   try {
     const { appId } = await req.json();
     if (typeof appId === "string" && appId.length > 0 && appId.length < 200) {
@@ -25,3 +26,9 @@ export async function POST(req: NextRequest) {
   // and nothing about its result is meaningful to the visitor's browser.
   return new NextResponse(null, { status: 204 });
 }
+
+// Generous: real deployed apps can get real bursts of traffic, and many
+// visitors can share one IP behind a NAT/corporate proxy. This is here to
+// stop a scripted flood from inflating one app's visit count or running up
+// Firestore write costs, not to throttle normal usage.
+export const POST = rateLimit(300, 60_000)(handler);

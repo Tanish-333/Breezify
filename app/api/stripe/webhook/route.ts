@@ -43,6 +43,13 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
   switch (event.type) {
     case "checkout.session.completed": {
       const session = event.data.object as Stripe.Checkout.Session;
+      // Delayed-confirmation payment methods (SEPA Debit, ACH credit
+      // transfer, etc.) fire this event right away with payment_status
+      // "unpaid"; the real outcome arrives later via
+      // checkout.session.async_payment_succeeded/failed. Only grant here
+      // once Stripe has actually confirmed the charge landed, so a payment
+      // that later fails was never granted in the first place.
+      if (session.payment_status !== "paid") break;
       const uid = session.client_reference_id ?? session.metadata?.uid;
       const plan = session.metadata?.plan;
       if (uid && isPlanId(plan) && plan !== "free") {
@@ -52,6 +59,26 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       }
       break;
     }
+
+    // The delayed-payment counterpart to checkout.session.completed above:
+    // grants the plan once the charge actually confirms.
+    case "checkout.session.async_payment_succeeded": {
+      const session = event.data.object as Stripe.Checkout.Session;
+      const uid = session.client_reference_id ?? session.metadata?.uid;
+      const plan = session.metadata?.plan;
+      if (uid && isPlanId(plan) && plan !== "free") {
+        await setPlan(uid, plan);
+      } else {
+        console.error("[stripe webhook] checkout.session.async_payment_succeeded missing uid/plan metadata");
+      }
+      break;
+    }
+
+    // Nothing was granted at checkout.session.completed time (payment_status
+    // wasn't "paid" yet), so there's nothing to revert here — this case
+    // exists only so the event is acknowledged instead of retried forever.
+    case "checkout.session.async_payment_failed":
+      break;
 
     // Fires on every successful recurring renewal; refills credits for the new period.
     case "invoice.paid": {
@@ -130,14 +157,25 @@ export async function POST(req: NextRequest) {
   const db = adminDb();
   const eventRef = db.collection("stripe_events").doc(event.id);
 
+  // A processing run is presumed genuinely still in flight for this long;
+  // past it, treat it as crashed rather than block retries on it forever.
+  const PROCESSING_STALE_MS = 60_000;
+
   // Atomically claim this event before doing any work, so two near-
   // simultaneous deliveries of the same event (Stripe's retries are
   // at-least-once) can't both pass the "already done?" check and double-
-  // process a payment. Only a prior *successful* run is skipped; a run that
-  // previously failed or got stuck mid-processing is retried.
+  // process a payment. A prior successful run is always skipped; a run
+  // that's still actively processing is skipped too, unless it's stale
+  // enough to have obviously crashed, in which case it's retried rather
+  // than left permanently stuck (silently acknowledged to Stripe forever
+  // without ever actually finishing).
   const claimed = await db.runTransaction(async (tx) => {
     const doc = await tx.get(eventRef);
-    if (doc.exists && doc.data()?.status === "done") return false;
+    const data = doc.data();
+    const startedAtMs = data?.startedAt ? Date.parse(data.startedAt) : 0;
+    const stillProcessing =
+      data?.status === "processing" && Date.now() - startedAtMs < PROCESSING_STALE_MS;
+    if (doc.exists && (data?.status === "done" || stillProcessing)) return false;
     tx.set(eventRef, { type: event.type, status: "processing", startedAt: new Date().toISOString() });
     return true;
   });

@@ -1,27 +1,45 @@
 import { NextRequest, NextResponse } from "next/server";
 import { commit, createWrite } from "@/lib/firestore-rest";
+import { rateLimit } from "@/lib/rate-limit";
 import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
 
-export async function POST(req: NextRequest) {
+const MAX_MESSAGE_LENGTH = 2000;
+const MAX_STACK_LENGTH = 8000;
+// context is arbitrary caller-supplied JSON; cap its serialized size rather
+// than trying to validate its shape, so it can't be used to write an
+// unbounded document.
+const MAX_CONTEXT_JSON_LENGTH = 4000;
+
+async function handler(req: NextRequest) {
   try {
     const body = await req.json();
     const { message, stack, context, level } = body;
 
-    if (!message) {
+    if (!message || typeof message !== "string") {
       return NextResponse.json(
         { error: "Missing message field" },
         { status: 400 }
       );
     }
 
+    let safeContext: unknown = {};
+    if (context !== undefined && context !== null) {
+      const serialized = JSON.stringify(context);
+      if (serialized && serialized.length <= MAX_CONTEXT_JSON_LENGTH) {
+        safeContext = context;
+      }
+      // Oversized or unserializable context is dropped rather than
+      // rejecting the whole report; the message/stack are still useful.
+    }
+
     const errorId = randomUUID();
     const errorData = {
-      message,
-      stack: stack || null,
-      context: context || {},
-      level: level || "error",
+      message: String(message).slice(0, MAX_MESSAGE_LENGTH),
+      stack: typeof stack === "string" ? stack.slice(0, MAX_STACK_LENGTH) : null,
+      context: safeContext,
+      level: typeof level === "string" ? level.slice(0, 40) : "error",
       userAgent: req.headers.get("user-agent"),
       url: req.headers.get("referer") || "unknown",
       timestamp: new Date().toISOString(),
@@ -45,3 +63,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ status: "error" }, { status: 500 });
   }
 }
+
+// Generous but real: this is a public, unauthenticated endpoint every page
+// calls on error, so it needs a cap well above normal usage that still
+// stops a scripted flood from writing unlimited Firestore documents.
+export const POST = rateLimit(60, 60_000)(handler);

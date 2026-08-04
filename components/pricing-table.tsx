@@ -1,4 +1,5 @@
 import {
+  ANALYTICS_MIN_PLAN,
   DUPLICATE_MIN_PLAN,
   PLANS,
   PLAN_IDS,
@@ -92,7 +93,12 @@ const ROWS: Row[] = [
   },
   {
     label: "Deployed-app visit analytics",
-    values: { free: true, plus: true, pro: true, max: true },
+    values: {
+      free: PLAN_RANK.free >= PLAN_RANK[ANALYTICS_MIN_PLAN],
+      plus: PLAN_RANK.plus >= PLAN_RANK[ANALYTICS_MIN_PLAN],
+      pro: PLAN_RANK.pro >= PLAN_RANK[ANALYTICS_MIN_PLAN],
+      max: PLAN_RANK.max >= PLAN_RANK[ANALYTICS_MIN_PLAN],
+    },
   },
   {
     label: "Larger generation token budget",

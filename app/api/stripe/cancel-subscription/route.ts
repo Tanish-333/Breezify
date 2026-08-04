@@ -59,12 +59,20 @@ export async function POST(req: NextRequest) {
 
     const stripe = getStripe();
     const subs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 10 });
-    const active = subs.data.find((s) => LIVE_STATUSES.has(s.status));
-    if (!active) {
+    const liveSubs = subs.data.filter((s) => LIVE_STATUSES.has(s.status));
+    if (liveSubs.length === 0) {
       return NextResponse.json({ error: "No active subscription found." }, { status: 404 });
     }
 
-    const updated = await stripe.subscriptions.update(active.id, { cancel_at_period_end: cancel });
+    // Normally there's exactly one. If a customer somehow ended up with more
+    // than one live subscription (e.g. from before duplicate checkouts were
+    // blocked), toggling auto-renew applies to all of them, not just
+    // whichever happens to be listed first, so "cancel" actually stops every
+    // charge rather than leaving a second one silently still renewing.
+    const updates = await Promise.all(
+      liveSubs.map((s) => stripe.subscriptions.update(s.id, { cancel_at_period_end: cancel }))
+    );
+    const updated = updates[0];
 
     return NextResponse.json({
       subscription: {

@@ -26,12 +26,23 @@ service cloud.firestore {
     // users/{uid}: profile + credit balance.
     match /users/{userId} {
       allow read: if isOwner(userId);
-      allow create: if isOwner(userId);
+      // A brand new profile can only ever start on the free plan with
+      // exactly the signup bonus, and only once per uid ever (see
+      // signups/{userId} below): without both constraints, a user could
+      // call the client SDK directly (bypassing the app entirely) to
+      // delete their own doc and recreate it with any plan/credits they
+      // want, or just keep re-claiming the signup bonus forever.
+      allow create: if isOwner(userId)
+        && request.resource.data.plan == "free"
+        && request.resource.data.credits == 5.0
+        && !exists(/databases/$(database)/documents/signups/$(userId));
       // Plan can't be self-assigned, and credits can only ever move by
       // staying the same or dropping by exactly one valid generation cost.
       // That's what makes it safe for /api/generate to spend credit using
       // the user's own ID token instead of an admin key: the rule is the
-      // enforcement, not the caller's trustworthiness.
+      // enforcement, not the caller's trustworthiness. (The Stripe webhook
+      // sets plan/credits on a real payment via the Admin SDK, which
+      // bypasses these rules entirely, not through this path.)
       allow update: if isOwner(userId)
         && request.resource.data.plan == resource.data.plan
         && request.resource.data.credits <= resource.data.credits
@@ -41,6 +52,18 @@ service cloud.firestore {
         )
         && request.resource.data.credits >= 0;
       allow delete: if isOwner(userId);
+    }
+
+    // signups/{uid}: an immutable, one-time marker proving this uid has
+    // already claimed its free signup bonus. Written once, alongside the
+    // very first users/{uid} doc, and never deletable, so it survives even
+    // if users/{uid} is later deleted (directly, or via account deletion) —
+    // that's what stops the delete-your-own-profile-and-recreate-it trick
+    // from re-granting the bonus.
+    match /signups/{userId} {
+      allow read: if isOwner(userId);
+      allow create: if isOwner(userId) && request.resource.data.keys().hasOnly(["claimedAt"]);
+      allow update, delete: if false;
     }
 
     // apps/{appId}: generated apps.

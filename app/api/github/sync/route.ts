@@ -116,6 +116,17 @@ export async function POST(req: NextRequest) {
     }
     const { owner, repo } = parsed;
 
+    // Checked up front, same as /api/github/push: a 401/403 further down
+    // (e.g. reading the tree) is otherwise indistinguishable from "wrong
+    // repo" and never tells the dialog to clear a dead token.
+    const who = await gh("/user", githubToken);
+    if (!who.ok) {
+      return NextResponse.json(
+        { error: "That GitHub token isn't valid, or it's missing the repo scope." },
+        { status: 400 }
+      );
+    }
+
     const repoInfo = await gh(`/repos/${owner}/${repo}`, githubToken);
     if (!repoInfo.ok) {
       return NextResponse.json(

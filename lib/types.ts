@@ -220,6 +220,9 @@ export const PROMPT_CHAR_LIMIT: Record<PlanId, number> = {
 /** Lowest plan that can duplicate an app (a real perk: costs nothing to offer, no AI call involved). */
 export const DUPLICATE_MIN_PLAN: PlanId = "pro";
 
+/** Lowest plan whose deployed apps get the visit-tracking snippet injected (see app/api/deploy). */
+export const ANALYTICS_MIN_PLAN: PlanId = "pro";
+
 /** Lowest plan that can import an existing GitHub repo as a new app. */
 export const IMPORT_MIN_PLAN: PlanId = "plus";
 

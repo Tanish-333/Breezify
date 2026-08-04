@@ -59,6 +59,36 @@ export async function POST(req: NextRequest) {
         : undefined;
 
     const stripe = getStripe();
+
+    // Without this, two tabs (or a slow first checkout retried before the
+    // client-side "loading" state updates) can each create their own
+    // Checkout Session, ending in two live subscriptions for the same
+    // customer — Stripe bills both, and /api/stripe/subscription and
+    // /api/stripe/cancel-subscription only ever look at the first one they
+    // find, so the second keeps renewing with no way to discover or cancel
+    // it through the app. Existing subscribers manage plan changes through
+    // the billing portal instead, which operates on the one subscription
+    // that already exists rather than layering a new one on top.
+    if (existingCustomerId) {
+      const existingSubs = await stripe.subscriptions.list({
+        customer: existingCustomerId,
+        status: "all",
+        limit: 100,
+      });
+      const stillLive = existingSubs.data.some(
+        (s) => s.status !== "canceled" && s.status !== "incomplete_expired"
+      );
+      if (stillLive) {
+        return NextResponse.json(
+          {
+            error:
+              "You already have an active subscription. Use \"Manage billing\" to change or cancel your plan.",
+          },
+          { status: 409 }
+        );
+      }
+    }
+
     const returnUrl = `${appUrl(req)}/billing`;
 
     const session = await stripe.checkout.sessions.create({

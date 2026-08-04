@@ -1,11 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { commit, getDoc, updateWrite } from "@/lib/firestore-rest";
+import { commit, getDoc, incrementWrite, updateWrite } from "@/lib/firestore-rest";
 import { withWatermark } from "@/lib/watermark";
 import { withAnalytics } from "@/lib/analytics-snippet";
 import { deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
 import { unsupportedReason } from "@/lib/app-support";
-import { DEPLOY_DAILY_LIMIT, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
+import { ANALYTICS_MIN_PLAN, DEPLOY_DAILY_LIMIT, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -88,13 +88,14 @@ export async function POST(req: NextRequest) {
     // rather than blocking on our own error.
     let deployCount = 0;
     let windowStart = new Date();
+    let windowActive = false;
     try {
       const userDoc = await getDoc(`users/${uid}`, idToken);
       userPlan = (userDoc?.fields.plan as PlanId) ?? "free";
       const rawWindowStart = userDoc?.fields.deployWindowStart;
       const windowStartMs =
         typeof rawWindowStart === "string" ? Date.parse(rawWindowStart) : NaN;
-      const windowActive = !Number.isNaN(windowStartMs) && Date.now() - windowStartMs < DAY_MS;
+      windowActive = !Number.isNaN(windowStartMs) && Date.now() - windowStartMs < DAY_MS;
       if (windowActive) {
         windowStart = new Date(windowStartMs);
         deployCount = typeof userDoc?.fields.deployCount === "number" ? userDoc.fields.deployCount : 0;
@@ -116,10 +117,37 @@ export async function POST(req: NextRequest) {
 
     const name = (appDoc.fields.name as string) || "feather-app";
     const slug = slugify(appId, name);
-    const analyticsEnabled = PLAN_RANK[userPlan] >= PLAN_RANK.pro;
+    const analyticsEnabled = PLAN_RANK[userPlan] >= PLAN_RANK[ANALYTICS_MIN_PLAN];
     const files = withAnalytics(withWatermark(rawFiles, userPlan === "free"), appId, analyticsEnabled);
 
-    await commit([updateWrite(`apps/${appId}`, { status: "deploying" }, ["status"])], idToken);
+    // Claim the slot up front, atomically, before the slow (up to 110s)
+    // Vercel call rather than after: reading the count, waiting on the
+    // deploy, then writing count+1 back left a window where several
+    // concurrent requests could all read the same stale count and all slip
+    // under the limit. This doesn't fully eliminate the race (two requests
+    // in the same instant can still both read before either writes) but
+    // shrinks the window from "up to 110 seconds" to "a few milliseconds".
+    // A failed deploy still counted here still spent real Vercel build
+    // time, so it's correct for it to still count against the cap.
+    if (windowActive) {
+      await commit([incrementWrite(`users/${uid}`, "deployCount", 1)], idToken);
+    } else {
+      await commit(
+        [
+          updateWrite(
+            `users/${uid}`,
+            { deployCount: 1, deployWindowStart: windowStart },
+            ["deployCount", "deployWindowStart"]
+          ),
+        ],
+        idToken
+      );
+    }
+
+    await commit(
+      [updateWrite(`apps/${appId}`, { status: "deploying", deployStartedAt: new Date() }, ["status", "deployStartedAt"])],
+      idToken
+    );
 
     try {
       const result = await deployToVercel(slug, files);
@@ -129,11 +157,6 @@ export async function POST(req: NextRequest) {
             `apps/${appId}`,
             { status: "live", deployedUrl: result.url, deployedAt: new Date() },
             ["status", "deployedUrl", "deployedAt"]
-          ),
-          updateWrite(
-            `users/${uid}`,
-            { deployCount: deployCount + 1, deployWindowStart: windowStart },
-            ["deployCount", "deployWindowStart"]
           ),
         ],
         idToken
