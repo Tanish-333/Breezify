@@ -140,7 +140,12 @@ export async function POST(req: NextRequest) {
     const entries = Object.entries(files);
     const blobs: { path: string; sha: string }[] = [];
     for (const [path, content] of entries) {
-      const clean = path.replace(/^\/+/, "");
+      const clean = path
+        .replace(/\\/g, "/")
+        .split("/")
+        .filter((seg) => seg && seg !== "." && seg !== "..")
+        .join("/");
+      if (!clean) continue;
       const blob = await gh(`/repos/${owner}/${name}/git/blobs`, githubToken, {
         method: "POST",
         body: JSON.stringify({

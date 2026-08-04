@@ -68,7 +68,8 @@ export default function TermsPage() {
       <h2>6. Third-party services</h2>
       <p>
         The Service relies on third-party providers, including Firebase (authentication and
-        data storage), Anthropic (AI model generation), and Vercel (application deployment).
+        data storage), Anthropic, Google, and Groq (AI model generation), and Vercel (hosting
+        the Breezify platform and, for deployed apps, deployed applications).
         Your use of the Service is also subject to the acceptable use policies of these
         providers where applicable.
       </p>

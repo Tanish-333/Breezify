@@ -45,11 +45,11 @@ export default function PrivacyPage() {
       <h2>3. How we share your information</h2>
       <p>
         We share information with service providers who help us operate Breezify,
-        including Firebase and Google Cloud (authentication and data storage), Anthropic
-        (processing prompts to generate applications), and Vercel (hosting deployed
-        applications). We do not sell your personal information. We may disclose information
-        if required by law or to protect the rights, property, or safety of Breezify, our
-        users, or the public.
+        including Firebase and Google Cloud (authentication and data storage), Anthropic,
+        Google, and Groq (processing prompts to generate applications), and Vercel (hosting
+        deployed applications). We do not sell your personal information. We may disclose
+        information if required by law or to protect the rights, property, or safety of
+        Breezify, our users, or the public.
       </p>
 
       <h2>4. Data retention</h2>

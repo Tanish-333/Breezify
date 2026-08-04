@@ -12,6 +12,7 @@ import {
   type ModelId,
   type PlanId,
 } from "@/lib/types";
+import { setPendingPrompt } from "@/lib/pending-prompt";
 import {
   ArrowUp,
   Check,
@@ -75,6 +76,16 @@ export function PromptComposer({
   const fileRef = useRef<HTMLInputElement>(null);
   const recognitionRef = useRef<any>(null);
   const baseTextRef = useRef("");
+  // Speech results land asynchronously via onresult, even after stop() is
+  // called, so a submit triggered while still listening can't just read the
+  // `value` prop synchronously: it would miss whatever was said right before
+  // hitting Enter. This ref always holds the latest value so the deferred
+  // submit below reads the true final transcript instead of a stale one.
+  const valueRef = useRef(value);
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
+  const pendingSubmitRef = useRef(false);
 
   const info = MODEL_INFO[model];
   const charLimit = PROMPT_CHAR_LIMIT[plan];
@@ -140,7 +151,15 @@ export function PromptComposer({
       }
       setListening(false);
     };
-    recognition.onend = () => setListening(false);
+    recognition.onend = () => {
+      setListening(false);
+      if (pendingSubmitRef.current) {
+        pendingSubmitRef.current = false;
+        // onresult for the final utterance lands right before onend; give
+        // React a tick to flush it into valueRef before reading the value.
+        setTimeout(doSubmit, 0);
+      }
+    };
 
     recognitionRef.current = recognition;
     try {
@@ -177,12 +196,23 @@ export function PromptComposer({
     if (fileRef.current) fileRef.current.value = "";
   }
 
+  function doSubmit() {
+    const finalValue = valueRef.current;
+    if (finalValue.trim().length < 5) return;
+    onSubmit(finalValue.trim() + attachmentContext(attachments));
+    setAttachments([]);
+  }
+
   function submit() {
     if (!canSubmit) return;
-    if (listening) recognitionRef.current?.stop();
-
-    onSubmit(value.trim() + attachmentContext(attachments));
-    setAttachments([]);
+    if (listening) {
+      // Wait for the final speech result rather than submitting immediately;
+      // recognition.onend picks this back up once it lands.
+      pendingSubmitRef.current = true;
+      recognitionRef.current?.stop();
+      return;
+    }
+    doSubmit();
   }
 
   return (
@@ -304,7 +334,12 @@ export function PromptComposer({
                   </div>
                   <Link
                     href="/billing"
-                    onClick={() => setMenuOpen(false)}
+                    onClick={() => {
+                      setMenuOpen(false);
+                      // Navigating away unmounts this composer and its draft
+                      // with it, so stash it the same way a login redirect does.
+                      if (value.trim()) setPendingPrompt(value);
+                    }}
                     className="block border-t border-border px-2.5 py-2 text-[11px] text-muted-foreground transition-colors hover:text-foreground"
                   >
                     Compare plans and unlock more models

@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, onSnapshot, query, where } from "firebase/firestore";
+import { collection, getAggregateFromServer, onSnapshot, query, sum, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { FeatherTransaction, ModelId, TransactionType } from "@/lib/types";
 
@@ -53,6 +53,9 @@ export function useTransactions(uid: string | undefined, max = 50) {
       },
       (err) => {
         console.error("[use-transactions] snapshot failed:", err);
+        // A broken listener must not leave the last-synced list frozen on
+        // screen looking current.
+        setTransactions([]);
         setLoading(false);
       }
     );
@@ -60,4 +63,38 @@ export function useTransactions(uid: string | undefined, max = 50) {
   }, [uid, max]);
 
   return { transactions, loading };
+}
+
+/**
+ * Total credits spent across every generation, not just the most recent
+ * `max` transactions `useTransactions` loads for display. Uses a server-side
+ * sum aggregate rather than fetching every transaction document.
+ */
+export function useLifetimeCreditsUsed(uid: string | undefined) {
+  const [total, setTotal] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (!uid) {
+      setTotal(null);
+      return;
+    }
+    let cancelled = false;
+    const q = query(
+      collection(db, "transactions"),
+      where("userId", "==", uid),
+      where("type", "==", "generation")
+    );
+    getAggregateFromServer(q, { creditsUsed: sum("creditsUsed") })
+      .then((snap) => {
+        if (!cancelled) setTotal(snap.data().creditsUsed);
+      })
+      .catch(() => {
+        if (!cancelled) setTotal(null);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [uid]);
+
+  return total;
 }

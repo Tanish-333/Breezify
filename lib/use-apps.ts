@@ -79,7 +79,12 @@ export function useUserApps(uid: string | undefined) {
         setApps(snap.docs.map((d) => toApp(d.id, d.data())));
         setLoading(false);
       },
-      () => setLoading(false)
+      // A broken listener (expired token, permission change) must not leave
+      // the last-synced list frozen on screen looking current.
+      () => {
+        setApps([]);
+        setLoading(false);
+      }
     );
     return () => unsub();
   }, [uid]);
@@ -217,7 +222,10 @@ export function useApp(appId: string | undefined) {
         setApp(snap.exists() ? toApp(snap.id, snap.data()) : null);
         setLoading(false);
       },
-      () => setLoading(false)
+      () => {
+        setApp(null);
+        setLoading(false);
+      }
     );
     return () => unsub();
   }, [appId]);

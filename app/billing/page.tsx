@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 import { PricingTable } from "@/components/pricing-table";
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
-import { useTransactions } from "@/lib/use-transactions";
+import { useLifetimeCreditsUsed, useTransactions } from "@/lib/use-transactions";
 import { formatCredits, formatDate, cn } from "@/lib/utils";
 import {
   MODEL_INFO,
@@ -29,6 +29,7 @@ interface SubscriptionInfo {
 function BillingContent() {
   const { user, profile } = useAuth();
   const { transactions, loading } = useTransactions(user?.uid);
+  const lifetimeCreditsUsed = useLifetimeCreditsUsed(user?.uid);
   const searchParams = useSearchParams();
   const plan: PlanId = profile?.plan ?? "free";
 
@@ -40,8 +41,6 @@ function BillingContent() {
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
   const [subLoading, setSubLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
-
-  const creditsUsed = transactions.reduce((sum, t) => sum + (t.creditsUsed ?? 0), 0);
 
   async function authedFetch(path: string, body?: unknown) {
     const idToken = await auth.currentUser?.getIdToken();
@@ -165,7 +164,9 @@ function BillingContent() {
             <p className="text-xs uppercase tracking-wide text-muted-foreground">
               Credits spent
             </p>
-            <p className="text-3xl font-semibold tracking-tight">{creditsUsed.toFixed(2)}</p>
+            <p className="text-3xl font-semibold tracking-tight">
+              {lifetimeCreditsUsed != null ? lifetimeCreditsUsed.toFixed(2) : "—"}
+            </p>
             {plan !== "free" && (
               <Button size="sm" variant="secondary" onClick={openPortal} loading={portalLoading}>
                 Manage billing

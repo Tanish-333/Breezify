@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -123,6 +124,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     if (snap.exists()) setProfile(toProfile(u.uid, snap.data()));
   }
 
+  // Guards against out-of-order resolution: e.g. a sign-in fires, its
+  // ensureUserDoc/loadProfile calls are still in flight, and the user signs
+  // out before they resolve. Without this, the stale sign-in callback's
+  // state updates can land after the sign-out's and leave the UI showing a
+  // signed-in user while auth.currentUser is actually null.
+  const authEventId = useRef(0);
+
   useEffect(() => {
     // Firebase resolves this almost instantly from local persistence, but if the
     // network hangs (flaky connection, blocked request) we still need to stop
@@ -133,6 +141,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const unsub = onAuthStateChanged(
       auth,
       async (u) => {
+        const id = ++authEventId.current;
         setUser(u);
         unsubProfile?.();
         unsubProfile = undefined;
@@ -142,6 +151,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } catch {
             // Profile sync failed (offline, permissions); still let the user in.
           }
+          // A superseded event (e.g. signed out again while ensureUserDoc was
+          // still in flight) must not open a profile listener after the
+          // fact — it would keep firing indefinitely with a signed-out
+          // uid's data, since nothing else would ever unsubscribe it.
+          if (authEventId.current !== id) return;
           // A live listener rather than a one-time fetch, so a plan upgrade
           // (Stripe webhook writes it via the admin SDK, not this client)
           // or a credit deduction from another tab shows up immediately
@@ -152,6 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         } else {
           setProfile(null);
         }
+        if (authEventId.current !== id) return;
         clearTimeout(failSafe);
         setLoading(false);
       },

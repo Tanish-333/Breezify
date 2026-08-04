@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
@@ -42,6 +42,17 @@ function SettingsContent() {
   const [currentPassword, setCurrentPassword] = useState("");
   const [reauthError, setReauthError] = useState("");
   const [reauthLoading, setReauthLoading] = useState(false);
+
+  const [emailVerified, setEmailVerified] = useState(user?.emailVerified ?? false);
+
+  // The cached Auth user can be stale if verification happened in another
+  // tab or a previous session; refresh it once so this doesn't show "Not
+  // verified" for an already-verified account.
+  useEffect(() => {
+    if (!user) return;
+    setEmailVerified(user.emailVerified);
+    user.reload().then(() => setEmailVerified(user.emailVerified));
+  }, [user]);
 
   const providers = profile?.authProviders ?? [];
   const hasPassword = providers.includes("password");
@@ -133,7 +144,7 @@ function SettingsContent() {
           </div>
           <div className="flex items-center justify-between text-sm">
             <span className="text-muted-foreground">Email verified</span>
-            {user?.emailVerified ? (
+            {emailVerified ? (
               <span className="flex items-center gap-1 text-success">
                 <CheckCircle2 className="h-3.5 w-3.5" /> Verified
               </span>

@@ -17,7 +17,7 @@ import {
   type ClarifyQuestion,
   type GenerateResult,
 } from "@/lib/api-client";
-import { takePendingPrompt } from "@/lib/pending-prompt";
+import { setPendingPrompt, takePendingPrompt } from "@/lib/pending-prompt";
 import {
   MODEL_INFO,
   PLANS,
@@ -211,6 +211,7 @@ function BuildContent() {
             onChange={setModel}
             plan={plan}
             availability={availability}
+            onLockedNavigate={() => prompt.trim() && setPendingPrompt(prompt)}
           />
         </div>
 

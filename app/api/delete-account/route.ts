@@ -21,17 +21,16 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Your session has expired. Please sign in again." }, { status: 401 });
     }
 
-    const [apps, transactions, userDoc] = await Promise.all([
-      queryCollection("apps", "userId", uid, idToken),
-      queryCollection("transactions", "userId", uid, idToken),
-      getDoc(`users/${uid}`, idToken),
-    ]);
+    const userDoc = await getDoc(`users/${uid}`, idToken);
 
     // Deleting the account also deletes the only record of stripeCustomerId,
     // so if an active subscription isn't cancelled first, the user loses any
     // way to ever find or cancel it again and keeps getting billed forever
     // with no account. Cancel first and fail loudly if that doesn't work,
     // rather than deleting the account out from under a live subscription.
+    // This has to run before anything is deleted: it's the only step here
+    // that reaches out to a third party, and it's easy to retry safely if it
+    // fails, unlike the identity/data deletion below.
     const customerId =
       typeof userDoc?.fields.stripeCustomerId === "string"
         ? (userDoc.fields.stripeCustomerId as string)
@@ -56,19 +55,15 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const writes = [
-      ...apps.map((a) => deleteWrite(`apps/${a.id}`)),
-      ...transactions.map((t) => deleteWrite(`transactions/${t.id}`)),
-      deleteWrite(`users/${uid}`),
-    ];
-    if (writes.length > 0) {
-      await commit(writes, idToken);
-    }
-
-    // Self-delete the Auth account via the Identity Toolkit REST API. This
+    // Delete the Auth account next, via the Identity Toolkit REST API. This
     // takes the user's own ID token as proof of identity, no admin
     // credentials or service account needed, only the public Firebase Web
-    // API key.
+    // API key. Auth goes before Firestore so that if it fails, we bail out
+    // before touching any Firestore data: the account and its data stay
+    // intact and the user can just retry, rather than ending up with wiped
+    // Firestore data under a still-live account (which would also silently
+    // regrant a fresh signup bonus the next time auth state loads, since the
+    // missing profile doc gets auto-recreated).
     const res = await fetch(
       `https://identitytoolkit.googleapis.com/v1/accounts:delete?key=${FIREBASE_PUBLIC_CONFIG.apiKey}`,
       {
@@ -80,6 +75,23 @@ export async function POST(req: NextRequest) {
     if (!res.ok) {
       const body = await res.text();
       throw new Error(`Failed to delete account (${res.status}): ${body}`);
+    }
+
+    const [apps, transactions] = await Promise.all([
+      queryCollection("apps", "userId", uid, idToken),
+      queryCollection("transactions", "userId", uid, idToken),
+    ]);
+
+    const writes = [
+      ...apps.map((a) => deleteWrite(`apps/${a.id}`)),
+      ...transactions.map((t) => deleteWrite(`transactions/${t.id}`)),
+      deleteWrite(`users/${uid}`),
+    ];
+    if (writes.length > 0) {
+      // Best-effort at this point: the Auth account is already gone, so a
+      // failure here just leaves orphaned, unreachable Firestore documents
+      // rather than putting the user's account or data at risk.
+      await commit(writes, idToken).catch(() => {});
     }
 
     return NextResponse.json({ ok: true });

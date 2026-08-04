@@ -80,9 +80,14 @@ export function AppPreview({
         <iframe
           key={nonce}
           title="App preview"
-          // allow-scripts plus allow-same-origin is required for blob module
-          // URLs to load; the document is generated from the user's own app.
-          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          // allow-same-origin is deliberately omitted: combined with
+          // allow-scripts it would give the generated app (arbitrary,
+          // effectively untrusted code) the same origin as this page, and
+          // therefore read/write access to this tab's localStorage, where
+          // Firebase auth state lives. Blob-URL module loading works fine
+          // without it; the sandboxed iframe keeps its own opaque origin
+          // instead.
+          sandbox="allow-scripts allow-forms allow-popups"
           srcDoc={result.doc}
           className={cn(
             "h-full rounded-lg border border-border bg-white transition-[width]",

@@ -17,11 +17,14 @@ export function ModelSelector({
   onChange,
   plan,
   availability,
+  onLockedNavigate,
 }: {
   value: ModelId;
   onChange: (model: ModelId) => void;
   plan: PlanId;
   availability?: Record<string, boolean>;
+  /** Called just before navigating to /billing from a locked model card, so the caller can save any in-progress draft (e.g. the prompt) first. */
+  onLockedNavigate?: () => void;
 }) {
   return (
     <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -83,6 +86,7 @@ export function ModelSelector({
             <Link
               key={id}
               href="/billing"
+              onClick={onLockedNavigate}
               title={`Upgrade to ${requiredPlanFor(id).name} to use ${info.label}`}
               className="rounded-lg focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground"
             >

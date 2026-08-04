@@ -54,8 +54,14 @@ function findScriptEntry(files: Record<string, string>) {
 
 /** True when the HTML file can stand on its own with no build step. */
 function isStandaloneHtml(html: string) {
-  // A Vite index.html points at a source module that needs transpiling.
-  return !/<script[^>]+src=["']\.?\/?src\//.test(html) && !/type=["']module["']/.test(html);
+  // A Vite index.html has a module script pointing at a source file that
+  // needs transpiling. An inline `type="module"` script with no such `src`
+  // is just an ES module snippet and runs fine as-is, so only tags that are
+  // both a module *and* point into src/ disqualify the page.
+  const scriptTags = html.match(/<script\b[^>]*>/gi) ?? [];
+  return !scriptTags.some(
+    (tag) => /type=["']module["']/.test(tag) && /src=["']\.?\/?src\//.test(tag)
+  );
 }
 
 function collectCss(files: Record<string, string>) {
@@ -148,7 +154,11 @@ function normalize(p) {
 }
 
 function resolve(spec, importer) {
-  const base = normalize(dirname(importer) + "/" + spec);
+  // The "@/..." alias is the common Vite/shadcn convention for "rooted at
+  // src/", independent of the importing file's own location.
+  const base = spec.startsWith("@/")
+    ? normalize("src/" + spec.slice(2))
+    : normalize(dirname(importer) + "/" + spec);
   const candidates = [base, base + ".tsx", base + ".ts", base + ".jsx", base + ".js",
                       base + "/index.tsx", base + "/index.ts", base + "/index.jsx", base + "/index.js"];
   return candidates.find((c) => SOURCES[c] !== undefined);
@@ -192,7 +202,7 @@ function toBlobUrl(path) {
   code = code.replace(
     /(\\bfrom\\s*|\\bimport\\s*\\(?\\s*)(["'])([^"']+)\\2/g,
     (match, prefix, quote, spec) => {
-      if (spec.startsWith(".")) {
+      if (spec.startsWith(".") || spec.startsWith("@/")) {
         const target = resolve(spec, path);
         if (!target) return prefix + quote + spec + quote;
         return prefix + quote + toBlobUrl(target) + quote;

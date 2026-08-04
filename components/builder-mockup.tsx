@@ -21,7 +21,7 @@ export function BuilderMockup() {
         <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
         <span className="h-2.5 w-2.5 rounded-full bg-muted-foreground/30" />
         <span className="ml-3 rounded bg-background px-3 py-1 text-xs text-muted-foreground">
-          habit-tracker-a4f2.vercel.app
+          Live preview
         </span>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-[280px_1fr]">

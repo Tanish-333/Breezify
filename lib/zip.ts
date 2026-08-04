@@ -63,6 +63,20 @@ class ByteWriter {
   }
 }
 
+/**
+ * Normalizes a generated file path into a safe, archive-relative path: forward
+ * slashes, no leading slash, and no "." or ".." segments, so a path like
+ * "../../.ssh/authorized_keys" can't escape the extraction directory
+ * (Zip Slip) and instead becomes ".ssh/authorized_keys".
+ */
+function sanitizeZipPath(rawPath: string): string {
+  const parts = rawPath
+    .replace(/\\/g, "/")
+    .split("/")
+    .filter((seg) => seg && seg !== "." && seg !== "..");
+  return parts.join("/");
+}
+
 export function createZip(files: Record<string, string>): Blob {
   const encoder = new TextEncoder();
   const now = new Date();
@@ -71,11 +85,29 @@ export function createZip(files: Record<string, string>): Blob {
   const body = new ByteWriter();
   const central = new ByteWriter();
   let count = 0;
+  const usedNames = new Set<string>();
 
   for (const [rawPath, content] of Object.entries(files)) {
-    // Normalize: ZIP uses forward slashes and no leading slash.
-    const path = rawPath.replace(/^\/+/, "").replace(/\\/g, "/");
+    let path = sanitizeZipPath(rawPath);
     if (!path) continue;
+
+    // Two distinct source paths can normalize to the same archive name
+    // (e.g. "a\\b.txt" and "a/b.txt"); rename rather than silently drop one.
+    if (usedNames.has(path)) {
+      const dot = path.lastIndexOf(".");
+      const slash = path.lastIndexOf("/");
+      let suffix = 2;
+      let candidate: string;
+      do {
+        candidate =
+          dot > slash
+            ? `${path.slice(0, dot)} (${suffix})${path.slice(dot)}`
+            : `${path} (${suffix})`;
+        suffix++;
+      } while (usedNames.has(candidate));
+      path = candidate;
+    }
+    usedNames.add(path);
 
     const nameBytes = encoder.encode(path);
     const data = encoder.encode(content);
