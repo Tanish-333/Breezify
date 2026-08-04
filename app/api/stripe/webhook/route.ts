@@ -18,9 +18,19 @@ async function findUid(
   customerId: string | null,
   subscriptionId?: string | null
 ): Promise<string | undefined> {
+  // This account is shared across several apps on the same Firebase
+  // project's Auth, so a subscription's metadata.uid alone isn't
+  // trustworthy — it could be a real uid set by a DIFFERENT app's checkout.
+  // Verifying it against Breezify's own users collection is what makes this
+  // fast path safe to use instead of always falling through to the
+  // customerId lookup below.
   if (subscriptionId) {
     const sub = await stripe.subscriptions.retrieve(subscriptionId);
-    if (typeof sub.metadata?.uid === "string") return sub.metadata.uid;
+    const metaUid = sub.metadata?.uid;
+    if (typeof metaUid === "string") {
+      const doc = await adminDb().collection("users").doc(metaUid).get();
+      if (doc.exists) return metaUid;
+    }
   }
   if (!customerId) return undefined;
   const snap = await adminDb().collection("users").where("stripeCustomerId", "==", customerId).limit(1).get();
@@ -32,6 +42,25 @@ async function setPlan(uid: string, plan: PlanId) {
     .collection("users")
     .doc(uid)
     .set({ plan, credits: PLANS[plan].credits }, { merge: true });
+}
+
+/**
+ * This Stripe account is shared across several of this developer's apps,
+ * all on the same Firebase project's Auth (and therefore the same uid
+ * namespace). A checkout session's own metadata.uid is trustworthy for the
+ * app that CREATED it (see create-checkout-session/route.ts, which always
+ * sets it from the caller's own verified ID token), but this webhook
+ * receives every checkout on the account — including another app's, whose
+ * metadata.uid could coincidentally be a real Breezify uid, or whose
+ * metadata.plan could coincidentally match one of Breezify's plan names.
+ * Requiring the uid to already have a Breezify profile is what stops a
+ * same-uid coincidence from a different app's purchase granting a Breezify
+ * plan: a brand-new Breezify subscriber always has a users/{uid} doc from
+ * signup, long before their first checkout.
+ */
+async function isKnownBreezifyUser(uid: string): Promise<boolean> {
+  const doc = await adminDb().collection("users").doc(uid).get();
+  return doc.exists;
 }
 
 async function revertToFree(uid: string) {
@@ -52,10 +81,11 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       if (session.payment_status !== "paid") break;
       const uid = session.client_reference_id ?? session.metadata?.uid;
       const plan = session.metadata?.plan;
-      if (uid && isPlanId(plan) && plan !== "free") {
+      if (!uid || !(await isKnownBreezifyUser(uid))) break; // Not a Breezify checkout.
+      if (isPlanId(plan) && plan !== "free") {
         await setPlan(uid, plan);
       } else {
-        console.error("[stripe webhook] checkout.session.completed missing uid/plan metadata");
+        console.error("[stripe webhook] checkout.session.completed: known uid but missing/invalid plan", { uid });
       }
       break;
     }
@@ -66,10 +96,11 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       const session = event.data.object as Stripe.Checkout.Session;
       const uid = session.client_reference_id ?? session.metadata?.uid;
       const plan = session.metadata?.plan;
-      if (uid && isPlanId(plan) && plan !== "free") {
+      if (!uid || !(await isKnownBreezifyUser(uid))) break; // Not a Breezify checkout.
+      if (isPlanId(plan) && plan !== "free") {
         await setPlan(uid, plan);
       } else {
-        console.error("[stripe webhook] checkout.session.async_payment_succeeded missing uid/plan metadata");
+        console.error("[stripe webhook] checkout.session.async_payment_succeeded: known uid but missing/invalid plan", { uid });
       }
       break;
     }
@@ -87,12 +118,30 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
         typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
       const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id ?? null;
       const uid = await findUid(stripe, customerId, subscriptionId);
-      const priceId = invoice.lines.data[0]?.price?.id;
+      // findUid() only ever returns a uid for a customer that exists in
+      // Breezify's own users collection (or a subscription tagged with a
+      // Breezify uid) — if it's undefined, this event belongs to some other
+      // product on the same Stripe account (this account is shared across
+      // several of this developer's apps), not a real problem to log.
+      if (!uid) break;
+
+      let priceId = invoice.lines.data[0]?.price?.id;
+      // The line item doesn't always carry a resolvable price (e.g. certain
+      // proration/invoice shapes) even though the subscription itself does;
+      // fall back to asking the subscription directly, the same place
+      // customer.subscription.updated below reads it from successfully.
+      if (!priceId && subscriptionId) {
+        const sub = await stripe.subscriptions.retrieve(subscriptionId);
+        priceId = sub.items.data[0]?.price?.id;
+      }
       const plan = priceId ? planForPriceId(priceId) : undefined;
-      if (uid && plan) {
+      if (plan) {
         await setPlan(uid, plan);
       } else {
-        console.error("[stripe webhook] invoice.paid: couldn't resolve uid/plan", { customerId, priceId });
+        // uid resolved (this IS a Breezify subscriber) but the price
+        // couldn't be mapped to a plan — a real anomaly worth surfacing,
+        // unlike the "not our event" case above.
+        console.error("[stripe webhook] invoice.paid: resolved uid but not plan", { uid, customerId, priceId });
       }
       break;
     }
@@ -101,12 +150,13 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
     // plans in the billing portal), separately from renewals.
     case "customer.subscription.updated": {
       const subscription = event.data.object as Stripe.Subscription;
-      const uid =
-        subscription.metadata?.uid ??
-        (await findUid(
-          stripe,
-          typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id
-        ));
+      const customerId =
+        typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+      // Routed through findUid() rather than trusting subscription.metadata.uid
+      // directly, same reasoning as invoice.paid above: this account is
+      // shared across apps, and only findUid() verifies the uid actually has
+      // a Breezify profile before it's used.
+      const uid = await findUid(stripe, customerId, subscription.id);
       const priceId = subscription.items.data[0]?.price?.id;
       const plan = priceId ? planForPriceId(priceId) : undefined;
       // A pending cancellation still has full access until the period
@@ -121,7 +171,7 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       const subscription = event.data.object as Stripe.Subscription;
       const customerId =
         typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
-      const uid = subscription.metadata?.uid ?? (await findUid(stripe, customerId));
+      const uid = await findUid(stripe, customerId, subscription.id);
       if (uid) await revertToFree(uid);
       break;
     }
