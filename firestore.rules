@@ -105,5 +105,29 @@ service cloud.firestore {
       allow update: if false;
       allow delete: if isOwner(resource.data.userId);
     }
+
+    // feedback/{feedbackId}: user feedback and support submissions.
+    // Signed-in users can submit feedback only about their own uid.
+    match /feedback/{feedbackId} {
+      allow read: if false; // Admin/support access only
+      allow create: if isSignedIn() && request.resource.data.uid == request.auth.uid;
+      allow update, delete: if false;
+    }
+
+    // metrics/{metricId}: Web Vitals and performance metrics.
+    // Can be written by anyone (public collection), read-only for admin analysis.
+    match /metrics/{metricId} {
+      allow read: if false; // Admin/analytics only
+      allow create: if request.resource.data.timestamp != null;
+      allow update, delete: if false;
+    }
+
+    // client-errors/{errorId}: client-side error logs.
+    // Can be written by anyone, read-only for debugging.
+    match /client-errors/{errorId} {
+      allow read: if false; // Admin/debugging only
+      allow create: if request.resource.data.timestamp != null;
+      allow update, delete: if false;
+    }
   }
 }

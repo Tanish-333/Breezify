@@ -3,6 +3,7 @@ import { Inter } from "next/font/google";
 import { Analytics } from "@vercel/analytics/next";
 import { AuthProvider } from "@/lib/auth-context";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
+import { MonitoringInit } from "@/components/monitoring-init";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -45,6 +46,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
       </head>
       <body className="font-sans">
         <AuthProvider>{children}</AuthProvider>
+        <MonitoringInit />
         <Analytics />
       </body>
     </html>
