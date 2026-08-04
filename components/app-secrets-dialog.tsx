@@ -63,7 +63,8 @@ export function AppSecretsDialog({ appId, onClose }: { appId: string; onClose: (
               Secrets
             </h2>
             <p className="mt-1 text-xs text-muted-foreground">
-              Key/value pairs your generated app can call out with. Only you can see them.
+              Key/value pairs available to this app's api/ backend routes as environment
+              variables once deployed. Only you can see them.
             </p>
           </div>
           <button

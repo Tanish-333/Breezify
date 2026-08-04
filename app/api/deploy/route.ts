@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { commit, getDoc, incrementWrite, updateWrite } from "@/lib/firestore-rest";
+import { commit, getDoc, incrementWrite, listCollection, updateWrite } from "@/lib/firestore-rest";
 import { withWatermark } from "@/lib/watermark";
 import { withAnalytics } from "@/lib/analytics-snippet";
 import { deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
@@ -73,9 +73,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "This app has no files to deploy." }, { status: 400 });
     }
 
-    // Same limitation the live preview has: no real server, no provisioned
-    // secrets, so anything assuming either would just silently fail if we
-    // deployed it anyway.
+    // api/ serverless functions and this app's own Secrets are real at
+    // deploy time (see below); only a traditional always-on server process
+    // is still unsupported, since Vercel functions are request/response
+    // only. See lib/app-support.ts.
     const unsupported = unsupportedReason(rawFiles, "deploy");
     if (unsupported) {
       return NextResponse.json({ error: unsupported }, { status: 400 });
@@ -144,13 +145,28 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // This app's own configured Secrets (see components/app-secrets-dialog.tsx)
+    // become env vars for its api/ serverless functions only — never for the
+    // static frontend build, which has no server-side code to read them.
+    let secretsEnv: Record<string, string> = {};
+    try {
+      const secretDocs = await listCollection(`apps/${appId}/secrets`, idToken);
+      secretsEnv = Object.fromEntries(
+        secretDocs
+          .map((d) => [d.fields.key, d.fields.value])
+          .filter(([key, value]) => typeof key === "string" && typeof value === "string")
+      );
+    } catch {
+      // Deploy without secrets rather than blocking on this lookup failing.
+    }
+
     await commit(
       [updateWrite(`apps/${appId}`, { status: "deploying", deployStartedAt: new Date() }, ["status", "deployStartedAt"])],
       idToken
     );
 
     try {
-      const result = await deployToVercel(slug, files);
+      const result = await deployToVercel(slug, files, undefined, secretsEnv);
       await commit(
         [
           updateWrite(

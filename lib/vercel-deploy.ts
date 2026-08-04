@@ -85,7 +85,8 @@ async function tryCustomAlias(deploymentId: string, slug: string): Promise<strin
 export async function deployToVercel(
   slug: string,
   files: Record<string, string>,
-  onStatus?: (message: string) => void
+  onStatus?: (message: string) => void,
+  env?: Record<string, string>
 ): Promise<DeployResult> {
   onStatus?.("Uploading files");
 
@@ -99,6 +100,13 @@ export async function deployToVercel(
         file: file.replace(/^\/+/, ""),
         data,
       })),
+      // Only the app's own api/ serverless functions ever see these (a
+      // static Vite build has no server-side code to read process.env at
+      // all), populated from that app's Secrets panel (see
+      // app/api/deploy/route.ts). Skipped entirely when there are none.
+      ...(env && Object.keys(env).length > 0
+        ? { env, build: { env } }
+        : {}),
     }),
   });
 

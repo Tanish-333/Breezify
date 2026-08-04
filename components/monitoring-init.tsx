@@ -6,11 +6,11 @@ import "@/lib/client-error-log";
 
 export function MonitoringInit() {
   useEffect(() => {
-    // Initialize Web Vitals tracking
+    // trackWebVitals posts each metric to /api/metrics itself (sampled
+    // server-side); this callback is just for local dev visibility.
     trackWebVitals((metric) => {
-      // Log poor performance metrics
       if (metric.rating === "poor") {
-        console.warn(`Poor ${metric.name}: ${metric.value}ms`);
+        console.warn(`Poor ${metric.name}: ${metric.value}`);
       }
     });
   }, []);
