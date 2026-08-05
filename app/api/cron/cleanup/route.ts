@@ -20,7 +20,10 @@ async function cleanStuckDeploys() {
   // A single-field equality filter, so no composite index is required; the
   // number of apps actually mid-deploy at any moment is always small, so
   // filtering the timestamp in memory below is cheap.
-  const snap = await db.collection("apps").where("status", "==", "deploying").get();
+  // Queries deployStatus, not status: deploy state moved to its own field
+  // (see lib/types.ts' AppStatus doc comment and app/api/deploy/route.ts) so
+  // it stops racing a concurrent refine's status updates on the same app.
+  const snap = await db.collection("apps").where("deployStatus", "==", "deploying").get();
   const cutoff = Date.now() - STUCK_DEPLOY_MS;
   let cleaned = 0;
   for (const docSnap of snap.docs) {
@@ -29,8 +32,8 @@ async function cleanStuckDeploys() {
       startedAt && typeof startedAt.toMillis === "function" ? startedAt.toMillis() : 0;
     if (startedMs && startedMs < cutoff) {
       await docSnap.ref.update({
-        status: "error",
-        errorMessage: "The deploy timed out and didn't finish. Please try again.",
+        deployStatus: "error",
+        deployErrorMessage: "The deploy timed out and didn't finish. Please try again.",
       });
       cleaned++;
     }
