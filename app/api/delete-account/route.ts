@@ -85,7 +85,23 @@ export async function POST(req: NextRequest) {
     );
     if (!res.ok) {
       const body = await res.text();
-      throw new Error(`Failed to delete account (${res.status}): ${body}`);
+      // The raw Identity Toolkit REST error ("CREDENTIAL_TOO_OLD_LOGIN_AGAIN",
+      // etc.) isn't something a user should ever see verbatim — map the
+      // ones actually reachable here to something actionable. Falls back to
+      // the raw code/body so an unmapped failure is still visible to
+      // whoever's debugging it, just not shown wrapped in JSON braces.
+      let code = "";
+      try {
+        code = JSON.parse(body)?.error?.message ?? "";
+      } catch {
+        // Non-JSON body; code stays empty and the fallback below is used.
+      }
+      const friendly: Record<string, string> = {
+        CREDENTIAL_TOO_OLD_LOGIN_AGAIN: "For your security, please sign out and back in, then try deleting your account again.",
+        TOKEN_EXPIRED: "Your session has expired. Please sign in again, then try deleting your account.",
+        USER_NOT_FOUND: "This account no longer exists.",
+      };
+      throw new Error(friendly[code] || `Failed to delete account${code ? ` (${code})` : ""}. Please try again.`);
     }
 
     const [apps, transactions] = await Promise.all([
