@@ -278,8 +278,6 @@ export async function POST(req: NextRequest) {
         if (!existing && !clarified) {
           send({ type: "status", message: "Reviewing your request" });
           const clarity = await checkClarity(prompt);
-          // Don't charge for a question nobody is around to answer.
-          if (req.signal.aborted) return;
           if (clarity.needsClarification) {
             // Charge a small flat fee for asking rather than the full model
             // cost, since no generation actually ran. 0.5 is always covered:
@@ -413,61 +411,11 @@ export async function POST(req: NextRequest) {
           files: result.files,
         });
       } catch (err) {
-        // req.signal aborts when the client disconnects (including an
-        // explicit Cancel click, since that aborts the client's fetch).
-        // The generation call is threaded with this same signal, so the
-        // provider call itself stops quickly rather than running to
-        // completion for a result nobody will see — but reaching this
-        // catch at all means generateApp()/refineApp() was already invoked
-        // (the earlier, genuinely free clarify-question abort returns
-        // before this try/catch is ever at risk of throwing), so real
-        // provider cost was likely already incurred by the time the abort
-        // landed. Charging nothing here — the previous behavior — let
-        // anyone burn real API spend for free by simply closing the tab
-        // mid-generation. Charges the same 0.5 floor as an abandoned
-        // clarify question instead: less than every model's real cost, but
-        // no longer zero.
-        if (req.signal.aborted) {
-          const abortTxId = randomUUID();
-          try {
-            await commit(
-              [
-                incrementWrite(userPath, "credits", -0.5),
-                createWrite(`transactions/${abortTxId}`, {
-                  userId: uid,
-                  type: "generation",
-                  creditsUsed: 0.5,
-                  model,
-                  createdAt: new Date(),
-                }),
-              ],
-              idToken
-            );
-          } catch {
-            // Client is long gone either way; nothing to surface this to.
-          }
-          if (!existing) {
-            try {
-              await commit(
-                [updateWrite(appPath, { userId: uid, name: prompt.slice(0, 60), prompt, model, status: "stopped", createdAt }, ["userId", "name", "prompt", "model", "status", "createdAt"])],
-                idToken
-              );
-            } catch {
-              // Client is long gone either way; nothing to surface this to.
-            }
-          } else {
-            // Release the refine lock claimed above — otherwise an aborted
-            // refine would leave the app stuck showing "generating" (and
-            // blocking every other collaborator's refine) until the stale-
-            // lock timeout, instead of just... going back to how it was.
-            try {
-              await releaseRefineLock(refineAppId!, existing.previousStatus, idToken);
-            } catch {
-              // Client is long gone either way; nothing to surface this to.
-            }
-          }
-          return;
-        }
+        // Generation continues in the background even if the client disconnects
+        // (switched tabs, closed browser, etc). The completed app will be persisted
+        // to Firestore and visible when the user returns to the tab. Credits were
+        // already charged upfront, so the generation cost is fair regardless of
+        // whether the client stays connected to see the result stream.
 
         const message =
           err instanceof Error ? err.message : "Generation failed. Please try again.";
