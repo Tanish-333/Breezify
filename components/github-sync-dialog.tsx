@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { auth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { friendlyAuthError } from "@/lib/auth-errors";
@@ -27,6 +27,13 @@ export function GithubSyncDialog({
   const [error, setError] = useState("");
   const [done, setDone] = useState<{ fileCount: number; skipped: number } | null>(null);
 
+  // Closing the dialog mid-sync previously left the fetch running in the
+  // background instead of actually stopping it.
+  const abortRef = useRef<AbortController | null>(null);
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
+
   useEffect(() => {
     setConnected(hasGithubToken());
   }, []);
@@ -45,6 +52,11 @@ export function GithubSyncDialog({
   }
 
   async function sync() {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    const signal = controller.signal;
+
     setError("");
     setLoading(true);
     try {
@@ -55,8 +67,10 @@ export function GithubSyncDialog({
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
         body: JSON.stringify({ appId, githubToken: getGithubToken() }),
+        signal,
       });
       const data = await res.json();
+      if (signal.aborted) return;
       if (!res.ok) {
         if (res.status === 400 && /token/i.test(data.error || "")) clearGithubToken();
         throw new Error(data.error || "Sync failed.");
@@ -64,9 +78,10 @@ export function GithubSyncDialog({
       setDone({ fileCount: data.fileCount, skipped: data.skipped ?? 0 });
       onSynced();
     } catch (err) {
+      if (signal.aborted) return;
       setError(err instanceof Error ? err.message : "Sync failed.");
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }
 

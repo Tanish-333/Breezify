@@ -21,11 +21,12 @@ interface Repo {
   pushedAt: string | null;
 }
 
-async function authedFetch(path: string, idToken: string, body: unknown) {
+async function authedFetch(path: string, idToken: string, body: unknown, signal?: AbortSignal) {
   const res = await fetch(path, {
     method: "POST",
     headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
     body: JSON.stringify(body),
+    signal,
   });
   const data = await res.json();
   if (!res.ok) {
@@ -59,6 +60,20 @@ export function GithubImportDialog({ onClose }: { onClose: () => void }) {
   const [error, setError] = useState("");
   const [result, setResult] = useState<{ appId: string; fileCount: number; skipped: number } | null>(null);
 
+  // Closing the dialog (or starting a newer request of the same kind)
+  // aborts whatever's still in flight, instead of leaving it to keep
+  // running and land on an unmounted component.
+  const abortRef = useRef<AbortController | null>(null);
+  function startRequest() {
+    abortRef.current?.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
+    return controller.signal;
+  }
+  useEffect(() => {
+    return () => abortRef.current?.abort();
+  }, []);
+
   useEffect(() => {
     setConnected(hasGithubToken());
   }, []);
@@ -74,22 +89,25 @@ export function GithubImportDialog({ onClose }: { onClose: () => void }) {
   }, []);
 
   async function loadRepos() {
+    const signal = startRequest();
     setReposLoading(true);
     setError("");
     try {
       const user = auth.currentUser;
       if (!user) throw new Error("You must be signed in.");
       const idToken = await user.getIdToken();
-      const data = await authedFetch("/api/github/repos", idToken, { githubToken: getGithubToken() });
+      const data = await authedFetch("/api/github/repos", idToken, { githubToken: getGithubToken() }, signal);
+      if (signal.aborted) return;
       setRepos(data.repos);
     } catch (err) {
+      if (signal.aborted) return;
       if ((err as { status?: number }).status === 400 && /token/i.test((err as Error).message)) {
         clearGithubToken();
         setConnected(false);
       }
       setError(err instanceof Error ? err.message : "Couldn't load your repositories.");
     } finally {
-      setReposLoading(false);
+      if (!signal.aborted) setReposLoading(false);
     }
   }
 
@@ -99,26 +117,30 @@ export function GithubImportDialog({ onClose }: { onClose: () => void }) {
   }, [connected]);
 
   async function loadBranches(repo: Repo) {
+    const signal = startRequest();
     setBranchesLoading(true);
     setBranches(null);
     try {
       const user = auth.currentUser;
       if (!user) throw new Error("You must be signed in.");
       const idToken = await user.getIdToken();
-      const data = await authedFetch("/api/github/branches", idToken, {
-        owner: repo.owner,
-        repo: repo.name,
-        githubToken: getGithubToken(),
-      });
+      const data = await authedFetch(
+        "/api/github/branches",
+        idToken,
+        { owner: repo.owner, repo: repo.name, githubToken: getGithubToken() },
+        signal
+      );
+      if (signal.aborted) return;
       setBranches(data.branches);
     } catch (err) {
+      if (signal.aborted) return;
       if ((err as { status?: number }).status === 400 && /token/i.test((err as Error).message)) {
         clearGithubToken();
         setConnected(false);
       }
       setError(err instanceof Error ? err.message : "Couldn't load that repository's branches.");
     } finally {
-      setBranchesLoading(false);
+      if (!signal.aborted) setBranchesLoading(false);
     }
   }
 
@@ -166,27 +188,30 @@ export function GithubImportDialog({ onClose }: { onClose: () => void }) {
 
   async function importRepo() {
     if (!selectedRepo) return;
+    const signal = startRequest();
     setError("");
     setLoading(true);
     try {
       const user = auth.currentUser;
       if (!user) throw new Error("You must be signed in.");
       const idToken = await user.getIdToken();
-      const data = await authedFetch("/api/github/import", idToken, {
-        owner: selectedRepo.owner,
-        repo: selectedRepo.name,
-        branch: selectedBranch || undefined,
-        githubToken: getGithubToken(),
-      });
+      const data = await authedFetch(
+        "/api/github/import",
+        idToken,
+        { owner: selectedRepo.owner, repo: selectedRepo.name, branch: selectedBranch || undefined, githubToken: getGithubToken() },
+        signal
+      );
+      if (signal.aborted) return;
       setResult(data);
     } catch (err) {
+      if (signal.aborted) return;
       if ((err as { status?: number }).status === 400 && /token/i.test((err as Error).message)) {
         clearGithubToken();
         setConnected(false);
       }
       setError(err instanceof Error ? err.message : "Import failed.");
     } finally {
-      setLoading(false);
+      if (!signal.aborted) setLoading(false);
     }
   }
 

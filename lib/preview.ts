@@ -256,8 +256,26 @@ function toBlobUrl(path) {
   return url;
 }
 
-window.addEventListener("error", (e) => fail(e.message));
-window.addEventListener("unhandledrejection", (e) => fail(String(e.reason)));
+window.addEventListener("error", (e) => {
+  // e.message is sometimes empty for module-script errors even inside this
+  // same sandboxed frame (no separate origin actually crossed, but some
+  // browsers still apply the cross-origin-script message redaction to any
+  // blob: URL module) — previously this just showed "Uncaught" with
+  // nothing after it. Fall back to whatever else the event actually has.
+  const parts = [];
+  if (e.message) parts.push(e.message);
+  if (e.error && e.error.stack) parts.push(String(e.error.stack));
+  if (!parts.length && e.filename) parts.push("at " + e.filename + ":" + e.lineno + ":" + e.colno);
+  fail(parts.length ? parts.join("\\n\\n") : "An unknown error occurred with no further detail available (this can happen with certain module-loading errors).");
+});
+window.addEventListener("unhandledrejection", (e) => {
+  const reason = e.reason;
+  const message =
+    reason instanceof Error
+      ? (reason.stack || reason.message)
+      : String(reason);
+  fail(message);
+});
 
 try {
   const entryUrl = toBlobUrl(ENTRY);
