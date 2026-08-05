@@ -305,23 +305,28 @@ export async function POST(req: NextRequest) {
           send({ type: "status", message: "Reading your current files" });
         } else {
           send({ type: "status", message: "Setting up your app" });
-          await commit(
-            [
-              createWrite(appPath, {
-                userId: uid,
-                name: prompt.slice(0, 60),
-                prompt,
-                model,
-                status: "generating",
-                generatingBy: uid,
-                generatingByEmail: email ?? null,
-                generatingStartedAt: new Date(),
-                createdAt,
-                visits: 0,
-              }),
-            ],
-            idToken
-          );
+          try {
+            await commit(
+              [
+                createWrite(appPath, {
+                  userId: uid,
+                  name: prompt.slice(0, 60),
+                  prompt,
+                  model,
+                  status: "generating",
+                  generatingBy: uid,
+                  generatingByEmail: email ?? null,
+                  generatingStartedAt: new Date(),
+                  createdAt,
+                  visits: 0,
+                }),
+              ],
+              idToken
+            );
+          } catch (err) {
+            console.error(`[generate] Failed to create app doc: uid=${uid}, appId=${appId}, error:`, err);
+            throw err;
+          }
         }
 
         send({
