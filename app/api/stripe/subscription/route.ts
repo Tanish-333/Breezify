@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { getDoc } from "@/lib/firestore-rest";
-import { getStripe, isStripeConfigured } from "@/lib/stripe";
+import { getStripe, isStripeConfigured, resolveStripeCustomerId } from "@/lib/stripe";
 
 export const runtime = "nodejs";
 
@@ -22,8 +22,11 @@ export async function POST(req: NextRequest) {
     }
 
     let uid: string;
+    let email: string | undefined;
     try {
-      uid = (await verifyIdToken(idToken)).uid;
+      const verified = await verifyIdToken(idToken);
+      uid = verified.uid;
+      email = verified.email;
     } catch {
       return NextResponse.json(
         { error: "Your session has expired. Please sign in again." },
@@ -32,10 +35,13 @@ export async function POST(req: NextRequest) {
     }
 
     const userDoc = await getDoc(`users/${uid}`, idToken);
-    const customerId =
+    let customerId =
       typeof userDoc?.fields.stripeCustomerId === "string"
         ? (userDoc.fields.stripeCustomerId as string)
         : undefined;
+    if (!customerId) {
+      customerId = await resolveStripeCustomerId(uid, email, idToken);
+    }
     // A Stripe customer id (cus_...) is just an identifier, not a secret —
     // safe to hand back to the account that owns it, so the billing page can
     // show plainly which Stripe customer (if any) this account maps to,
