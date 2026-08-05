@@ -36,13 +36,6 @@ export function unsupportedReason(
     return `This app includes a real always-on server process, which Breezify can't ${action} (backend logic here must be Vercel serverless functions in an api/ folder instead). Download the ZIP or push it to GitHub and run it locally with its own server instead.`;
   }
 
-  // api/ routes are real once deployed, but the preview iframe has no
-  // server at all to run them against.
-  const hasApiRoutes = paths.some((p) => API_DIR_RE.test(p));
-  if (context === "preview" && hasApiRoutes) {
-    return `This app includes backend routes in api/, which only run once deployed — there's no server behind this in-browser preview to call them. Deploy the app to test them for real.`;
-  }
-
   // Client-side code reading a server env var can never work: nothing
   // injects secrets into the browser bundle. Backend api/ files are exempt
   // — those DO get the app's configured Secrets injected at deploy time.

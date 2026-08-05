@@ -73,6 +73,24 @@ function collectCss(files: Record<string, string>) {
 }
 
 /**
+ * A small dismissible banner shown when the app has api/ backend routes:
+ * those only run once deployed (no server behind this in-browser preview to
+ * call them), but the rest of the app — every page, every piece of UI —
+ * still works and is worth seeing rather than replacing the whole preview
+ * with a blocking "can't preview this" message.
+ */
+function apiRoutesBanner() {
+  return `<div id="feather-api-banner" style="position:fixed;bottom:12px;left:12px;right:12px;z-index:2147483647;display:flex;align-items:center;gap:8px;padding:8px 12px;border-radius:8px;background:#1e293b;color:#e2e8f0;font:12px/1.4 ui-sans-serif,system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)">
+<span style="flex:1">This app's backend (api/) routes only run once deployed — the rest of the app previews normally.</span>
+<button onclick="this.parentElement.remove()" style="background:none;border:none;color:inherit;font-size:14px;line-height:1;cursor:pointer;padding:0 2px">&times;</button>
+</div>`;
+}
+
+function hasApiRoutes(files: Record<string, string>) {
+  return Object.keys(files).some((p) => /^api\//i.test(p));
+}
+
+/**
  * The iframe's sandbox deliberately omits `allow-same-origin` (see below):
  * combined with `allow-scripts`, that flag is a well-known way for
  * sandboxed content to escape the sandbox entirely. But an opaque-origin
@@ -145,6 +163,7 @@ export function buildPreview(
   if (unsupported) return { kind: "unsupported", reason: unsupported };
 
   const htmlEntry = findHtmlEntry(files);
+  const apiBanner = hasApiRoutes(files) ? apiRoutesBanner() : "";
 
   // Plain static site: use it directly.
   if (htmlEntry && isStandaloneHtml(files[htmlEntry])) {
@@ -163,6 +182,9 @@ export function buildPreview(
       doc = doc.includes("</body>")
         ? doc.replace("</body>", `${badge}</body>`)
         : `${doc}${badge}`;
+    }
+    if (apiBanner) {
+      doc = doc.includes("</body>") ? doc.replace("</body>", `${apiBanner}</body>`) : `${doc}${apiBanner}`;
     }
     return { kind: "html", doc };
   }
@@ -342,6 +364,7 @@ try {
 }
 <\/script>
 ${badge}
+${apiBanner}
 </body>
 </html>`;
 
