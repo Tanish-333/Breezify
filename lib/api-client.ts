@@ -32,7 +32,9 @@ export async function generateAppRequest(
   /** Pass an app id to refine that app instead of building a new one. */
   appId?: string,
   /** Set once the user has already answered a clarifying question. */
-  clarified?: boolean
+  clarified?: boolean,
+  /** Set for the "Fix this error" refine — charges the flat ERROR_FIX_CREDIT_COST instead of the model's own cost. */
+  isErrorFix?: boolean
 ): Promise<GenerateResult | { clarify: ClarifyQuestion }> {
   const user = auth.currentUser;
   if (!user) throw new Error("You must be signed in to generate an app.");
@@ -49,6 +51,7 @@ export async function generateAppRequest(
       model,
       ...(appId ? { appId } : {}),
       ...(clarified ? { clarified: true } : {}),
+      ...(isErrorFix ? { isErrorFix: true } : {}),
     }),
     signal,
   });

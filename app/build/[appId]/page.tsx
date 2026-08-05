@@ -31,6 +31,7 @@ import {
   displayStatus,
   DUPLICATE_MIN_PLAN,
   effectiveDeployStatus,
+  ERROR_FIX_CREDIT_COST,
   IMPORT_MIN_PLAN,
   MODEL_INFO,
   PLAN_RANK,
@@ -151,6 +152,7 @@ function AppWorkspace() {
   const hasFiles = Object.keys(files).length > 0;
   const cost = MODEL_INFO[model].credits;
   const insufficient = profile !== null && profile.credits < cost;
+  const insufficientForErrorFix = profile !== null && profile.credits < ERROR_FIX_CREDIT_COST;
   const turns = app.turns ?? [];
   const suggestions = app.suggestions ?? [];
   // A refine claims a lock on the app doc server-side (see app/api/generate/
@@ -165,7 +167,7 @@ function AppWorkspace() {
   // someone even tries to deploy.
   const missingSecrets = isOwner ? missingEnvVars(files, appSecrets.map((s) => s.key)) : [];
 
-  async function refine(text: string) {
+  async function refine(text: string, isErrorFix?: boolean) {
     setError("");
     setProgress({ chars: 0, files: [] });
     setStatus("Starting");
@@ -176,7 +178,9 @@ function AppWorkspace() {
         model,
         { onStatus: setStatus, onProgress: setProgress },
         undefined,
-        app!.id
+        app!.id,
+        undefined,
+        isErrorFix
       );
       setInstruction("");
       await refreshProfile();
@@ -593,7 +597,7 @@ function AppWorkspace() {
                 <div className="min-w-0 flex-1">
                   <p>
                     The live preview hit a runtime error. Fixing it runs a refine like any other —
-                    {" "}{cost.toFixed(2)} credits with {MODEL_INFO[model].label}.
+                    {" "}{ERROR_FIX_CREDIT_COST.toFixed(2)} credits, regardless of model.
                   </p>
                   <pre className="mt-1.5 max-h-24 overflow-y-auto whitespace-pre-wrap break-words rounded bg-error/10 p-2 font-mono text-xs">
                     {previewError}
@@ -604,12 +608,15 @@ function AppWorkspace() {
                   variant="secondary"
                   className="shrink-0"
                   loading={refining}
-                  disabled={refining || insufficient || blockedByOtherEditor}
+                  disabled={refining || insufficientForErrorFix || blockedByOtherEditor}
                   onClick={() =>
-                    refine(`Fix this runtime error from the live preview:\n\n${previewError}`)
+                    refine(
+                      `Fix this runtime error from the live preview:\n\n${previewError}`,
+                      true
+                    )
                   }
                 >
-                  Fix this error · {cost.toFixed(2)}
+                  Fix this error · {ERROR_FIX_CREDIT_COST.toFixed(2)}
                 </Button>
               </div>
             )}

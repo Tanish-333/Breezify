@@ -30,13 +30,20 @@ export interface ModelInfo {
 // firestore.rules validates every credit deduction against exactly this
 // set, so adding a new cost value here means updating isValidCost() in the
 // rules too.
+//
+// 1.0 is the floor for every model tier (nothing is priced at 0.5 anymore):
+// 0.5 undercharged relative to real provider cost on longer generations,
+// so the whole tier was raised to keep every model's actual API cost safely
+// under what a credit is sold for. The 0.5 value stays valid in
+// firestore.rules only for the flat clarify-question fee below, which does
+// no generation at all.
 export const MODEL_INFO: Record<ModelId, ModelInfo> = {
   haiku: {
     label: "Haiku 4.5",
     provider: "anthropic",
     providerLabel: "Anthropic",
     description: "Fast and inexpensive. Great for simple apps and quick iterations.",
-    credits: 0.5,
+    credits: 1.0,
     apiModel: "claude-haiku-4-5",
     minPlan: "free",
     tier: "Included free",
@@ -46,7 +53,7 @@ export const MODEL_INFO: Record<ModelId, ModelInfo> = {
     provider: "google",
     providerLabel: "Google",
     description: "Very fast with a large context window. Good for content-heavy apps.",
-    credits: 0.5,
+    credits: 1.0,
     apiModel: "gemini-3.6-flash",
     minPlan: "plus",
     tier: "Plus",
@@ -56,7 +63,7 @@ export const MODEL_INFO: Record<ModelId, ModelInfo> = {
     provider: "groq",
     providerLabel: "Groq",
     description: "Near-instant inference on Groq's LPUs. Great for quick, simple apps.",
-    credits: 0.5,
+    credits: 1.0,
     apiModel: "llama-3.1-8b-instant",
     minPlan: "plus",
     tier: "Plus",
@@ -92,7 +99,7 @@ export const MODEL_INFO: Record<ModelId, ModelInfo> = {
     provider: "groq",
     providerLabel: "Groq",
     description: "Near-instant responses with strong general reasoning.",
-    credits: 0.5,
+    credits: 1.0,
     apiModel: "llama-3.3-70b-versatile",
     minPlan: "pro",
     tier: "Pro",
@@ -118,6 +125,17 @@ export const MODEL_INFO: Record<ModelId, ModelInfo> = {
     tier: "Max",
   },
 };
+
+/**
+ * Flat credit cost for the "Fix this error" refine (see the live-preview
+ * error banner in app/build/[appId]/page.tsx), charged instead of the
+ * selected model's own `credits` cost. Fixed rather than model-scaled since
+ * an error fix always runs a full refine pass over the app's existing
+ * files — the same real work regardless of which model is picked — and a
+ * flat rate keeps the cheaper tiers from being a free way to spam retries
+ * on a broken generation.
+ */
+export const ERROR_FIX_CREDIT_COST = 1.5;
 
 export const MODEL_IDS = Object.keys(MODEL_INFO) as ModelId[];
 
