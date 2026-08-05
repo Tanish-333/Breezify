@@ -71,6 +71,39 @@ function collectCss(files: Record<string, string>) {
     .join("\n");
 }
 
+/**
+ * The iframe's sandbox deliberately omits `allow-same-origin` (see below):
+ * combined with `allow-scripts`, that flag is a well-known way for
+ * sandboxed content to escape the sandbox entirely. But an opaque-origin
+ * iframe also can't touch the real localStorage/sessionStorage at all —
+ * every read or write throws a SecurityError — and nearly every generated
+ * app uses one or both (the system prompt tells the model to, for anything
+ * that isn't shared/persisted via the backend data API). Without this,
+ * that's an uncaught exception on first render for most apps. A working
+ * in-memory polyfill fixes the crash without touching the sandbox's actual
+ * security properties: it never persists across a reload either way, same
+ * as before, it just no longer throws.
+ */
+const STORAGE_POLYFILL = `<script>
+(function () {
+  function makeStorage() {
+    var data = {};
+    return {
+      getItem: function (k) { return Object.prototype.hasOwnProperty.call(data, k) ? data[k] : null; },
+      setItem: function (k, v) { data[k] = String(v); },
+      removeItem: function (k) { delete data[k]; },
+      clear: function () { data = {}; },
+      key: function (i) { return Object.keys(data)[i] || null; },
+      get length() { return Object.keys(data).length; },
+    };
+  }
+  try {
+    Object.defineProperty(window, "localStorage", { value: makeStorage(), configurable: true });
+    Object.defineProperty(window, "sessionStorage", { value: makeStorage(), configurable: true });
+  } catch (e) {}
+})();
+<\/script>`;
+
 export function buildPreview(
   files: Record<string, string>,
   appUrl: string,
@@ -84,6 +117,11 @@ export function buildPreview(
   // Plain static site: use it directly.
   if (htmlEntry && isStandaloneHtml(files[htmlEntry])) {
     let doc = files[htmlEntry];
+    // Must land before any of the page's own scripts run, so inject right
+    // after <head> opens rather than at </head> like the stylesheet below.
+    doc = doc.includes("<head>")
+      ? doc.replace("<head>", `<head>${STORAGE_POLYFILL}`)
+      : `${STORAGE_POLYFILL}${doc}`;
     const css = collectCss(files);
     if (css && doc.includes("</head>")) {
       doc = doc.replace("</head>", `<style>${css}</style></head>`);
@@ -122,6 +160,7 @@ export function buildPreview(
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+${STORAGE_POLYFILL}
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"><\/script>
 <script src="https://cdn.tailwindcss.com"><\/script>
 <style>${css}</style>
