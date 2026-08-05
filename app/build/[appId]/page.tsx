@@ -748,6 +748,7 @@ function AppWorkspace() {
           currentDomain={app.customDomain}
           domainPurchased={app.domainPurchased}
           domainExpiresAt={app.domainExpiresAt}
+          domainAutoRenew={app.domainAutoRenew}
           onClose={() => setShowDomain(false)}
         />
       )}

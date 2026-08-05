@@ -375,3 +375,28 @@ export async function getDomainOrderStatus(orderId: string): Promise<DomainOrder
     error: firstDomainError ? String(firstDomainError) : res.body.error?.message,
   };
 }
+
+/**
+ * Polls a Vercel registrar order until it lands on a terminal state. Shared
+ * by app/api/stripe/webhook (original purchases) and
+ * app/api/cron/renew-domains (renewals) — both buy through
+ * purchaseDomainOnVercel() and need the same follow-up.
+ *
+ * Deliberately doesn't treat "still not done after the deadline" as a
+ * failure: at that point money has moved and the order may still be in
+ * flight, so throwing (rather than refunding) is what lets a caller retry
+ * later instead of assuming it failed — see each caller's own resume/retry
+ * logic for how it acts on that.
+ */
+export async function pollDomainOrder(orderId: string, deadlineMs = 45_000): Promise<void> {
+  const deadline = Date.now() + deadlineMs;
+  while (Date.now() < deadline) {
+    const order = await getDomainOrderStatus(orderId);
+    if (order.status === "completed") return;
+    if (order.status === "failed") {
+      throw new Error(order.error || "Vercel couldn't complete the domain registration.");
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new Error(`Domain order ${orderId} is still pending after the poll window; will retry later.`);
+}

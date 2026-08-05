@@ -60,14 +60,14 @@ export async function POST(req: NextRequest) {
             customDomain: normalizedDomain,
             customDomainVerified: status.verified,
             ...(wasPurchased && !stillSameDomain
-              ? { domainPurchased: false, domainExpiresAt: null, domainAutoRenew: false }
+              ? { domainPurchased: false, domainExpiresAt: null, domainAutoRenew: false, domainOrderId: null }
               : {}),
           },
           [
             "customDomain",
             "customDomainVerified",
             ...(wasPurchased && !stillSameDomain
-              ? ["domainPurchased", "domainExpiresAt", "domainAutoRenew"]
+              ? ["domainPurchased", "domainExpiresAt", "domainAutoRenew", "domainOrderId"]
               : []),
           ]
         ),
@@ -159,8 +159,16 @@ export async function DELETE(req: NextRequest) {
             domainPurchased: false,
             domainExpiresAt: null,
             domainAutoRenew: false,
+            domainOrderId: null,
           },
-          ["customDomain", "customDomainVerified", "domainPurchased", "domainExpiresAt", "domainAutoRenew"]
+          [
+            "customDomain",
+            "customDomainVerified",
+            "domainPurchased",
+            "domainExpiresAt",
+            "domainAutoRenew",
+            "domainOrderId",
+          ]
         ),
       ],
       idToken

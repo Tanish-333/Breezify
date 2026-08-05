@@ -73,6 +73,7 @@ export function CustomDomainDialog({
   currentDomain,
   domainPurchased,
   domainExpiresAt,
+  domainAutoRenew,
   onClose,
 }: {
   appId: string;
@@ -80,6 +81,7 @@ export function CustomDomainDialog({
   /** True only for the domain actually bought through Breezify (see app/api/stripe/webhook) — cleared as soon as `currentDomain` changes to anything else. */
   domainPurchased?: boolean;
   domainExpiresAt?: number;
+  domainAutoRenew?: boolean;
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<"attach" | "buy">("attach");
@@ -98,7 +100,30 @@ export function CustomDomainDialog({
   const [result, setResult] = useState<DomainSearchResult | null>(null);
   const [showContactForm, setShowContactForm] = useState(false);
   const [contact, setContact] = useState<DomainContact>(EMPTY_CONTACT);
+  const [buyAutoRenew, setBuyAutoRenew] = useState(true);
   const [buying, setBuying] = useState(false);
+
+  // Already-purchased domain: auto-renew toggle
+  const [renewToggleLoading, setRenewToggleLoading] = useState(false);
+  const [renewToggleError, setRenewToggleError] = useState("");
+
+  async function toggleAutoRenew(next: boolean) {
+    setRenewToggleError("");
+    setRenewToggleLoading(true);
+    try {
+      await authedFetch("/api/domains/auto-renew", {
+        method: "POST",
+        body: JSON.stringify({ appId, autoRenew: next }),
+      });
+      // No local state to flip here — domainAutoRenew comes from the parent
+      // via the app's own live Firestore listener, which picks this up on
+      // its own.
+    } catch (err) {
+      setRenewToggleError(err instanceof Error ? err.message : "Couldn't update auto-renew.");
+    } finally {
+      setRenewToggleLoading(false);
+    }
+  }
 
   // The dialog only stores a verified boolean in Firestore, not the DNS
   // records Vercel wants — fetch those live so a still-pending domain shows
@@ -199,7 +224,7 @@ export function CustomDomainDialog({
     try {
       const data = await authedFetch("/api/domains/purchase", {
         method: "POST",
-        body: JSON.stringify({ appId, domain: result.domain, contact }),
+        body: JSON.stringify({ appId, domain: result.domain, contact, autoRenew: buyAutoRenew }),
       });
       window.location.href = data.url;
     } catch (err) {
@@ -411,6 +436,16 @@ export function CustomDomainDialog({
                     />
                   </div>
 
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={buyAutoRenew}
+                      onChange={(e) => setBuyAutoRenew(e.target.checked)}
+                      className="h-3.5 w-3.5 accent-current"
+                    />
+                    Automatically renew this domain each year
+                  </label>
+
                   <Button className="w-full" onClick={buy} loading={buying}>
                     Pay ${result?.price?.toFixed(2)} &amp; register
                   </Button>
@@ -440,10 +475,24 @@ export function CustomDomainDialog({
               </div>
 
               {domainPurchased && (
-                <p className="text-xs text-muted-foreground">
-                  Purchased through Breezify
-                  {domainExpiresAt ? ` · registered until ${formatDate(domainExpiresAt)}` : ""}.
-                </p>
+                <div className="space-y-2">
+                  <p className="text-xs text-muted-foreground">
+                    Purchased through Breezify
+                    {domainExpiresAt ? ` · registered until ${formatDate(domainExpiresAt)}` : ""}.
+                  </p>
+                  <label className="flex cursor-pointer items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(domainAutoRenew)}
+                      disabled={renewToggleLoading}
+                      onChange={(e) => toggleAutoRenew(e.target.checked)}
+                      className="h-3.5 w-3.5 accent-current"
+                    />
+                    Automatically renew this domain each year
+                    {renewToggleLoading && <RefreshCw className="h-3 w-3 animate-spin text-muted-foreground" />}
+                  </label>
+                  {renewToggleError && <p className="text-xs text-error">{renewToggleError}</p>}
+                </div>
               )}
 
               {!status?.verified && status?.verification && status.verification.length > 0 && (

@@ -379,8 +379,10 @@ export interface FeatherApp {
   /** True when this domain was bought through Breezify (see app/api/domains/purchase), not brought by the user. */
   domainPurchased?: boolean;
   domainExpiresAt?: number;
-  /** Always false today — purchased domains don't auto-renew yet, see app/api/stripe/webhook. */
+  /** Whether app/api/cron/renew-domains should try to renew this before it expires — toggle via app/api/domains/auto-renew. */
   domainAutoRenew?: boolean;
+  /** The domainOrders/{id} this purchase came from — an opaque Stripe session id, not sensitive, safe for any viewer with read access to this app. */
+  domainOrderId?: string;
   errorMessage?: string;
   createdAt: number;
   deployedAt?: number;

@@ -77,6 +77,7 @@ function toApp(id: string, data: any): FeatherApp {
     domainPurchased: data.domainPurchased,
     domainExpiresAt: toMillis(data.domainExpiresAt),
     domainAutoRenew: data.domainAutoRenew,
+    domainOrderId: data.domainOrderId,
     errorMessage: data.errorMessage,
     visits: typeof data.visits === "number" ? data.visits : undefined,
     createdAt: toMillis(data.createdAt) ?? Date.now(),

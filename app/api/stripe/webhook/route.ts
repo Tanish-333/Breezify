@@ -5,7 +5,7 @@ import { getStripe, planForPriceId } from "@/lib/stripe";
 import { adminDb, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
 import {
   addProjectDomain,
-  getDomainOrderStatus,
+  pollDomainOrder,
   projectSlugFromDeployedUrl,
   purchaseDomainOnVercel,
   type DomainContact,
@@ -108,28 +108,6 @@ async function refundDomainOrder(
   );
 }
 
-/**
- * Polls a Vercel registrar order until it lands on a terminal state.
- * Deliberately doesn't treat "still not done after the deadline" as a
- * failure: at that point money has moved and a Vercel order may still be
- * in flight, so throwing (rather than refunding) is what makes Stripe's
- * automatic webhook retry pick this back up later — see the vercelOrderId
- * resume check in handleDomainPurchase, which skips re-buying once an
- * order ID is already recorded.
- */
-async function pollDomainOrder(orderId: string): Promise<void> {
-  const deadline = Date.now() + 45_000;
-  while (Date.now() < deadline) {
-    const order = await getDomainOrderStatus(orderId);
-    if (order.status === "completed") return;
-    if (order.status === "failed") {
-      throw new Error(order.error || "Vercel couldn't complete the domain registration.");
-    }
-    await new Promise((r) => setTimeout(r, 3000));
-  }
-  throw new Error(`Domain order ${orderId} is still pending after the poll window; will retry on next delivery.`);
-}
-
 async function handleDomainPurchase(stripe: Stripe, session: Stripe.Checkout.Session) {
   if (session.payment_status !== "paid") return;
 
@@ -145,6 +123,36 @@ async function handleDomainPurchase(stripe: Stripe, session: Stripe.Checkout.Ses
   const paymentIntent =
     typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
 
+  // Best-effort, and only once: saves the card used here as the customer's
+  // default payment method, so app/api/cron/renew-domains can actually
+  // charge it off-session next year. A failure here must never block the
+  // domain purchase itself — it just means that cron job will find no saved
+  // card to charge later and fall back to notifying the customer instead of
+  // silently renewing, same as if auto-renew were off.
+  if (order.autoRenew && session.customer && paymentIntent && !order.vercelOrderId) {
+    try {
+      const customerId = typeof session.customer === "string" ? session.customer : session.customer.id;
+      const pi = await stripe.paymentIntents.retrieve(paymentIntent);
+      const paymentMethodId =
+        typeof pi.payment_method === "string" ? pi.payment_method : pi.payment_method?.id;
+      if (paymentMethodId) {
+        await stripe.customers.update(customerId, {
+          invoice_settings: { default_payment_method: paymentMethodId },
+        });
+      }
+      // This may be the buyer's very first Stripe interaction (e.g. a free-
+      // plan user buying a domain with no prior subscription), in which
+      // case they had no stripeCustomerId yet and the purchase route asked
+      // Stripe to create one fresh — mirror what create-checkout-session/
+      // route.ts does client-side after its own checkout. Safe to always
+      // set: this webhook has no user token to check the existing value
+      // through firestore-rest, and re-writing the same id is a no-op.
+      await adminDb().collection("users").doc(order.userId).set({ stripeCustomerId: customerId }, { merge: true });
+    } catch (err) {
+      console.error("[stripe webhook] domain purchase: couldn't save a default payment method for auto-renew:", err);
+    }
+  }
+
   let vercelOrderId: string | undefined = order.vercelOrderId;
   if (!vercelOrderId) {
     await orderRef.set({ status: "purchasing" }, { merge: true });
@@ -154,7 +162,14 @@ async function handleDomainPurchase(stripe: Stripe, session: Stripe.Checkout.Ses
         order.years,
         order.vercelPrice,
         order.contact as DomainContact,
-        false // Not auto-renewing yet — see FeatherApp.domainAutoRenew in lib/types.ts.
+        // Belt-and-suspenders: app/api/cron/renew-domains is what's meant to
+        // proactively charge the customer and extend the registration
+        // before it lapses, but if that job is ever misconfigured or fails
+        // silently, this still gives Vercel's own registrar auto-renew a
+        // chance to save the domain — at Breezify's own cost until it's
+        // recovered from the customer, which beats losing the domain
+        // outright.
+        Boolean(order.autoRenew)
       );
       await orderRef.set({ vercelOrderId }, { merge: true });
     } catch (err) {
@@ -195,7 +210,17 @@ async function handleDomainPurchase(stripe: Stripe, session: Stripe.Checkout.Ses
         customDomainVerified: verified,
         domainPurchased: true,
         domainExpiresAt: expiresAt.toISOString(),
-        domainAutoRenew: false,
+        domainAutoRenew: Boolean(order.autoRenew),
+        // Just the order id, not the registrant contact itself (name/
+        // address/phone): apps/{appId} is readable by any collaborator
+        // (see firestore.rules), and that's real PII the owner never
+        // agreed to share just by inviting someone to work on the app —
+        // same boundary already drawn around secrets. A session id reveals
+        // nothing sensitive, and lets app/api/cron/renew-domains fetch
+        // domainOrders/{sessionId} directly (a single doc get, no index
+        // needed) for the contact when it's time to renew, via the Admin
+        // SDK, which bypasses rules the same way this webhook does.
+        domainOrderId: session.id,
       },
       { merge: true }
     );

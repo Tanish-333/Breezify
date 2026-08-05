@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { commit, createWrite } from "@/lib/firestore-rest";
+import { commit, createWrite, getDoc } from "@/lib/firestore-rest";
 import { authenticate, requirePlan, loadDeployedApp, DOMAIN_RE } from "@/lib/domain-api";
 import { checkDomainAvailability, getDomainPrice, isDeployConfigured, type DomainContact } from "@/lib/vercel-deploy";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
@@ -51,6 +51,10 @@ export async function POST(req: NextRequest) {
     const appId = typeof body.appId === "string" ? body.appId : "";
     const domain = typeof body.domain === "string" ? body.domain.trim().toLowerCase() : "";
     const rawContact = (body.contact ?? {}) as Record<string, unknown>;
+    // Defaults on: a lapsed domain is a worse outcome than an easily-toggled
+    // renewal charge next year — see app/api/domains/auto-renew for turning
+    // it off, and app/api/cron/renew-domains for what actually renews it.
+    const autoRenew = body.autoRenew !== false;
 
     if (!appId) return NextResponse.json({ error: "Missing app." }, { status: 400 });
     if (!DOMAIN_RE.test(domain)) {
@@ -90,6 +94,15 @@ export async function POST(req: NextRequest) {
       companyName: typeof rawContact.companyName === "string" ? rawContact.companyName.trim() : undefined,
     };
 
+    // Reused across every purchase this uid ever makes (subscriptions,
+    // other domains) — see create-checkout-session/route.ts, which stamps
+    // this the same way after its own checkout.
+    const userDoc = await getDoc(`users/${uid}`, idToken);
+    const existingCustomerId =
+      typeof userDoc?.fields.stripeCustomerId === "string"
+        ? (userDoc.fields.stripeCustomerId as string)
+        : undefined;
+
     const stripe = getStripe();
     const returnUrl = `${appUrl(req)}/build/${appId}`;
     const session = await stripe.checkout.sessions.create({
@@ -108,7 +121,19 @@ export async function POST(req: NextRequest) {
         },
       ],
       client_reference_id: uid,
-      metadata: { type: "domain_purchase", uid, appId, domain },
+      customer: existingCustomerId,
+      // "payment" mode doesn't create a persistent Customer object on its
+      // own the way "subscription" mode always does — without one of these
+      // two, there'd be nothing to attach a saved card to for next year's
+      // renewal charge.
+      customer_creation: existingCustomerId ? undefined : "always",
+      // Attaches the card used here to the Customer for later off-session
+      // use — this is what makes an unattended renewal charge possible at
+      // all next year. See app/api/stripe/webhook's handleDomainPurchase,
+      // which sets it as the customer's default payment method once this
+      // checkout completes.
+      payment_intent_data: autoRenew ? { setup_future_usage: "off_session" } : undefined,
+      metadata: { type: "domain_purchase", uid, appId, domain, autoRenew: String(autoRenew) },
       success_url: `${returnUrl}?domain=purchased`,
       cancel_url: `${returnUrl}?domain=canceled`,
     });
@@ -129,6 +154,7 @@ export async function POST(req: NextRequest) {
           vercelPrice: purchasePrice,
           chargedPrice: chargePrice,
           contact,
+          autoRenew,
           status: "pending",
           createdAt: new Date(),
         }),
