@@ -93,24 +93,26 @@ export async function POST(req: NextRequest) {
       queryCollection("transactions", "userId", uid, idToken),
     ]);
 
-    // apps/{appId}/secrets and .../versions don't cascade-delete with their
-    // parent (Firestore never does), and both subcollections' own rules
-    // check ownership via get(apps/{appId}).data.userId — so if the parent
-    // app doc were deleted first, or in a way this missed, those documents
-    // wouldn't just be orphaned, they'd become permanently unreadable and
-    // undeletable by anyone, including the account owner. Secrets in
-    // particular can hold real third-party API keys, so this has to run
-    // for every app, not skipped as an optimization.
+    // apps/{appId}/secrets, .../versions, and .../collaborators don't
+    // cascade-delete with their parent (Firestore never does), and secrets'
+    // own rules check ownership via get(apps/{appId}).data.userId — so if
+    // the parent app doc were deleted first, or in a way this missed, those
+    // documents wouldn't just be orphaned, they'd become permanently
+    // unreadable and undeletable by anyone, including the account owner.
+    // Secrets in particular can hold real third-party API keys, so this has
+    // to run for every app, not skipped as an optimization.
     const subcollectionWrites = (
       await Promise.all(
         apps.map(async (a) => {
-          const [secrets, versions] = await Promise.all([
+          const [secrets, versions, collaborators] = await Promise.all([
             listCollection(`apps/${a.id}/secrets`, idToken).catch(() => []),
             listCollection(`apps/${a.id}/versions`, idToken).catch(() => []),
+            listCollection(`apps/${a.id}/collaborators`, idToken).catch(() => []),
           ]);
           return [
             ...secrets.map((s) => deleteWrite(`apps/${a.id}/secrets/${s.id}`)),
             ...versions.map((v) => deleteWrite(`apps/${a.id}/versions/${v.id}`)),
+            ...collaborators.map((c) => deleteWrite(`apps/${a.id}/collaborators/${c.id}`)),
           ];
         })
       )
