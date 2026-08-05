@@ -34,6 +34,29 @@ export async function POST(req: NextRequest) {
 
     const userDoc = await getDoc(`users/${uid}`, idToken);
 
+    // Accounts can't be deleted within their first 30 days. Without this, a
+    // free signup bonus can be farmed on a fast loop: sign up, spend the
+    // credits, delete, sign up again. The one-time signups/{uid} marker
+    // already stops the SAME uid from re-claiming a bonus, but this closes
+    // the faster abuse this enables — churning through many short-lived
+    // accounts rather than one long-lived one — by making each account cost
+    // real time to cycle through, not just an email address.
+    const ACCOUNT_DELETE_LOCK_MS = 30 * 24 * 60 * 60 * 1000;
+    const createdAtRaw = userDoc?.fields.createdAt;
+    const createdAtMs = typeof createdAtRaw === "string" ? Date.parse(createdAtRaw) : NaN;
+    if (!Number.isNaN(createdAtMs)) {
+      const elapsed = Date.now() - createdAtMs;
+      if (elapsed < ACCOUNT_DELETE_LOCK_MS) {
+        const daysLeft = Math.ceil((ACCOUNT_DELETE_LOCK_MS - elapsed) / (24 * 60 * 60 * 1000));
+        return NextResponse.json(
+          {
+            error: `For account security, accounts can't be deleted until 30 days after signup. ${daysLeft} day${daysLeft === 1 ? "" : "s"} left.`,
+          },
+          { status: 403 }
+        );
+      }
+    }
+
     // Deleting the account also deletes the only record of stripeCustomerId,
     // so if an active subscription isn't cancelled first, the user loses any
     // way to ever find or cancel it again and keeps getting billed forever

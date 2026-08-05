@@ -210,12 +210,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
         </nav>
 
-        <div className={cn("border-t border-border p-2.5", collapsed && "px-1.5")}>
+        <div className={cn("border-t border-border p-2.5 pb-4", collapsed && "px-1.5")}>
           {profile && !collapsed && (
             <Link
               href="/billing"
               className={cn(
-                "mb-2 flex items-center justify-between rounded-md border px-2.5 py-2 text-xs transition-colors",
+                "mb-2 flex items-center justify-between rounded-md border px-2.5 py-2.5 text-xs transition-colors",
                 lowCredits
                   ? "border-warning/40 text-warning hover:bg-warning/10"
                   : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
@@ -259,6 +259,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </header>
 
         <main className="flex-1 px-5 py-8 md:px-10 md:py-10">{children}</main>
+
+        <footer className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t border-border px-5 py-4 text-xs text-muted-foreground md:px-10">
+          <span>© {new Date().getFullYear()} Breezify. All rights reserved.</span>
+          <Link href="/terms" className="transition-colors hover:text-foreground">
+            Terms
+          </Link>
+          <Link href="/privacy" className="transition-colors hover:text-foreground">
+            Privacy
+          </Link>
+        </footer>
       </div>
 
       <CommandPalette
