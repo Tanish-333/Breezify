@@ -162,6 +162,22 @@ service cloud.firestore {
           || isOwner(collabUid);
         allow update: if false;
       }
+
+      // presence/{uid}: a live "who's currently viewing this app" heartbeat
+      // (see lib/use-presence.ts) — each viewer writes only their own doc,
+      // refreshed on an interval and deleted on unmount, so onSnapshot
+      // listeners elsewhere can show real-time collaborator presence.
+      // Anyone who can already see this app (owner or collaborator) can see
+      // who else is looking at it; nobody can write another uid's doc.
+      match /presence/{presenceUid} {
+        allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
+          || isAppCollaborator(database, appId);
+        allow write: if isOwner(presenceUid)
+          && (
+            isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
+            || isAppCollaborator(database, appId)
+          );
+      }
     }
 
     // domainOrders/{sessionId}: pending/completed domain-purchase records,

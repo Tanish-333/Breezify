@@ -59,6 +59,11 @@ function toApp(id: string, data: any): FeatherApp {
     model: data.model,
     generatedCode: data.generatedCode,
     status: data.status,
+    deployStatus: data.deployStatus,
+    deployErrorMessage: data.deployErrorMessage,
+    generatingBy: data.generatingBy,
+    generatingByEmail: data.generatingByEmail,
+    generatingStartedAt: toMillis(data.generatingStartedAt),
     summary: data.summary,
     suggestions: Array.isArray(data.suggestions) ? data.suggestions : [],
     turns: Array.isArray(data.turns)

@@ -185,8 +185,16 @@ export async function POST(req: NextRequest) {
         "Secrets configured on this app are only readable by its owner, so they weren't included in this deploy — ask the owner to deploy if it depends on them.";
     }
 
+    // Written to deployStatus, not status: this used to double-write the
+    // exact same `status` field a generation/refine uses ("generating" /
+    // "ready" / "error"), so deploying and refining raced each other on one
+    // shared field — a refine finishing after a deploy started would flip
+    // status back to "ready" mid-deploy, and a refine finishing after a
+    // successful deploy would silently erase its "live" badge even though
+    // the app was still actually live at deployedUrl. See AppStatus's doc
+    // comment in lib/types.ts and effectiveDeployStatus().
     await commit(
-      [updateWrite(`apps/${appId}`, { status: "deploying", deployStartedAt: new Date() }, ["status", "deployStartedAt"])],
+      [updateWrite(`apps/${appId}`, { deployStatus: "deploying", deployStartedAt: new Date() }, ["deployStatus", "deployStartedAt"])],
       idToken
     );
 
@@ -196,8 +204,8 @@ export async function POST(req: NextRequest) {
         [
           updateWrite(
             `apps/${appId}`,
-            { status: "live", deployedUrl: result.url, deployedAt: new Date() },
-            ["status", "deployedUrl", "deployedAt"]
+            { deployStatus: "live", deployedUrl: result.url, deployedAt: new Date() },
+            ["deployStatus", "deployedUrl", "deployedAt"]
           ),
         ],
         idToken
@@ -206,8 +214,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ url: result.url, note });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Deploy failed.";
+      // deployErrorMessage, not errorMessage: that field is a fresh build's
+      // generation-failure message (see app/api/generate/route.ts) — sharing
+      // it here would let a deploy failure silently overwrite a genuinely
+      // different message, or vice versa on the next refine.
       await commit(
-        [updateWrite(`apps/${appId}`, { status: "error", errorMessage: message }, ["status", "errorMessage"])],
+        [updateWrite(`apps/${appId}`, { deployStatus: "error", deployErrorMessage: message }, ["deployStatus", "deployErrorMessage"])],
         idToken
       ).catch(() => {});
       return NextResponse.json({ error: message }, { status: 502 });

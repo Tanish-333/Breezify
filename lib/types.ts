@@ -287,6 +287,18 @@ export function requiredPlanFor(model: ModelId): PlanInfo {
   return PLANS[MODEL_INFO[model].minPlan];
 }
 
+// "deploying"/"live" used to double as this same field's deploy-lifecycle
+// values, alongside "generating"/"ready"/"error"/"stopped" for the
+// generation lifecycle — one field, two unrelated state machines sharing it.
+// That meant a refine (which always writes "ready" on success) silently
+// erased a "live" badge the moment you changed anything after deploying,
+// even though the app was still actually live at its deployedUrl; and a
+// deploy running concurrently with another collaborator's refine could have
+// either one clobber the other's status update. Deploy state now lives in
+// its own `deployStatus` field on FeatherApp below — see effectiveDeployStatus().
+// "deploying"/"live" stay in this union (and unused in STATUS_CONFIG) purely
+// so TypeScript doesn't choke on documents written before this split that
+// may still carry one of those two values in `status`; see displayStatus().
 export type AppStatus =
   | "generating"
   | "ready"
@@ -294,6 +306,28 @@ export type AppStatus =
   | "live"
   | "error"
   | "stopped";
+
+/** Sanitizes a possibly-legacy AppStatus for display — see the AppStatus doc comment. */
+export function displayStatus(status: AppStatus): "generating" | "ready" | "error" | "stopped" {
+  return status === "live" || status === "deploying" ? "ready" : status;
+}
+
+export type DeployStatus = "deploying" | "live" | "error";
+
+/**
+ * The deploy state to actually show, falling back to whatever a pre-split
+ * document still has parked in `status` (see the AppStatus doc comment)
+ * until its next deploy or refine gives it a real `deployStatus`.
+ */
+export function effectiveDeployStatus(app: {
+  status: AppStatus;
+  deployStatus?: DeployStatus;
+}): DeployStatus | null {
+  if (app.deployStatus) return app.deployStatus;
+  if (app.status === "live") return "live";
+  if (app.status === "deploying") return "deploying";
+  return null;
+}
 
 export interface AppTurn {
   id: string;
@@ -325,6 +359,14 @@ export interface FeatherApp {
     files?: Record<string, string>;
   };
   status: AppStatus;
+  /** Deploy lifecycle, independent of `status` — see effectiveDeployStatus(). */
+  deployStatus?: DeployStatus;
+  /** Set alongside deployStatus: "error" — kept separate from `errorMessage`, which is a generation failure's message. */
+  deployErrorMessage?: string;
+  /** uid of whoever's refine currently holds the generation lock on this app — see app/api/generate/route.ts. Cleared once that refine finishes, errors, or aborts. */
+  generatingBy?: string;
+  generatingByEmail?: string;
+  generatingStartedAt?: number;
   summary?: string;
   suggestions?: string[];
   turns?: AppTurn[];

@@ -18,6 +18,14 @@ import {
 export const runtime = "nodejs";
 export const maxDuration = 300;
 
+// A "generating" lock older than this is presumed crashed (the function
+// timed out, the process was killed) rather than genuinely still running —
+// past it, a new refine is allowed to reclaim the app rather than being
+// blocked forever by a claim nobody will ever release. Comfortably above
+// maxDuration so a real, still-running generation is never mistaken for a
+// stale one.
+const GENERATING_LOCK_STALE_MS = 6 * 60 * 1000;
+
 type Event =
   | { type: "status"; message: string }
   | { type: "progress"; chars: number; files: string[] }
@@ -51,16 +59,33 @@ function parseExistingCreatedAt(value: unknown): Date | null {
   return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
+/** Releases a refine's "generating" claim, restoring whatever status held before it — see the claim in the refineAppId branch below. */
+async function releaseRefineLock(appId: string, previousStatus: string | undefined, idToken: string) {
+  const restoreStatus = previousStatus && previousStatus !== "generating" ? previousStatus : "ready";
+  await commit(
+    [
+      updateWrite(
+        `apps/${appId}`,
+        { status: restoreStatus, generatingBy: null, generatingByEmail: null, generatingStartedAt: null },
+        ["status", "generatingBy", "generatingByEmail", "generatingStartedAt"]
+      ),
+    ],
+    idToken
+  );
+}
+
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? "";
   const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
   if (!idToken) return errorStream("Missing authorization token.");
 
   let uid: string;
+  let email: string | undefined;
   let emailVerified: boolean;
   try {
     const verified = await verifyIdToken(idToken);
     uid = verified.uid;
+    email = verified.email;
     emailVerified = verified.emailVerified;
   } catch {
     return errorStream("Your session has expired. Please sign in again.");
@@ -140,6 +165,8 @@ export async function POST(req: NextRequest) {
   // availability fail fast, before any credits are involved.
   let existing: {
     ownerUid: string;
+    /** What `status` held before this refine claimed it — restored if this refine aborts or errors. */
+    previousStatus: string | undefined;
     prompt: string;
     files: Record<string, string>;
     createdAt: unknown;
@@ -163,8 +190,46 @@ export async function POST(req: NextRequest) {
     if (Object.keys(files).length === 0) {
       return errorStream("This app has no files to refine yet.");
     }
+
+    // Claim this refine before anything else, so a collaborator who clicks
+    // refine moments after another one already started doesn't silently
+    // race them — without this, both would read the same base files, both
+    // generate independently, and whichever's commit lands last would
+    // overwrite the other's result outright (last-write-wins), including
+    // burning that person's credits on a result nobody ever sees. Now
+    // possible for the first time since apps/{appId} can have several
+    // editors, not just its one owner.
+    // This doesn't fully close the race (two nearly-simultaneous refines
+    // can still both read the doc as free before either claims it), but it
+    // shrinks the window from "the whole generation" down to a single
+    // network round trip — the same tradeoff app/api/deploy/route.ts
+    // already makes for its own daily-limit counter, for the same reason.
+    const previousStatus = doc.fields.status as string | undefined;
+    const lockStartedAtMs =
+      typeof doc.fields.generatingStartedAt === "string" ? Date.parse(doc.fields.generatingStartedAt) : NaN;
+    const lockIsStale = Number.isNaN(lockStartedAtMs) || Date.now() - lockStartedAtMs > GENERATING_LOCK_STALE_MS;
+    if (previousStatus === "generating" && !lockIsStale) {
+      return errorStream("Someone else is already refining this app right now. Wait for them to finish, then try again.");
+    }
+    try {
+      await commit(
+        [
+          updateWrite(
+            `apps/${refineAppId}`,
+            { status: "generating", generatingBy: uid, generatingByEmail: email ?? null, generatingStartedAt: new Date() },
+            ["status", "generatingBy", "generatingByEmail", "generatingStartedAt"]
+          ),
+        ],
+        idToken
+      );
+    } catch (err) {
+      console.error(`[generate] Failed to claim apps/${refineAppId} for refine:`, err);
+      return errorStream("Couldn't start this refine. Please try again.");
+    }
+
     existing = {
       ownerUid,
+      previousStatus,
       prompt: (doc.fields.prompt as string) ?? "",
       files,
       createdAt: doc.fields.createdAt,
@@ -228,6 +293,9 @@ export async function POST(req: NextRequest) {
                 prompt,
                 model,
                 status: "generating",
+                generatingBy: uid,
+                generatingByEmail: email ?? null,
+                generatingStartedAt: new Date(),
                 createdAt,
                 visits: 0,
               }),
@@ -290,6 +358,9 @@ export async function POST(req: NextRequest) {
               prompt: existing ? existing.prompt : prompt,
               model,
               status: "ready",
+              generatingBy: null,
+              generatingByEmail: null,
+              generatingStartedAt: null,
               summary: result.summary,
               suggestions: result.suggestions,
               turns: [...(existing?.turns ?? []), turn],
@@ -345,6 +416,16 @@ export async function POST(req: NextRequest) {
             } catch {
               // Client is long gone either way; nothing to surface this to.
             }
+          } else {
+            // Release the refine lock claimed above — otherwise an aborted
+            // refine would leave the app stuck showing "generating" (and
+            // blocking every other collaborator's refine) until the stale-
+            // lock timeout, instead of just... going back to how it was.
+            try {
+              await releaseRefineLock(refineAppId!, existing.previousStatus, idToken);
+            } catch {
+              // Client is long gone either way; nothing to surface this to.
+            }
           }
           return;
         }
@@ -356,7 +437,10 @@ export async function POST(req: NextRequest) {
         // event, with nothing server-side to diagnose it from afterward.
         console.error(`[generate] appId=${appId} uid=${uid} existing=${!!existing}:`, err);
         // Only a fresh build leaves a half-created doc behind; a failed refine
-        // must leave the existing app untouched.
+        // must leave the existing app's files/prompt/summary untouched — but
+        // its "generating" claim still needs releasing, same as the abort
+        // case above, or it'd stay locked for every collaborator until the
+        // stale-lock timeout.
         if (!existing) {
           try {
             await commit(
@@ -373,6 +457,12 @@ export async function POST(req: NextRequest) {
               ],
               idToken
             );
+          } catch {
+            // Ignore, the error event below is what the user sees.
+          }
+        } else {
+          try {
+            await releaseRefineLock(refineAppId!, existing.previousStatus, idToken);
           } catch {
             // Ignore, the error event below is what the user sees.
           }

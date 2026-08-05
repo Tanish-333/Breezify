@@ -17,16 +17,19 @@ import { AppSecretsDialog } from "@/components/app-secrets-dialog";
 import { CustomDomainDialog } from "@/components/custom-domain-dialog";
 import { CollaboratorsDialog } from "@/components/collaborators-dialog";
 import { TurnCard } from "@/components/turn-card";
-import { StatusBadge } from "@/components/ui/badge";
+import { StatusBadge, DeployBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useApp, revertToVersion } from "@/lib/use-apps";
+import { usePresence } from "@/lib/use-presence";
 import { useAuth } from "@/lib/auth-context";
 import { fetchModelAvailability, generateAppRequest, duplicateAppRequest } from "@/lib/api-client";
 import {
   COLLABORATOR_MIN_PLAN,
   CUSTOM_DOMAIN_MIN_PLAN,
+  displayStatus,
   DUPLICATE_MIN_PLAN,
+  effectiveDeployStatus,
   IMPORT_MIN_PLAN,
   MODEL_INFO,
   PLAN_RANK,
@@ -73,6 +76,7 @@ function AppWorkspace() {
   const canCustomDomain = PLAN_RANK[plan] >= PLAN_RANK[CUSTOM_DOMAIN_MIN_PLAN];
   const isOwner = app?.userId === user?.uid;
   const canInviteCollaborators = PLAN_RANK[plan] >= PLAN_RANK[COLLABORATOR_MIN_PLAN];
+  const otherViewers = usePresence(app?.id, user?.uid, user?.email);
 
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<ModelId>("haiku");
@@ -139,6 +143,12 @@ function AppWorkspace() {
   const insufficient = profile !== null && profile.credits < cost;
   const turns = app.turns ?? [];
   const suggestions = app.suggestions ?? [];
+  // A refine claims a lock on the app doc server-side (see app/api/generate/
+  // route.ts) so two collaborators refining at once can't silently clobber
+  // one another — this just keeps the composer from submitting a refine
+  // that server would reject anyway.
+  const blockedByOtherEditor =
+    app.status === "generating" && !!app.generatingBy && app.generatingBy !== user?.uid;
 
   async function refine(text: string) {
     setError("");
@@ -275,7 +285,21 @@ function AppWorkspace() {
               </button>
             </>
           )}
-          <StatusBadge status={app.status} />
+          <StatusBadge status={displayStatus(app.status)} />
+          <DeployBadge status={effectiveDeployStatus(app)} />
+          {otherViewers.length > 0 && (
+            <span
+              title={`Also here right now: ${otherViewers.map((v) => v.email || "another collaborator").join(", ")}`}
+              className="flex items-center gap-1 rounded-full border border-border px-2 py-1 text-xs text-muted-foreground"
+            >
+              <span className="relative flex h-1.5 w-1.5">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+                <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+              </span>
+              <Users className="h-3 w-3" />
+              {otherViewers.length}
+            </span>
+          )}
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
@@ -302,9 +326,9 @@ function AppWorkspace() {
             <Button
               size="sm"
               onClick={deployApp}
-              loading={deploying || app.status === "deploying"}
+              loading={deploying || effectiveDeployStatus(app) === "deploying"}
             >
-              {!(deploying || app.status === "deploying") && <Rocket className="h-4 w-4" />}
+              {!(deploying || effectiveDeployStatus(app) === "deploying") && <Rocket className="h-4 w-4" />}
               <span className="hidden sm:inline">{app.deployedUrl ? "Redeploy" : "Deploy"}</span>
             </Button>
           )}
@@ -510,6 +534,17 @@ function AppWorkspace() {
               </div>
             )}
 
+            {blockedByOtherEditor && (
+              <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
+                <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
+                <span>
+                  {app.generatingByEmail ?? "Someone else"} is refining this app right now — your own
+                  refine will be blocked until they finish, to avoid the two changes overwriting each
+                  other.
+                </span>
+              </div>
+            )}
+
             {domainCheckout === "purchased" && (
               <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-success">
                 <Check className="mt-0.5 h-4 w-4 shrink-0" />
@@ -552,9 +587,13 @@ function AppWorkspace() {
                 availability={availability}
                 onSubmit={refine}
                 loading={refining}
-                disabled={insufficient}
+                disabled={insufficient || blockedByOtherEditor}
                 placeholder={
-                  insufficient ? "Out of credits" : "Describe a change to make..."
+                  insufficient
+                    ? "Out of credits"
+                    : blockedByOtherEditor
+                      ? "Wait for the other refine in progress to finish..."
+                      : "Describe a change to make..."
                 }
               />
             </div>

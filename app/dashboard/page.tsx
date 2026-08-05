@@ -12,13 +12,15 @@ import { GithubImportDialog } from "@/components/github-import-dialog";
 import { GithubIcon } from "@/components/oauth-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { StatusBadge } from "@/components/ui/badge";
+import { StatusBadge, DeployBadge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth-context";
 import { useUserApps, useCollaboratingApps, deleteApp } from "@/lib/use-apps";
 import { fetchModelAvailability, generateAppRequest, type ClarifyQuestion } from "@/lib/api-client";
 import { takePendingPrompt } from "@/lib/pending-prompt";
 import { formatDate } from "@/lib/utils";
 import {
+  displayStatus,
+  effectiveDeployStatus,
   IMPORT_MIN_PLAN,
   MODEL_INFO,
   PLAN_RANK,
@@ -299,7 +301,13 @@ function DashboardContent() {
                           Shared
                         </span>
                       )}
-                      <StatusBadge status={app.status} />
+                      {app.status === "generating" || app.status === "error" || app.status === "stopped" ? (
+                        <StatusBadge status={displayStatus(app.status)} />
+                      ) : effectiveDeployStatus(app) ? (
+                        <DeployBadge status={effectiveDeployStatus(app)} />
+                      ) : (
+                        <StatusBadge status="ready" />
+                      )}
                     </div>
                   </div>
                   <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground">
