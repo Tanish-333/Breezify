@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { adminAuth } from "@/lib/firebase-admin";
 import { commit, createWrite, deleteWrite, getDoc, listCollection } from "@/lib/firestore-rest";
+import { sendCollaboratorInviteEmail } from "@/lib/email";
 import { COLLABORATOR_MIN_PLAN, MAX_COLLABORATORS, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
 
 export const runtime = "nodejs";
+
+function appUrl(req: NextRequest) {
+  return process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
+}
 
 async function authenticate(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? "";
@@ -115,6 +120,22 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
       ],
       idToken
     );
+
+    // Best-effort, never blocks the invite itself: RESEND_API_KEY may not
+    // be configured on this deployment (see lib/email.ts, a no-op in that
+    // case), and even a real send failure shouldn't undo an invite that
+    // already succeeded — the person still shows up on the roster and in
+    // their own "shared with me" list either way.
+    try {
+      await sendCollaboratorInviteEmail({
+        to: trimmedEmail,
+        appName: (doc.fields.name as string) || "an app",
+        appId: params.appId,
+        appUrl: appUrl(req),
+      });
+    } catch (err) {
+      console.error(`[collaborators] appId=${params.appId} failed to send invite email to ${trimmedEmail}:`, err);
+    }
 
     return NextResponse.json({ uid: invitedUid, email: trimmedEmail });
   } catch (err) {

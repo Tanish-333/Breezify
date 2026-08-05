@@ -557,7 +557,9 @@ function AppWorkspace() {
             {deployError && (
               <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>{deployError}</span>
+                <pre className="max-h-48 flex-1 overflow-y-auto whitespace-pre-wrap break-words font-sans">
+                  {deployError}
+                </pre>
               </div>
             )}
 

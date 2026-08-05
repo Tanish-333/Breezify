@@ -76,6 +76,50 @@ async function tryCustomAlias(deploymentId: string, slug: string): Promise<strin
 }
 
 /**
+ * Best-effort build log tail for a deployment that failed, so the failure
+ * message can show what actually went wrong instead of just "check Vercel
+ * directly." Never throws — a failure to fetch logs must never mask the
+ * real deploy failure it's trying to explain.
+ *
+ * Vercel's events endpoint returns a proper JSON array for some query
+ * shapes and newline-delimited JSON for others; handled defensively here
+ * since this has no live environment to verify the exact response shape
+ * against ahead of time.
+ */
+async function getDeploymentBuildLogs(deploymentId: string, limit = 300): Promise<string[]> {
+  try {
+    const res = await vercelFetch(
+      withTeam(`/v3/deployments/${encodeURIComponent(deploymentId)}/events`, { builds: 1, limit })
+    );
+    if (!res.ok) return [];
+
+    let events: any[] = [];
+    if (Array.isArray(res.body)) {
+      events = res.body;
+    } else if (typeof res.body === "string") {
+      events = res.body
+        .split("\n")
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+          try {
+            return JSON.parse(line);
+          } catch {
+            return null;
+          }
+        })
+        .filter((e): e is Record<string, unknown> => e !== null);
+    }
+
+    return events
+      .map((e) => (e?.payload && typeof e.payload.text === "string" ? (e.payload.text as string) : null))
+      .filter((line): line is string => Boolean(line && line.trim()));
+  } catch {
+    return [];
+  }
+}
+
+/**
  * Creates a deployment from raw file contents (no git repo, no CLI) and
  * polls until Vercel finishes building it. Vercel auto-creates the project
  * (named after `slug`) on first deploy and reuses it on every later one, so
@@ -142,8 +186,13 @@ export async function deployToVercel(
       return { url: `https://${customAlias ?? url}`, id };
     }
     if (state === "ERROR" || state === "CANCELED") {
+      const canceled = state === "CANCELED";
+      const logLines = canceled ? [] : await getDeploymentBuildLogs(id);
+      const tail = logLines.slice(-40).join("\n");
       throw new Error(
-        `The deployment failed to build${state === "CANCELED" ? " (canceled)" : ""}. Download the ZIP to see the full error on Vercel, or check that the app builds locally with \`npm run build\`.`
+        tail
+          ? `The deployment failed to build. Build output:\n\n${tail}`
+          : `The deployment failed to build${canceled ? " (canceled)" : ""}. Download the ZIP to see the full error on Vercel, or check that the app builds locally with \`npm run build\`.`
       );
     }
   }
