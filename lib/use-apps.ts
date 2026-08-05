@@ -6,7 +6,6 @@ import {
   collectionGroup,
   deleteDoc,
   doc,
-  documentId,
   getDoc,
   getDocs,
   onSnapshot,
@@ -142,7 +141,13 @@ export function useCollaboratingApps(uid: string | undefined) {
       setApps(Array.from(appDocs.values()));
     }
 
-    const q = query(collectionGroup(db, "collaborators"), where(documentId(), "==", uid));
+    // Filtering on the "uid" field, not documentId(): a collectionGroup
+    // query's documentId() equality requires a full document path, and a
+    // bare uid is a 1-segment (odd) path, so `where(documentId(), "==", uid)`
+    // throws "invalid document path" as soon as the query is built. See the
+    // collaborators POST route, which duplicates the doc ID into this field
+    // for exactly this reason.
+    const q = query(collectionGroup(db, "collaborators"), where("uid", "==", uid));
     const unsubMemberships = onSnapshot(
       q,
       (snap) => {

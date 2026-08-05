@@ -102,6 +102,12 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
     await commit(
       [
         createWrite(`apps/${params.appId}/collaborators/${invitedUid}`, {
+          // Duplicated from the doc ID on purpose: a collectionGroup query
+          // can't filter by documentId() equality with a bare uid (Firestore
+          // requires a full document path there — a 1-segment value throws
+          // "invalid document path" at query time), so
+          // useCollaboratingApps() filters on this field instead.
+          uid: invitedUid,
           email: trimmedEmail,
           addedBy: uid,
           addedAt: new Date(),

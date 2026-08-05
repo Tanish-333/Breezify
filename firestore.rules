@@ -151,7 +151,13 @@ service cloud.firestore {
         allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
           || isOwner(collabUid)
           || isAppCollaborator(database, appId);
-        allow create: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
+        // uid must mirror the doc's own path segment: useCollaboratingApps()
+        // finds a user's shared apps with a collectionGroup query filtered
+        // on this field (documentId() equality doesn't work across a
+        // collection group), so a mismatched value here would silently hide
+        // — or misdirect — that invite from the "shared with me" list.
+        allow create: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
+          && request.resource.data.uid == collabUid;
         allow delete: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
           || isOwner(collabUid);
         allow update: if false;
