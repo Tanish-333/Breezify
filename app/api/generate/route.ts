@@ -161,6 +161,28 @@ export async function POST(req: NextRequest) {
     return errorStream("Not enough credits. Top up your balance to keep building.");
   }
 
+  // Charge upfront so failed generations still cost something (they burn API tokens).
+  // Credits are deducted immediately, before calling the model.
+  const txId = randomUUID();
+  try {
+    await commit(
+      [
+        incrementWrite(userPath, "credits", -cost),
+        createWrite(`transactions/${txId}`, {
+          userId: uid,
+          type: "generation",
+          creditsUsed: cost,
+          model,
+          createdAt: new Date(),
+        }),
+      ],
+      idToken
+    );
+  } catch (err) {
+    console.error(`[generate] Failed to charge upfront for ${model}:`, err);
+    return errorStream("Couldn't process your request. Please try again.");
+  }
+
   // For a refine, load the existing app up front so ownership and file
   // availability fail fast, before any credits are involved.
   let existing: {
@@ -343,7 +365,6 @@ export async function POST(req: NextRequest) {
           createdAt: new Date(),
         };
 
-        const txId = randomUUID();
         await commit(
           [
             updateWrite(appPath, {
@@ -373,15 +394,6 @@ export async function POST(req: NextRequest) {
               // pin this app above every genuinely newer one forever.
               createdAt: existing ? parseExistingCreatedAt(existing.createdAt) ?? createdAt : createdAt,
               generatedCode: { files: result.files },
-            }),
-            incrementWrite(userPath, "credits", -cost),
-            createWrite(`transactions/${txId}`, {
-              userId: uid,
-              type: "generation",
-              creditsUsed: cost,
-              model,
-              actualCostUSD: result.actualCostUSD,
-              createdAt: new Date(),
             }),
             // A snapshot of this turn's files, so it can be reverted to later.
             createWrite(`${appPath}/versions/${turn.id}`, {
