@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { auth } from "@/lib/firebase";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import { AlertCircle, CheckCircle2, Globe, RefreshCw, Search, Trash2, X } from "lucide-react";
 
 interface DomainVerificationRecord {
@@ -71,10 +71,15 @@ async function authedFetch(path: string, init: RequestInit = {}) {
 export function CustomDomainDialog({
   appId,
   currentDomain,
+  domainPurchased,
+  domainExpiresAt,
   onClose,
 }: {
   appId: string;
   currentDomain?: string;
+  /** True only for the domain actually bought through Breezify (see app/api/stripe/webhook) — cleared as soon as `currentDomain` changes to anything else. */
+  domainPurchased?: boolean;
+  domainExpiresAt?: number;
   onClose: () => void;
 }) {
   const [mode, setMode] = useState<"attach" | "buy">("attach");
@@ -433,6 +438,13 @@ export function CustomDomainDialog({
                   <span className="shrink-0 text-xs text-muted-foreground">Pending</span>
                 )}
               </div>
+
+              {domainPurchased && (
+                <p className="text-xs text-muted-foreground">
+                  Purchased through Breezify
+                  {domainExpiresAt ? ` · registered until ${formatDate(domainExpiresAt)}` : ""}.
+                </p>
+              )}
 
               {!status?.verified && status?.verification && status.verification.length > 0 && (
                 <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3 text-xs">

@@ -619,6 +619,8 @@ function AppWorkspace() {
         <CustomDomainDialog
           appId={app.id}
           currentDomain={app.customDomain}
+          domainPurchased={app.domainPurchased}
+          domainExpiresAt={app.domainExpiresAt}
           onClose={() => setShowDomain(false)}
         />
       )}
