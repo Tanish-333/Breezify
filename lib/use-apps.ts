@@ -124,10 +124,17 @@ export function useUserApps(uid: string | undefined) {
 /**
  * Apps the current user has been invited to collaborate on, not apps they
  * own — see apps/{appId}/collaborators/{uid} in firestore.rules. A
- * collection-group query filtered to documents whose own ID is this uid
- * finds every "membership" doc across all apps, then each matching app is
- * watched individually so the list stays live as membership or the app
- * itself changes.
+ * collection-group query filtered on each membership doc's "uid" field
+ * finds every one across all apps, then each matching app is watched
+ * individually so the list stays live as membership or the app itself
+ * changes.
+ *
+ * Requires the "collaborators" collection-group index on "uid" declared in
+ * firestore.indexes.json — Firestore's automatic single-field indexes only
+ * cover single-collection queries, never collection-group ones, so without
+ * this index deployed to the live project (`firebase deploy --only
+ * firestore:indexes`, or via the console), this query fails outright with
+ * "FAILED_PRECONDITION: The query requires an index" for every user.
  */
 export function useCollaboratingApps(uid: string | undefined) {
   const [apps, setApps] = useState<FeatherApp[]>([]);
