@@ -467,13 +467,8 @@ function AppWorkspace() {
             )
           )}
 
-          {hasFiles && isOwner && app.deployedUrl && (
-            canCustomDomain ? (
-              <Button variant="ghost" size="sm" onClick={() => setShowDomain(true)}>
-                <Globe className="h-4 w-4" />
-                <span className="hidden sm:inline">Domain</span>
-              </Button>
-            ) : (
+          {hasFiles && isOwner && (
+            !canCustomDomain ? (
               <Link href="/billing" title="Upgrade to Pro to attach a custom domain">
                 <Button variant="ghost" size="sm">
                   <span className="relative inline-flex">
@@ -486,6 +481,25 @@ function AppWorkspace() {
                   <span className="hidden sm:inline">Domain</span>
                 </Button>
               </Link>
+            ) : !app.deployedUrl ? (
+              // A domain attaches to a deployed project on Vercel, so there's
+              // nothing to attach it to yet — disabled rather than hidden,
+              // so a Pro+ owner can actually find this instead of wondering
+              // where it went.
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled
+                title="Deploy your app first — a custom domain attaches to the deployed version."
+              >
+                <Globe className="h-4 w-4" />
+                <span className="hidden sm:inline">Domain</span>
+              </Button>
+            ) : (
+              <Button variant="ghost" size="sm" onClick={() => setShowDomain(true)}>
+                <Globe className="h-4 w-4" />
+                <span className="hidden sm:inline">Domain</span>
+              </Button>
             )
           )}
 

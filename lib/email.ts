@@ -12,7 +12,12 @@ export function isEmailConfigured() {
 }
 
 function fromAddress() {
-  return process.env.RESEND_FROM_EMAIL || "Breezify <notifications@breezify.vercel.app>";
+  // *.vercel.app is a Vercel-owned domain — there's no DNS access to add the
+  // TXT/CNAME records Resend needs to verify it, so a from-address on it can
+  // never send (Resend rejects unverified senders outright). Falls back to
+  // Resend's own onboarding@resend.dev, which sends out of the box with zero
+  // setup; set RESEND_FROM_EMAIL once a real domain is verified in Resend.
+  return process.env.RESEND_FROM_EMAIL || "Breezify <onboarding@resend.dev>";
 }
 
 /**
