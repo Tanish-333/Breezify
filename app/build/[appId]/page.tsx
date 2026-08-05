@@ -20,8 +20,9 @@ import { TurnCard } from "@/components/turn-card";
 import { StatusBadge, DeployBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useApp, revertToVersion } from "@/lib/use-apps";
+import { useApp, useAppSecrets, revertToVersion } from "@/lib/use-apps";
 import { usePresence } from "@/lib/use-presence";
+import { missingEnvVars } from "@/lib/backend-env";
 import { useAuth } from "@/lib/auth-context";
 import { fetchModelAvailability, generateAppRequest, duplicateAppRequest } from "@/lib/api-client";
 import {
@@ -77,6 +78,7 @@ function AppWorkspace() {
   const isOwner = app?.userId === user?.uid;
   const canInviteCollaborators = PLAN_RANK[plan] >= PLAN_RANK[COLLABORATOR_MIN_PLAN];
   const otherViewers = usePresence(app?.id, user?.uid, user?.email);
+  const { secrets: appSecrets } = useAppSecrets(isOwner ? app?.id : undefined);
 
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<ModelId>("haiku");
@@ -149,6 +151,11 @@ function AppWorkspace() {
   // that server would reject anyway.
   const blockedByOtherEditor =
     app.status === "generating" && !!app.generatingBy && app.generatingBy !== user?.uid;
+  // Flags a backend that reads process.env.<KEY> for a key nobody's
+  // configured yet — see lib/backend-env.ts. Deploy itself re-checks this
+  // server-side (app/api/deploy/route.ts); this is what surfaces it before
+  // someone even tries to deploy.
+  const missingSecrets = isOwner ? missingEnvVars(files, appSecrets.map((s) => s.key)) : [];
 
   async function refine(text: string) {
     setError("");
@@ -400,8 +407,22 @@ function AppWorkspace() {
             ))}
 
           {hasFiles && isOwner && (
-            <Button variant="ghost" size="sm" onClick={() => setShowSecrets(true)}>
-              <KeyRound className="h-4 w-4" />
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowSecrets(true)}
+              title={
+                missingSecrets.length > 0
+                  ? `Missing ${missingSecrets.join(", ")} — this app's backend won't work without them`
+                  : undefined
+              }
+            >
+              <span className="relative inline-flex">
+                <KeyRound className="h-4 w-4" />
+                {missingSecrets.length > 0 && (
+                  <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-warning" />
+                )}
+              </span>
               <span className="hidden sm:inline">Secrets</span>
             </Button>
           )}
@@ -531,6 +552,23 @@ function AppWorkspace() {
               <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{deployNote}</span>
+              </div>
+            )}
+
+            {hasFiles && missingSecrets.length > 0 && (
+              <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
+                <KeyRound className="mt-0.5 h-4 w-4 shrink-0" />
+                <span className="flex-1">
+                  This app&apos;s backend expects {missingSecrets.join(", ")} but{" "}
+                  {missingSecrets.length > 1 ? "they aren't" : "it isn't"} configured yet — those
+                  requests will fail once deployed.
+                </span>
+                <button
+                  onClick={() => setShowSecrets(true)}
+                  className="shrink-0 font-medium underline hover:text-foreground"
+                >
+                  Configure
+                </button>
               </div>
             )}
 

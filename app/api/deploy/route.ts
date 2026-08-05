@@ -7,6 +7,7 @@ import { withAnalytics } from "@/lib/analytics-snippet";
 import { deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
 import { unsupportedReason } from "@/lib/app-support";
 import { tryWrapExpressForVercel } from "@/lib/express-adapter";
+import { missingEnvVars } from "@/lib/backend-env";
 import { ANALYTICS_MIN_PLAN, DEPLOY_DAILY_LIMIT, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -171,6 +172,16 @@ export async function POST(req: NextRequest) {
         );
       } catch {
         // Deploy without secrets rather than blocking on this lookup failing.
+      }
+      // A backend function reading an env var nobody configured deploys
+      // clean today — Vercel has nothing to reject — and only fails once a
+      // visitor actually hits that code path, as an undifferentiated 500
+      // with no obvious cause. Catch it here instead. Checked against
+      // rawFiles (the real api/ source), not the watermark/analytics-
+      // injected `files` below, which only ever touch static HTML.
+      const missing = missingEnvVars(rawFiles, Object.keys(secretsEnv));
+      if (missing.length > 0) {
+        secretsNote = `This app's backend expects ${missing.join(", ")} but ${missing.length > 1 ? "they aren't" : "it isn't"} configured — add ${missing.length > 1 ? "them" : "it"} in the Secrets panel or those requests will fail once deployed.`;
       }
     } else {
       // firestore.rules keeps secrets/{id} owner-only on purpose (see
