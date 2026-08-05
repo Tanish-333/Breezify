@@ -36,8 +36,14 @@ export async function POST(req: NextRequest) {
         ? (userDoc.fields.stripeCustomerId as string)
         : undefined;
     if (!customerId) {
+      const plan = typeof userDoc?.fields.plan === "string" ? (userDoc.fields.plan as string) : "free";
       return NextResponse.json(
-        { error: "No billing account found yet. Subscribe to a plan first." },
+        {
+          error:
+            plan === "free"
+              ? "No billing account found yet. Subscribe to a plan first."
+              : "Your plan wasn't set up through Stripe, so there's no billing portal for it. Contact support if you need to change or cancel it.",
+        },
         { status: 400 }
       );
     }

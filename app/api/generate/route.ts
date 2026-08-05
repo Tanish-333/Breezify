@@ -6,7 +6,6 @@ import { hasAppAccess } from "@/lib/app-collaborators";
 import { generateApp, isModelAvailable, refineApp } from "@/lib/generation";
 import { checkClarity } from "@/lib/generation/clarify";
 import {
-  ERROR_FIX_CREDIT_COST,
   MODEL_INFO,
   PLANS,
   PROMPT_CHAR_LIMIT,
@@ -104,10 +103,6 @@ export async function POST(req: NextRequest) {
   // When present, this is a follow-up change to an existing app rather than a
   // brand new build.
   const refineAppId = typeof body?.appId === "string" ? body.appId : null;
-  // Only meaningful on a refine — the "Fix this error" button always charges
-  // this flat rate instead of the selected model's own cost, regardless of
-  // which model was picked. Ignored on a fresh build (no app to fix yet).
-  const isErrorFix = body?.isErrorFix === true && !!refineAppId;
   // Set once the client has already answered a clarifying question, so the
   // clarity check below only ever runs once per build.
   const clarified = body?.clarified === true;
@@ -159,7 +154,7 @@ export async function POST(req: NextRequest) {
     );
   }
 
-  const cost = isErrorFix ? ERROR_FIX_CREDIT_COST : MODEL_INFO[model].credits;
+  const cost = MODEL_INFO[model].credits;
   const currentCredits =
     typeof userDoc.fields.credits === "number" ? userDoc.fields.credits : 0;
   if (currentCredits < cost) {

@@ -9,6 +9,7 @@ import { PromptComposer } from "@/components/prompt-composer";
 import { TemplateGallery } from "@/components/template-gallery";
 import { GenerationProgress } from "@/components/generation-progress";
 import { GithubImportDialog } from "@/components/github-import-dialog";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { GithubIcon } from "@/components/oauth-icons";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -44,6 +45,11 @@ function DashboardContent() {
   const plan: PlanId = profile?.plan ?? "free";
   const canImport = PLAN_RANK[plan] >= PLAN_RANK[IMPORT_MIN_PLAN];
   const [showImport, setShowImport] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; githubUrl?: string } | null>(
+    null
+  );
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState<ModelId>("haiku");
@@ -320,19 +326,8 @@ function DashboardContent() {
                     {app.userId === user?.uid && (
                       <button
                         onClick={() => {
-                          // Deleting only ever removes Breezify's own copy —
-                          // it never touches a linked GitHub repo (that's a
-                          // separate thing you own once pushed, not
-                          // Breezify's to delete). Without one, there's no
-                          // copy anywhere else once this is gone.
-                          const warning = app.githubUrl
-                            ? `Delete "${app.name}"? This can't be undone. Its GitHub repo stays untouched, but this app's history, deploy, and any custom domain on Breezify will be gone.`
-                            : `Delete "${app.name}"? This can't be undone, and it was never pushed to GitHub or downloaded — there's no copy of this code anywhere else.`;
-                          if (confirm(warning)) {
-                            deleteApp(app.id).catch(() =>
-                              alert("Couldn't delete this app. Please try again.")
-                            );
-                          }
+                          setDeleteError("");
+                          setDeleteTarget({ id: app.id, name: app.name, githubUrl: app.githubUrl });
                         }}
                         title="Delete"
                         className="shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
@@ -363,6 +358,38 @@ function DashboardContent() {
       </section>
 
       {showImport && <GithubImportDialog onClose={() => setShowImport(false)} />}
+
+      {deleteTarget && (
+        <ConfirmDialog
+          title={`Delete "${deleteTarget.name}"?`}
+          description={
+            // Deleting only ever removes Breezify's own copy — it never
+            // touches a linked GitHub repo (that's a separate thing you own
+            // once pushed, not Breezify's to delete). Without one, there's
+            // no copy anywhere else once this is gone.
+            deleteTarget.githubUrl
+              ? "This can't be undone. Its GitHub repo stays untouched, but this app's history, deploy, and any custom domain on Breezify will be gone."
+              : "This can't be undone, and it was never pushed to GitHub or downloaded — there's no copy of this code anywhere else."
+          }
+          loading={deleting}
+          error={deleteError}
+          onClose={() => {
+            if (!deleting) setDeleteTarget(null);
+          }}
+          onConfirm={async () => {
+            setDeleting(true);
+            setDeleteError("");
+            try {
+              await deleteApp(deleteTarget.id);
+              setDeleteTarget(null);
+            } catch {
+              setDeleteError("Couldn't delete this app. Please try again.");
+            } finally {
+              setDeleting(false);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

@@ -126,17 +126,6 @@ export const MODEL_INFO: Record<ModelId, ModelInfo> = {
   },
 };
 
-/**
- * Flat credit cost for the "Fix this error" refine (see the live-preview
- * error banner in app/build/[appId]/page.tsx), charged instead of the
- * selected model's own `credits` cost. Fixed rather than model-scaled since
- * an error fix always runs a full refine pass over the app's existing
- * files — the same real work regardless of which model is picked — and a
- * flat rate keeps the cheaper tiers from being a free way to spam retries
- * on a broken generation.
- */
-export const ERROR_FIX_CREDIT_COST = 1.5;
-
 export const MODEL_IDS = Object.keys(MODEL_INFO) as ModelId[];
 
 export function isModelId(v: unknown): v is ModelId {
