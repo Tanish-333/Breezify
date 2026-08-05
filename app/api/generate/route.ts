@@ -403,10 +403,37 @@ export async function POST(req: NextRequest) {
       } catch (err) {
         // req.signal aborts when the client disconnects (including an
         // explicit Cancel click, since that aborts the client's fetch).
-        // The generation call is threaded with this same signal, so it
-        // stops immediately rather than running to completion and
-        // charging credits for a result nobody will see.
+        // The generation call is threaded with this same signal, so the
+        // provider call itself stops quickly rather than running to
+        // completion for a result nobody will see — but reaching this
+        // catch at all means generateApp()/refineApp() was already invoked
+        // (the earlier, genuinely free clarify-question abort returns
+        // before this try/catch is ever at risk of throwing), so real
+        // provider cost was likely already incurred by the time the abort
+        // landed. Charging nothing here — the previous behavior — let
+        // anyone burn real API spend for free by simply closing the tab
+        // mid-generation. Charges the same 0.5 floor as an abandoned
+        // clarify question instead: less than every model's real cost, but
+        // no longer zero.
         if (req.signal.aborted) {
+          const abortTxId = randomUUID();
+          try {
+            await commit(
+              [
+                incrementWrite(userPath, "credits", -0.5),
+                createWrite(`transactions/${abortTxId}`, {
+                  userId: uid,
+                  type: "generation",
+                  creditsUsed: 0.5,
+                  model,
+                  createdAt: new Date(),
+                }),
+              ],
+              idToken
+            );
+          } catch {
+            // Client is long gone either way; nothing to surface this to.
+          }
           if (!existing) {
             try {
               await commit(

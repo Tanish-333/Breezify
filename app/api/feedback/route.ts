@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { commit, createWrite } from "@/lib/firestore-rest";
 import { verifyIdToken } from "@/lib/verify-id-token";
+import { sendFeedbackNotificationEmail } from "@/lib/email";
 import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
@@ -71,6 +72,20 @@ export async function POST(req: NextRequest) {
 
   try {
     await commit([createWrite(`feedback/${feedbackId}`, feedbackData)], idToken);
+    // Best-effort, never blocks the submission itself: feedback/{id} is
+    // unreadable via the client SDK by design (see firestore.rules), so
+    // without this the only way to ever see what was submitted was opening
+    // the Firebase console's Firestore data tab by hand.
+    try {
+      await sendFeedbackNotificationEmail({
+        uid,
+        type: typeof type === "string" ? type : "general",
+        subject,
+        message,
+      });
+    } catch (err) {
+      console.error(`[feedback] id=${feedbackId} failed to send notification email:`, err);
+    }
     return NextResponse.json(
       { id: feedbackId, message: "Feedback submitted successfully" },
       { status: 201 }

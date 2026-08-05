@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
@@ -33,6 +34,7 @@ function SettingsContent() {
   const [deleteLoading, setDeleteLoading] = useState(false);
   const [exportError, setExportError] = useState("");
   const [exportLoading, setExportLoading] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   // Firebase rejects a password change once the session's gotten old enough
   // (auth/requires-recent-login) until identity is re-proven. Rather than
@@ -109,7 +111,6 @@ function SettingsContent() {
   }
 
   async function handleDelete() {
-    if (!confirm("Delete your account permanently? This cannot be undone.")) return;
     setDeleteError("");
     setDeleteLoading(true);
     try {
@@ -117,6 +118,7 @@ function SettingsContent() {
       router.push("/");
     } catch (err) {
       setDeleteError(friendlyAuthError(err));
+      setShowDeleteConfirm(false);
     } finally {
       setDeleteLoading(false);
     }
@@ -283,11 +285,25 @@ function SettingsContent() {
               <span>{deleteError}</span>
             </div>
           )}
-          <Button variant="destructive" onClick={handleDelete} loading={deleteLoading}>
+          <Button variant="destructive" onClick={() => setShowDeleteConfirm(true)} loading={deleteLoading}>
             Delete account
           </Button>
         </CardContent>
       </Card>
+
+      {showDeleteConfirm && (
+        <ConfirmDialog
+          title="Delete your account permanently?"
+          description="This can't be undone. Every app you own, your billing history, and your credit balance will be gone."
+          confirmLabel="Delete account"
+          loading={deleteLoading}
+          error={deleteError}
+          onClose={() => {
+            if (!deleteLoading) setShowDeleteConfirm(false);
+          }}
+          onConfirm={handleDelete}
+        />
+      )}
     </div>
   );
 }

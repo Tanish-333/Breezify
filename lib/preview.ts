@@ -1,5 +1,6 @@
 import { watermarkSnippet } from "@/lib/watermark";
 import { unsupportedReason } from "@/lib/app-support";
+import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
 
 /**
  * Builds a self-contained HTML document that runs a generated app inside a
@@ -104,6 +105,37 @@ const STORAGE_POLYFILL = `<script>
 })();
 <\/script>`;
 
+/**
+ * Despite the system prompt telling the model to inline FIREBASE_API_KEY as
+ * a literal (see lib/generation/prompt.ts), models still default to reading
+ * it — or any other config value — via `import.meta.env.VITE_*`, a Vite-only
+ * convention that doesn't exist in this no-build-step preview and throws
+ * "Cannot read properties of undefined" the instant the module runs. Since
+ * that habit can't be fully prompted away, this shim covers it at runtime
+ * too: `import.meta.env` is rewritten (see toBlobUrl below) to a real object
+ * populated with Breezify's own public Firebase config under every common
+ * env-var naming convention, so the common case resolves to a working value
+ * instead of just failing to throw. Any other made-up key still resolves to
+ * `undefined` (a plain object, not a crash) rather than the hard crash a
+ * missing `import.meta.env` itself causes.
+ */
+function envShimScript() {
+  const c = FIREBASE_PUBLIC_CONFIG;
+  const entries = (prefix: string) => ({
+    [`${prefix}FIREBASE_API_KEY`]: c.apiKey,
+    [`${prefix}FIREBASE_AUTH_DOMAIN`]: c.authDomain,
+    [`${prefix}FIREBASE_PROJECT_ID`]: c.projectId,
+    [`${prefix}FIREBASE_STORAGE_BUCKET`]: c.storageBucket,
+    [`${prefix}FIREBASE_MESSAGING_SENDER_ID`]: c.messagingSenderId,
+    [`${prefix}FIREBASE_APP_ID`]: c.appId,
+  });
+  const env = { ...entries("VITE_"), ...entries("REACT_APP_"), ...entries("NEXT_PUBLIC_"), MODE: "production", DEV: false, PROD: true };
+  return `<script>
+window.__BREEZIFY_ENV__ = ${JSON.stringify(env)};
+window.process = window.process || { env: window.__BREEZIFY_ENV__ };
+<\/script>`;
+}
+
 export function buildPreview(
   files: Record<string, string>,
   appUrl: string,
@@ -161,6 +193,7 @@ export function buildPreview(
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 ${STORAGE_POLYFILL}
+${envShimScript()}
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"><\/script>
 <script src="https://cdn.tailwindcss.com"><\/script>
 <style>${css}</style>
@@ -242,6 +275,13 @@ function toBlobUrl(path) {
   } catch (e) {
     throw new Error("Failed to compile " + path + "\\n" + e.message);
   }
+
+  // import.meta.env doesn't exist without a real Vite build (see
+  // envShimScript's own comment on why the model reaches for it anyway) —
+  // import.meta itself can't be monkey-patched from outside since it's a
+  // read-only per-module binding, so this rewrites the text instead, same
+  // trick as the import-specifier rewrite below.
+  code = code.replace(/import\\.meta\\.env/g, "window.__BREEZIFY_ENV__");
 
   // Rewrite every import/export specifier: relative paths become blob URLs,
   // bare package names go to the CDN.

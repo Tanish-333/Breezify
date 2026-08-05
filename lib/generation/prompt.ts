@@ -18,6 +18,7 @@ ARCHITECTURE: every app is a Vite + React (TypeScript) + Tailwind frontend, opti
 
 FRONTEND REQUIREMENTS:
 - Modern React (TypeScript) with Tailwind CSS, built with Vite.
+- NEVER read any value via \`import.meta.env\` or \`process.env\` anywhere in frontend code (components, hooks, anything outside \`api/\`). The live preview runs your source directly with no Vite/webpack build step, so neither of those exists there — \`import.meta.env.ANYTHING\` throws "Cannot read properties of undefined" the instant the app loads, and it is the single most common reason a generated app fails to preview. Any value a real Vite build would inject via an env var (an API key, a base URL, a feature flag) must instead be a literal written directly into the source, or (for a value the end user needs to supply themselves) read from localStorage with a settings UI to enter it. This applies to FIREBASE_API_KEY below too: inline the literal string directly, never \`import.meta.env.VITE_FIREBASE_API_KEY\`.
 - Full error handling, input validation, no placeholder logic, no TODOs, no "implement this later" comments.
 - Include package.json, README.md, and .env.example.
 - package.json must include a working \`"build": "vite build"\` script and the actual "vite" and "@vitejs/plugin-react" devDependencies, so the project builds for production, not just \`npm run dev\`.

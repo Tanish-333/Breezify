@@ -63,6 +63,34 @@ ${bodyHtml}
 </div>`;
 }
 
+/**
+ * Notifies the app owner (FEEDBACK_NOTIFY_EMAIL) that new feedback landed —
+ * see app/api/feedback. Without this, feedback/{id} in Firestore has
+ * `allow read: if false` (deliberately private — see firestore.rules), so
+ * there was no way to ever see what anyone submitted short of opening the
+ * Firebase console's Firestore data tab by hand.
+ */
+export async function sendFeedbackNotificationEmail(params: {
+  uid: string;
+  type: string;
+  subject: string;
+  message: string;
+}): Promise<void> {
+  const to = process.env.FEEDBACK_NOTIFY_EMAIL;
+  if (!to) return;
+  const { uid, type, subject, message } = params;
+  await sendEmail({
+    to,
+    subject: `[Breezify feedback] ${subject}`,
+    html: emailShell(`
+<h2 style="font-size:18px;margin:0 0 12px">New ${escapeHtml(type)} feedback</h2>
+<p style="font-size:13px;color:#71717a;margin:0 0 16px">From uid: <code>${escapeHtml(uid)}</code></p>
+<p style="font-size:14px;line-height:1.6;margin:0 0 4px"><strong>${escapeHtml(subject)}</strong></p>
+<p style="font-size:14px;line-height:1.6;white-space:pre-wrap">${escapeHtml(message)}</p>
+`),
+  });
+}
+
 /** Notifies an invited collaborator they've been given access to an app — see app/api/apps/[appId]/collaborators. */
 export async function sendCollaboratorInviteEmail(params: {
   to: string;
