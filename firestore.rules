@@ -11,16 +11,16 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
-    // The three credit costs a generation can ever charge (see
-    // lib/types.ts MODEL_INFO). Every write that touches credits or logs a
-    // transaction must match one of these exactly, this is what stands in
-    // for a trusted backend now that all writes, including the ones from
-    // our own API routes, are authenticated as the calling user rather than
-    // an admin service account.
+    // The credit costs a generation can ever charge (see lib/types.ts
+    // MODEL_INFO). Every write that touches credits or logs a transaction
+    // must match one of these exactly, this is what stands in for a
+    // trusted backend now that all writes, including the ones from our own
+    // API routes, are authenticated as the calling user rather than an
+    // admin service account.
     // 0 covers generations run with the user's own provider API key, where
     // nothing is charged because they pay their provider directly.
     function isValidCost(n) {
-      return n == 0 || n == 0.5 || n == 1.0 || n == 2.0;
+      return n == 0 || n == 0.5 || n == 1.0 || n == 1.5 || n == 2.0;
     }
 
     // users/{uid}: profile + credit balance.

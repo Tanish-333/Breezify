@@ -26,9 +26,10 @@ export interface ModelInfo {
   tier: string;
 }
 
-// Credit costs are deliberately limited to 0.50 / 1.00 / 2.00. firestore.rules
-// validates every credit deduction against exactly this set, so adding a new
-// cost value here means updating isValidCost() in the rules too.
+// Credit costs are deliberately limited to 0.50 / 1.00 / 1.50 / 2.00.
+// firestore.rules validates every credit deduction against exactly this
+// set, so adding a new cost value here means updating isValidCost() in the
+// rules too.
 export const MODEL_INFO: Record<ModelId, ModelInfo> = {
   haiku: {
     label: "Haiku 4.5",
@@ -65,7 +66,13 @@ export const MODEL_INFO: Record<ModelId, ModelInfo> = {
     provider: "anthropic",
     providerLabel: "Anthropic",
     description: "Balanced quality and speed. The best default for real applications.",
-    credits: 1.0,
+    // 1.5, not 1.0: at typical-to-max output token usage, Sonnet's actual
+    // provider cost per credit is the highest of any model (higher than
+    // Opus, whose 2.0 credit cost scales further with its higher price) —
+    // on the Max plan's 32k output ceiling specifically, 1.0 credit could
+    // cost more than the credit was sold for. See the cost analysis this
+    // was based on for the full numbers.
+    credits: 1.5,
     apiModel: "claude-sonnet-4-5",
     minPlan: "plus",
     tier: "Plus",
