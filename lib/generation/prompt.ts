@@ -2,7 +2,7 @@ import type { PlanId } from "@/lib/types";
 import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
 
 function appBaseUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || "https://feather-123.vercel.app";
+  return process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
 }
 
 function backendDataApiBlock(appId: string) {
