@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { doc, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { AppShell } from "@/components/app-shell";
@@ -57,6 +57,8 @@ type Pane = "preview" | "code";
 
 function AppWorkspace() {
   const params = useParams<{ appId: string }>();
+  const searchParams = useSearchParams();
+  const domainCheckout = searchParams.get("domain");
   const router = useRouter();
   const { app, loading } = useApp(params.appId);
   const { user, profile, refreshProfile } = useAuth();
@@ -464,6 +466,22 @@ function AppWorkspace() {
               <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{deployError}</span>
+              </div>
+            )}
+
+            {domainCheckout === "purchased" && (
+              <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-success">
+                <Check className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  Payment received — registering your domain and attaching it to this app. This can
+                  take a minute; open the Domain panel to check status.
+                </span>
+              </div>
+            )}
+            {domainCheckout === "canceled" && (
+              <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>Domain purchase canceled — you weren&apos;t charged.</span>
               </div>
             )}
           </div>

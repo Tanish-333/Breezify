@@ -118,6 +118,20 @@ service cloud.firestore {
       }
     }
 
+    // domainOrders/{sessionId}: pending/completed domain-purchase records,
+    // keyed by the Stripe Checkout Session ID that pays for them. Created
+    // by the buyer's own request (app/api/domains/purchase) right before
+    // they're sent to Stripe Checkout, always "pending" at that point; only
+    // the Stripe webhook (via the Admin SDK, which bypasses these rules
+    // entirely) ever moves one to "purchasing"/"completed"/"failed", so a
+    // client-side update is never legitimate.
+    match /domainOrders/{orderId} {
+      allow read: if isOwner(resource.data.userId);
+      allow create: if isOwner(request.resource.data.userId)
+        && request.resource.data.status == "pending";
+      allow update, delete: if false;
+    }
+
     // app_data/{appId}/{collection}/{docId}: the generic per-app data store
     // generated apps can use for real persistence (see app/api/app-data),
     // instead of localStorage-only. Any signed-in visitor (including

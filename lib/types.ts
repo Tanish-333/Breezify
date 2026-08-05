@@ -237,6 +237,18 @@ export const IMPORT_MIN_PLAN: PlanId = "plus";
 export const CUSTOM_DOMAIN_MIN_PLAN: PlanId = "pro";
 
 /**
+ * Markup over Vercel's own wholesale registrar price when a user buys a new
+ * domain through Breezify (see app/api/domains/purchase). Covers Stripe's
+ * processing fee and the risk of a domain going unpurchased-but-non-
+ * refundable if something fails after Vercel is charged.
+ */
+export const DOMAIN_PRICE_MARKUP = 1.2;
+
+export function markedUpDomainPrice(wholesalePrice: number): number {
+  return Math.round(wholesalePrice * DOMAIN_PRICE_MARKUP * 100) / 100;
+}
+
+/**
  * Deploys don't cost credits (they're a Vercel build/bandwidth cost, not an
  * AI cost), so without a separate cap a free account could redeploy
  * unlimited times a day at zero cost to them. Capped per plan instead of
@@ -305,6 +317,11 @@ export interface FeatherApp {
   subdomain?: string;
   customDomain?: string;
   customDomainVerified?: boolean;
+  /** True when this domain was bought through Breezify (see app/api/domains/purchase), not brought by the user. */
+  domainPurchased?: boolean;
+  domainExpiresAt?: number;
+  /** Always false today — purchased domains don't auto-renew yet, see app/api/stripe/webhook. */
+  domainAutoRenew?: boolean;
   errorMessage?: string;
   createdAt: number;
   deployedAt?: number;

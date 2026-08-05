@@ -1,10 +1,21 @@
 import { NextRequest, NextResponse } from "next/server";
 import Stripe from "stripe";
+import type { DocumentReference, DocumentData } from "firebase-admin/firestore";
 import { getStripe, planForPriceId } from "@/lib/stripe";
 import { adminDb, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
+import {
+  addProjectDomain,
+  getDomainOrderStatus,
+  projectSlugFromDeployedUrl,
+  purchaseDomainOnVercel,
+  type DomainContact,
+} from "@/lib/vercel-deploy";
 import { PLANS, isPlanId, type PlanId } from "@/lib/types";
 
 export const runtime = "nodejs";
+// Domain registration is polled synchronously below (Vercel's buy is async),
+// which routinely takes longer than the platform's default function timeout.
+export const maxDuration = 60;
 
 /**
  * The one place in this app that writes plan/credits without a user's own ID
@@ -68,6 +79,130 @@ async function revertToFree(uid: string) {
   await adminDb().collection("users").doc(uid).set({ plan: "free" }, { merge: true });
 }
 
+/**
+ * Refunds a domain purchase that failed before or during Vercel
+ * registration — the customer was already charged by Stripe (payment_status
+ * "paid" is what triggers this whole flow), so a failure past that point
+ * must give the money back rather than silently keep it. Never called for a
+ * timeout mid-registration (see pollDomainOrder below): only for a genuine
+ * "this didn't happen" outcome, where refunding is unambiguously correct.
+ */
+async function refundDomainOrder(
+  stripe: Stripe,
+  orderRef: DocumentReference<DocumentData>,
+  paymentIntent: string | null,
+  error: unknown
+) {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error("[stripe webhook] domain purchase failed, refunding:", message);
+  try {
+    if (paymentIntent) {
+      await stripe.refunds.create({ payment_intent: paymentIntent });
+    }
+  } catch (refundErr) {
+    console.error("[stripe webhook] refund also failed — needs manual handling:", refundErr);
+  }
+  await orderRef.set(
+    { status: "failed", error: message, refunded: true, failedAt: new Date().toISOString() },
+    { merge: true }
+  );
+}
+
+/**
+ * Polls a Vercel registrar order until it lands on a terminal state.
+ * Deliberately doesn't treat "still not done after the deadline" as a
+ * failure: at that point money has moved and a Vercel order may still be
+ * in flight, so throwing (rather than refunding) is what makes Stripe's
+ * automatic webhook retry pick this back up later — see the vercelOrderId
+ * resume check in handleDomainPurchase, which skips re-buying once an
+ * order ID is already recorded.
+ */
+async function pollDomainOrder(orderId: string): Promise<void> {
+  const deadline = Date.now() + 45_000;
+  while (Date.now() < deadline) {
+    const order = await getDomainOrderStatus(orderId);
+    if (order.status === "completed") return;
+    if (order.status === "failed") {
+      throw new Error(order.error || "Vercel couldn't complete the domain registration.");
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  throw new Error(`Domain order ${orderId} is still pending after the poll window; will retry on next delivery.`);
+}
+
+async function handleDomainPurchase(stripe: Stripe, session: Stripe.Checkout.Session) {
+  if (session.payment_status !== "paid") return;
+
+  const orderRef = adminDb().collection("domainOrders").doc(session.id);
+  const orderSnap = await orderRef.get();
+  if (!orderSnap.exists) {
+    console.error("[stripe webhook] domain_purchase checkout with no matching domainOrders doc", session.id);
+    return;
+  }
+  const order = orderSnap.data()!;
+  if (order.status === "completed" || order.status === "refunded") return; // Already handled.
+
+  const paymentIntent =
+    typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
+
+  let vercelOrderId: string | undefined = order.vercelOrderId;
+  if (!vercelOrderId) {
+    await orderRef.set({ status: "purchasing" }, { merge: true });
+    try {
+      vercelOrderId = await purchaseDomainOnVercel(
+        order.domain,
+        order.years,
+        order.vercelPrice,
+        order.contact as DomainContact,
+        false // Not auto-renewing yet — see FeatherApp.domainAutoRenew in lib/types.ts.
+      );
+      await orderRef.set({ vercelOrderId }, { merge: true });
+    } catch (err) {
+      await refundDomainOrder(stripe, orderRef, paymentIntent, err);
+      return;
+    }
+  }
+
+  await pollDomainOrder(vercelOrderId); // Throws on failure/timeout — see its own doc comment.
+
+  const appDoc = await adminDb().collection("apps").doc(order.appId).get();
+  const deployedUrl = appDoc.data()?.deployedUrl as string | undefined;
+  const slug = deployedUrl ? projectSlugFromDeployedUrl(deployedUrl) : null;
+
+  let verified = false;
+  if (slug) {
+    try {
+      const status = await addProjectDomain(slug, order.domain);
+      verified = status.verified;
+    } catch (err) {
+      // The domain is bought and non-refundable at this point regardless —
+      // log loudly for manual attachment rather than losing the purchase.
+      console.error("[stripe webhook] domain purchased but couldn't attach to Vercel project:", err);
+    }
+  } else {
+    console.error("[stripe webhook] domain purchased but app has no deployed project to attach to:", order.appId);
+  }
+
+  const expiresAt = new Date();
+  expiresAt.setFullYear(expiresAt.getFullYear() + (order.years ?? 1));
+
+  await adminDb()
+    .collection("apps")
+    .doc(order.appId)
+    .set(
+      {
+        customDomain: order.domain,
+        customDomainVerified: verified,
+        domainPurchased: true,
+        domainExpiresAt: expiresAt.toISOString(),
+        domainAutoRenew: false,
+      },
+      { merge: true }
+    );
+
+  await orderRef.set({ status: "completed", completedAt: new Date().toISOString() }, { merge: true });
+}
+
 async function handleEvent(stripe: Stripe, event: Stripe.Event) {
   switch (event.type) {
     case "checkout.session.completed": {
@@ -79,6 +214,10 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       // once Stripe has actually confirmed the charge landed, so a payment
       // that later fails was never granted in the first place.
       if (session.payment_status !== "paid") break;
+      if (session.metadata?.type === "domain_purchase") {
+        await handleDomainPurchase(stripe, session);
+        break;
+      }
       const uid = session.client_reference_id ?? session.metadata?.uid;
       const plan = session.metadata?.plan;
       if (!uid || !(await isKnownBreezifyUser(uid))) break; // Not a Breezify checkout.
@@ -91,9 +230,14 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
     }
 
     // The delayed-payment counterpart to checkout.session.completed above:
-    // grants the plan once the charge actually confirms.
+    // grants the plan (or completes the domain purchase) once the charge
+    // actually confirms.
     case "checkout.session.async_payment_succeeded": {
       const session = event.data.object as Stripe.Checkout.Session;
+      if (session.metadata?.type === "domain_purchase") {
+        await handleDomainPurchase(stripe, session);
+        break;
+      }
       const uid = session.client_reference_id ?? session.metadata?.uid;
       const plan = session.metadata?.plan;
       if (!uid || !(await isKnownBreezifyUser(uid))) break; // Not a Breezify checkout.
