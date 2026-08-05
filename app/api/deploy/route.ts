@@ -159,15 +159,30 @@ export async function POST(req: NextRequest) {
     // become env vars for its api/ serverless functions only — never for the
     // static frontend build, which has no server-side code to read them.
     let secretsEnv: Record<string, string> = {};
-    try {
-      const secretDocs = await listCollection(`apps/${appId}/secrets`, idToken);
-      secretsEnv = Object.fromEntries(
-        secretDocs
-          .map((d) => [d.fields.key, d.fields.value])
-          .filter(([key, value]) => typeof key === "string" && typeof value === "string")
-      );
-    } catch {
-      // Deploy without secrets rather than blocking on this lookup failing.
+    let secretsNote: string | undefined;
+    const isAppOwner = appDoc.fields.userId === uid;
+    if (isAppOwner) {
+      try {
+        const secretDocs = await listCollection(`apps/${appId}/secrets`, idToken);
+        secretsEnv = Object.fromEntries(
+          secretDocs
+            .map((d) => [d.fields.key, d.fields.value])
+            .filter(([key, value]) => typeof key === "string" && typeof value === "string")
+        );
+      } catch {
+        // Deploy without secrets rather than blocking on this lookup failing.
+      }
+    } else {
+      // firestore.rules keeps secrets/{id} owner-only on purpose (see
+      // lib/app-collaborators.ts) — a collaborator's own idToken can't read
+      // them at all, and Firestore's list endpoint just silently excludes
+      // every doc that fails the rule rather than throwing, so the catch
+      // above would never fire and this would ship with secretsEnv = {} with
+      // no sign anything was left out. Skip the doomed read and say so
+      // instead of deploying an app that's silently missing env vars it
+      // depends on.
+      secretsNote =
+        "Secrets configured on this app are only readable by its owner, so they weren't included in this deploy — ask the owner to deploy if it depends on them.";
     }
 
     await commit(
@@ -187,7 +202,8 @@ export async function POST(req: NextRequest) {
         ],
         idToken
       );
-      return NextResponse.json({ url: result.url, note: wrapped?.note });
+      const note = [wrapped?.note, secretsNote].filter(Boolean).join(" ") || undefined;
+      return NextResponse.json({ url: result.url, note });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Deploy failed.";
       await commit(

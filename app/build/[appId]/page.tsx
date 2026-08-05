@@ -88,6 +88,7 @@ function AppWorkspace() {
   const [showCollaborators, setShowCollaborators] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState("");
+  const [deployNote, setDeployNote] = useState("");
   const [duplicating, setDuplicating] = useState(false);
   const [reverting, setReverting] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
@@ -177,6 +178,7 @@ function AppWorkspace() {
 
   async function deployApp() {
     setDeployError("");
+    setDeployNote("");
     setDeploying(true);
     try {
       const user = auth.currentUser;
@@ -190,7 +192,11 @@ function AppWorkspace() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Deploy failed.");
       // Firestore's onSnapshot in useApp() picks up the new deployedUrl/status
-      // as soon as the server writes them; nothing else to do here.
+      // as soon as the server writes them; the deploy can still succeed with
+      // a caveat worth surfacing though (e.g. a collaborator's deploy
+      // shipping without the owner's secrets, or an Express backend that got
+      // auto-wrapped) — that's carried in `note`, not an error.
+      if (data.note) setDeployNote(data.note);
     } catch (err) {
       setDeployError(err instanceof Error ? err.message : "Deploy failed.");
     } finally {
@@ -494,6 +500,13 @@ function AppWorkspace() {
               <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{deployError}</span>
+              </div>
+            )}
+
+            {deployNote && (
+              <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{deployNote}</span>
               </div>
             )}
 
