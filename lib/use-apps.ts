@@ -17,7 +17,20 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { logClientError } from "@/lib/client-error-log";
 import type { AppSecret, AppTurn, FeatherApp } from "@/lib/types";
+
+/**
+ * A Firestore listener error (a missing composite index, a rules rejection,
+ * an expired token) previously just cleared the list and stopped loading —
+ * indistinguishable from "you genuinely have no apps." Logging it is what
+ * makes that class of bug show up as a real, findable error instead of a
+ * silent empty state.
+ */
+function logListenerError(context: string, err: unknown) {
+  console.error(`[${context}]`, err);
+  logClientError(err instanceof Error ? err : new Error(String(err)), { context });
+}
 
 /**
  * Firestore timestamps come back as Timestamp objects from the client SDK,
@@ -81,9 +94,12 @@ export function useUserApps(uid: string | undefined) {
         setApps(snap.docs.map((d) => toApp(d.id, d.data())));
         setLoading(false);
       },
-      // A broken listener (expired token, permission change) must not leave
-      // the last-synced list frozen on screen looking current.
-      () => {
+      // A broken listener (expired token, permission change, a missing
+      // composite index) must not leave the last-synced list frozen on
+      // screen looking current — but it also must not look identical to
+      // "you have no apps," which is why this is logged.
+      (err) => {
+        logListenerError("useUserApps", err);
         setApps([]);
         setLoading(false);
       }
@@ -221,7 +237,10 @@ export function useAppSecrets(appId: string | undefined) {
         setSecrets(snap.docs.map((d) => toSecret(d.id, d.data())));
         setLoading(false);
       },
-      () => setLoading(false)
+      (err) => {
+        logListenerError("useAppSecrets", err);
+        setLoading(false);
+      }
     );
     return () => unsub();
   }, [appId]);
@@ -259,7 +278,8 @@ export function useApp(appId: string | undefined) {
         setApp(snap.exists() ? toApp(snap.id, snap.data()) : null);
         setLoading(false);
       },
-      () => {
+      (err) => {
+        logListenerError("useApp", err);
         setApp(null);
         setLoading(false);
       }
