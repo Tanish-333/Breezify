@@ -248,6 +248,22 @@ export function markedUpDomainPrice(wholesalePrice: number): number {
   return Math.round(wholesalePrice * DOMAIN_PRICE_MARKUP * 100) / 100;
 }
 
+/** Lowest plan that can invite collaborators onto an app. */
+export const COLLABORATOR_MIN_PLAN: PlanId = "plus";
+
+/**
+ * Collaborators work on a shared app using their OWN credits, plan-gated
+ * model access, and (for GitHub push/sync) their own connected GitHub
+ * account — there's no pooled team billing yet, each person just brings
+ * their own. This cap only limits how many people can be invited at once.
+ */
+export const MAX_COLLABORATORS: Record<PlanId, number> = {
+  free: 0,
+  plus: 5,
+  pro: 15,
+  max: 50,
+};
+
 /**
  * Deploys don't cost credits (they're a Vercel build/bandwidth cost, not an
  * AI cost), so without a separate cap a free account could redeploy

@@ -14,7 +14,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth-context";
-import { useUserApps, deleteApp } from "@/lib/use-apps";
+import { useUserApps, useCollaboratingApps, deleteApp } from "@/lib/use-apps";
 import { fetchModelAvailability, generateAppRequest, type ClarifyQuestion } from "@/lib/api-client";
 import { takePendingPrompt } from "@/lib/pending-prompt";
 import { formatDate } from "@/lib/utils";
@@ -26,13 +26,19 @@ import {
   type ModelId,
   type PlanId,
 } from "@/lib/types";
-import { AlertCircle, FolderOpen, Loader2, Lock, Search, Trash2 } from "lucide-react";
+import { AlertCircle, FolderOpen, Loader2, Lock, Search, Trash2, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 function DashboardContent() {
   const router = useRouter();
   const { user, profile, refreshProfile } = useAuth();
-  const { apps, loading: appsLoading } = useUserApps(user?.uid);
+  const { apps: ownedApps, loading: ownedLoading } = useUserApps(user?.uid);
+  const { apps: sharedApps, loading: sharedLoading } = useCollaboratingApps(user?.uid);
+  const apps = useMemo(
+    () => [...ownedApps, ...sharedApps].sort((a, b) => b.createdAt - a.createdAt),
+    [ownedApps, sharedApps]
+  );
+  const appsLoading = ownedLoading || sharedLoading;
   const plan: PlanId = profile?.plan ?? "free";
   const canImport = PLAN_RANK[plan] >= PLAN_RANK[IMPORT_MIN_PLAN];
   const [showImport, setShowImport] = useState(false);
@@ -286,7 +292,15 @@ function DashboardContent() {
                         {app.name}
                       </h3>
                     </Link>
-                    <StatusBadge status={app.status} />
+                    <div className="flex shrink-0 items-center gap-1.5">
+                      {app.userId !== user?.uid && (
+                        <span className="flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
+                          <Users className="h-2.5 w-2.5" />
+                          Shared
+                        </span>
+                      )}
+                      <StatusBadge status={app.status} />
+                    </div>
                   </div>
                   <p className="mt-1.5 line-clamp-2 text-xs text-muted-foreground">
                     {app.summary || app.prompt}
@@ -295,19 +309,21 @@ function DashboardContent() {
                     <span className="truncate">
                       {MODEL_INFO[app.model]?.label ?? app.model} · {formatDate(app.createdAt)}
                     </span>
-                    <button
-                      onClick={() => {
-                        if (confirm(`Delete "${app.name}"? This can't be undone.`)) {
-                          deleteApp(app.id).catch(() =>
-                            alert("Couldn't delete this app. Please try again.")
-                          );
-                        }
-                      }}
-                      title="Delete"
-                      className="shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
-                    >
-                      <Trash2 className="h-3.5 w-3.5" />
-                    </button>
+                    {app.userId === user?.uid && (
+                      <button
+                        onClick={() => {
+                          if (confirm(`Delete "${app.name}"? This can't be undone.`)) {
+                            deleteApp(app.id).catch(() =>
+                              alert("Couldn't delete this app. Please try again.")
+                            );
+                          }
+                        }}
+                        title="Delete"
+                        className="shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                 </CardContent>
               </Card>

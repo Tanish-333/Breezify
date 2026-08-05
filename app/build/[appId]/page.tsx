@@ -15,6 +15,7 @@ import { GithubPushDialog } from "@/components/github-push-dialog";
 import { GithubSyncDialog } from "@/components/github-sync-dialog";
 import { AppSecretsDialog } from "@/components/app-secrets-dialog";
 import { CustomDomainDialog } from "@/components/custom-domain-dialog";
+import { CollaboratorsDialog } from "@/components/collaborators-dialog";
 import { TurnCard } from "@/components/turn-card";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ import { useApp, duplicateApp, revertToVersion } from "@/lib/use-apps";
 import { useAuth } from "@/lib/auth-context";
 import { fetchModelAvailability, generateAppRequest } from "@/lib/api-client";
 import {
+  COLLABORATOR_MIN_PLAN,
   CUSTOM_DOMAIN_MIN_PLAN,
   DUPLICATE_MIN_PLAN,
   IMPORT_MIN_PLAN,
@@ -50,6 +52,7 @@ import {
   Pencil,
   RefreshCw,
   Rocket,
+  Users,
   X,
 } from "lucide-react";
 
@@ -68,6 +71,8 @@ function AppWorkspace() {
   // server-side in app/api/github/sync).
   const canSyncGithub = PLAN_RANK[plan] >= PLAN_RANK[IMPORT_MIN_PLAN];
   const canCustomDomain = PLAN_RANK[plan] >= PLAN_RANK[CUSTOM_DOMAIN_MIN_PLAN];
+  const isOwner = app?.userId === user?.uid;
+  const canInviteCollaborators = PLAN_RANK[plan] >= PLAN_RANK[COLLABORATOR_MIN_PLAN];
 
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<ModelId>("haiku");
@@ -80,6 +85,7 @@ function AppWorkspace() {
   const [showSync, setShowSync] = useState(false);
   const [showSecrets, setShowSecrets] = useState(false);
   const [showDomain, setShowDomain] = useState(false);
+  const [showCollaborators, setShowCollaborators] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState("");
   const [duplicating, setDuplicating] = useState(false);
@@ -363,14 +369,36 @@ function AppWorkspace() {
               </Link>
             ))}
 
-          {hasFiles && (
+          {hasFiles && isOwner && (
             <Button variant="ghost" size="sm" onClick={() => setShowSecrets(true)}>
               <KeyRound className="h-4 w-4" />
               <span className="hidden sm:inline">Secrets</span>
             </Button>
           )}
 
-          {hasFiles && app.deployedUrl && (
+          {hasFiles && (
+            !isOwner || canInviteCollaborators ? (
+              <Button variant="ghost" size="sm" onClick={() => setShowCollaborators(true)}>
+                <Users className="h-4 w-4" />
+                <span className="hidden sm:inline">Team</span>
+              </Button>
+            ) : (
+              <Link href="/billing" title="Upgrade to Plus to invite collaborators">
+                <Button variant="ghost" size="sm">
+                  <span className="relative inline-flex">
+                    <Users className="h-4 w-4" />
+                    <Lock
+                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
+                      strokeWidth={3}
+                    />
+                  </span>
+                  <span className="hidden sm:inline">Team</span>
+                </Button>
+              </Link>
+            )
+          )}
+
+          {hasFiles && isOwner && app.deployedUrl && (
             canCustomDomain ? (
               <Button variant="ghost" size="sm" onClick={() => setShowDomain(true)}>
                 <Globe className="h-4 w-4" />
@@ -580,6 +608,10 @@ function AppWorkspace() {
           currentDomain={app.customDomain}
           onClose={() => setShowDomain(false)}
         />
+      )}
+
+      {showCollaborators && (
+        <CollaboratorsDialog appId={app.id} isOwner={isOwner} onClose={() => setShowCollaborators(false)} />
       )}
     </div>
   );

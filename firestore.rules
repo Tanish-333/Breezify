@@ -11,6 +11,16 @@ service cloud.firestore {
       return isSignedIn() && request.auth.uid == userId;
     }
 
+    // True if the caller has been invited onto apps/{appId} (see
+    // apps/{appId}/collaborators/{uid} below, managed only through
+    // app/api/apps/[appId]/collaborators — an app's owner can invite an
+    // existing Breezify user, who then gets read/refine/deploy access to
+    // that one app, using their own credits and plan, not the owner's).
+    function isAppCollaborator(database, appId) {
+      return isSignedIn()
+        && exists(/databases/$(database)/documents/apps/$(appId)/collaborators/$(request.auth.uid));
+    }
+
     // The credit costs a generation can ever charge (see lib/types.ts
     // MODEL_INFO). Every write that touches credits or logs a transaction
     // must match one of these exactly, this is what stands in for a
@@ -68,10 +78,10 @@ service cloud.firestore {
 
     // apps/{appId}: generated apps.
     match /apps/{appId} {
-      allow read: if isOwner(resource.data.userId);
+      allow read: if isOwner(resource.data.userId) || isAppCollaborator(database, appId);
       allow create: if isOwner(request.resource.data.userId);
       allow update: if (
-        isOwner(resource.data.userId)
+        (isOwner(resource.data.userId) || isAppCollaborator(database, appId))
         && request.resource.data.userId == resource.data.userId
       ) || (
         // Public visit-counter increments for deployed-app analytics
@@ -100,21 +110,51 @@ service cloud.firestore {
       // parent was created moments earlier, depending on how the writes
       // were batched. Checking a field on the write itself has no such
       // ordering dependency.
+      // Read is also open to collaborators (turn history is shared work,
+      // not private to whoever happened to create each snapshot) — but that
+      // check is safe to route through get()/exists() on the parent here,
+      // unlike the CREATE rule just below: a read isn't part of the same
+      // multi-write commit that might have just created the parent, so
+      // there's no staleness window the way there was for ownership checks
+      // on create.
       match /versions/{turnId} {
-        allow read: if isOwner(resource.data.userId);
+        allow read: if isOwner(resource.data.userId) || isAppCollaborator(database, appId);
         allow create: if isOwner(request.resource.data.userId);
         allow update, delete: if false;
       }
 
       // secrets/{secretId}: key/value pairs the app owner configures for
       // their generated app (e.g. an API key it calls out with). Owner-only
-      // in both directions, never read by anyone but the app's own owner.
-      // Same reasoning as versions/{turnId} above: ownership is a field on
-      // the document itself, not a cross-document get().
+      // in both directions, including for collaborators — deliberately not
+      // shared, so inviting someone to work on an app never hands them its
+      // API keys. Same reasoning as versions/{turnId} above: ownership is a
+      // field on the document itself, not a cross-document get().
       match /secrets/{secretId} {
         allow read, delete: if isOwner(resource.data.userId);
-        allow create: if isOwner(request.resource.data.userId);
+        // Also checks the parent app's real owner, not just that the writer
+        // stamped their own uid — secrets are never created in the same
+        // commit as their parent app doc (always a separate later action
+        // from the Secrets panel), so this get() carries none of the
+        // same-commit staleness risk versions/{turnId} above was written
+        // around, and it's what actually keeps a non-owner (a collaborator
+        // included) from planting a secret under someone else's app.
+        allow create: if isOwner(request.resource.data.userId)
+          && isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
         allow update: if isOwner(resource.data.userId) && request.resource.data.userId == resource.data.userId;
+      }
+
+      // collaborators/{uid}: who besides the owner can work on this app.
+      // Only the owner can invite (create) or remove someone else; a
+      // collaborator may remove themselves (leave) but never anyone else,
+      // and can never add themselves.
+      match /collaborators/{collabUid} {
+        allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
+          || isOwner(collabUid)
+          || isAppCollaborator(database, appId);
+        allow create: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
+        allow delete: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
+          || isOwner(collabUid);
+        allow update: if false;
       }
     }
 

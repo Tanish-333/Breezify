@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { NextRequest } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, createWrite, getDoc, incrementWrite, updateWrite } from "@/lib/firestore-rest";
+import { hasAppAccess } from "@/lib/app-collaborators";
 import { generateApp, isModelAvailable, refineApp } from "@/lib/generation";
 import { checkClarity } from "@/lib/generation/clarify";
 import {
@@ -152,7 +153,9 @@ export async function POST(req: NextRequest) {
       return errorStream("Couldn't load that app. Please try again.");
     }
     if (!doc) return errorStream("App not found.");
-    if (doc.fields.userId !== uid) return errorStream("You don't have access to this app.");
+    if (!(await hasAppAccess(refineAppId, doc.fields.userId as string, uid, idToken))) {
+      return errorStream("You don't have access to this app.");
+    }
     const files =
       (doc.fields.generatedCode as { files?: Record<string, string> } | undefined)?.files ?? {};
     if (Object.keys(files).length === 0) {

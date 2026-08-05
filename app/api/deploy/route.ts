@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, getDoc, incrementWrite, listCollection, updateWrite } from "@/lib/firestore-rest";
+import { hasAppAccess } from "@/lib/app-collaborators";
 import { withWatermark } from "@/lib/watermark";
 import { withAnalytics } from "@/lib/analytics-snippet";
 import { deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
@@ -64,7 +65,7 @@ export async function POST(req: NextRequest) {
     if (!appDoc) {
       return NextResponse.json({ error: "App not found." }, { status: 404 });
     }
-    if (appDoc.fields.userId !== uid) {
+    if (!(await hasAppAccess(appId, appDoc.fields.userId as string, uid, idToken))) {
       return NextResponse.json({ error: "You don't have access to this app." }, { status: 403 });
     }
 
