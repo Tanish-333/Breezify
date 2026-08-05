@@ -24,7 +24,16 @@ async function authedFetch(path: string, init: RequestInit = {}) {
       ...(init.headers ?? {}),
     },
   });
-  const data = await res.json();
+  // A non-JSON body (an HTML error/404 page from the platform, a timeout, a
+  // truncated response) makes res.json() throw its own cryptic "Unexpected
+  // token '<'..." SyntaxError — surface the real HTTP status instead of
+  // that.
+  let data: any;
+  try {
+    data = await res.json();
+  } catch {
+    throw new Error(`Something went wrong (${res.status}). Please try again in a moment.`);
+  }
   if (!res.ok) throw new Error(data.error || "Something went wrong.");
   return data;
 }

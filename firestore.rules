@@ -120,7 +120,17 @@ service cloud.firestore {
       match /versions/{turnId} {
         allow read: if isOwner(resource.data.userId) || isAppCollaborator(database, appId);
         allow create: if isOwner(request.resource.data.userId);
-        allow update, delete: if false;
+        // Content itself stays immutable (no update, ever — that's what
+        // makes a version trustworthy to revert to). Delete is owner-only,
+        // needed for deleteApp() (lib/use-apps.ts) to clean these up when
+        // the whole app goes: it batch-deletes every version alongside the
+        // parent apps/{appId} doc, and Firestore batches are all-or-nothing
+        // — with this at `if false`, that batch was rejected outright for
+        // any app that had ever had a single turn (i.e. virtually every
+        // app), failing the entire delete with no explanation beyond
+        // "couldn't delete this app."
+        allow update: if false;
+        allow delete: if isOwner(resource.data.userId);
       }
 
       // secrets/{secretId}: key/value pairs the app owner configures for

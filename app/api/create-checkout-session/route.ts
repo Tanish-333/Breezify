@@ -108,10 +108,16 @@ export async function POST(req: NextRequest) {
     // own token), just convenient: saves the customer ID for next time so
     // repeat checkouts and the billing portal don't need to look it up again.
     if (session.customer && !existingCustomerId) {
+      // Not fatal if this fails — app/api/stripe/webhook's setPlan() backfills
+      // the same field via the Admin SDK once the checkout completes, as a
+      // reliable backstop for exactly this failing. Logged rather than fully
+      // swallowed so a real failure here is at least visible somewhere.
       await commit(
         [updateWrite(userPath, { stripeCustomerId: session.customer as string }, ["stripeCustomerId"])],
         idToken
-      ).catch(() => {});
+      ).catch((err) => {
+        console.error(`[create-checkout-session] uid=${uid} failed to save stripeCustomerId client-side:`, err);
+      });
     }
 
     return NextResponse.json({ url: session.url });

@@ -48,11 +48,24 @@ async function findUid(
   return snap.empty ? undefined : snap.docs[0].id;
 }
 
-async function setPlan(uid: string, plan: PlanId) {
+/**
+ * customerId is optional and, when given, backfilled via the Admin SDK
+ * alongside the plan itself — a reliable backstop for create-checkout-
+ * session/route.ts's own client-side save of the same field, which uses the
+ * caller's own idToken and silently swallows a write failure (network blip,
+ * a closed tab right after redirect). Without this, that one failure mode
+ * permanently locks a real, paying subscriber out of "Manage billing" and
+ * their own subscription status — plan/credits still land correctly here
+ * either way, but stripeCustomerId would never get set by anything else.
+ */
+async function setPlan(uid: string, plan: PlanId, customerId?: string) {
   await adminDb()
     .collection("users")
     .doc(uid)
-    .set({ plan, credits: PLANS[plan].credits }, { merge: true });
+    .set(
+      { plan, credits: PLANS[plan].credits, ...(customerId ? { stripeCustomerId: customerId } : {}) },
+      { merge: true }
+    );
 }
 
 /**
@@ -247,7 +260,8 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       const plan = session.metadata?.plan;
       if (!uid || !(await isKnownBreezifyUser(uid))) break; // Not a Breezify checkout.
       if (isPlanId(plan) && plan !== "free") {
-        await setPlan(uid, plan);
+        const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
+        await setPlan(uid, plan, customerId);
       } else {
         console.error("[stripe webhook] checkout.session.completed: known uid but missing/invalid plan", { uid });
       }
@@ -267,7 +281,8 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       const plan = session.metadata?.plan;
       if (!uid || !(await isKnownBreezifyUser(uid))) break; // Not a Breezify checkout.
       if (isPlanId(plan) && plan !== "free") {
-        await setPlan(uid, plan);
+        const customerId = typeof session.customer === "string" ? session.customer : session.customer?.id;
+        await setPlan(uid, plan, customerId);
       } else {
         console.error("[stripe webhook] checkout.session.async_payment_succeeded: known uid but missing/invalid plan", { uid });
       }
@@ -305,7 +320,7 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       }
       const plan = priceId ? planForPriceId(priceId) : undefined;
       if (plan) {
-        await setPlan(uid, plan);
+        await setPlan(uid, plan, customerId ?? undefined);
       } else {
         // uid resolved (this IS a Breezify subscriber) but the price
         // couldn't be mapped to a plan — a real anomaly worth surfacing,
@@ -331,7 +346,7 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       // A pending cancellation still has full access until the period
       // actually ends; customer.subscription.deleted handles that transition.
       if (uid && plan && !subscription.cancel_at_period_end) {
-        await setPlan(uid, plan);
+        await setPlan(uid, plan, customerId);
       }
       break;
     }

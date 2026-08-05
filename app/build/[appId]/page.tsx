@@ -591,7 +591,10 @@ function AppWorkspace() {
               <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <p>The live preview hit a runtime error.</p>
+                  <p>
+                    The live preview hit a runtime error. Fixing it runs a refine like any other —
+                    {" "}{cost.toFixed(2)} credits with {MODEL_INFO[model].label}.
+                  </p>
                   <pre className="mt-1.5 max-h-24 overflow-y-auto whitespace-pre-wrap break-words rounded bg-error/10 p-2 font-mono text-xs">
                     {previewError}
                   </pre>
@@ -606,7 +609,7 @@ function AppWorkspace() {
                     refine(`Fix this runtime error from the live preview:\n\n${previewError}`)
                   }
                 >
-                  Fix this error
+                  Fix this error · {cost.toFixed(2)}
                 </Button>
               </div>
             )}

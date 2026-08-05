@@ -220,19 +220,22 @@ function chunk<T>(items: T[], size: number): T[][] {
 }
 
 /**
- * secrets and versions don't cascade-delete with their parent app doc
- * (Firestore never does this automatically), and both subcollections' own
- * rules check ownership via a get() on the parent app doc — so deleting the
- * app first would leave any leftover secrets (real third-party API keys)
- * or version snapshots not just orphaned, but permanently unreadable and
- * undeletable afterward. Clear the subcollections first.
+ * secrets, versions, and collaborators don't cascade-delete with their
+ * parent app doc (Firestore never does this automatically), and secrets'
+ * and collaborators' own rules check ownership via a get() on the parent
+ * app doc — so deleting the app first would leave any leftover secrets
+ * (real third-party API keys) not just orphaned, but permanently unreadable
+ * and undeletable afterward. Clear the subcollections first.
  */
 export async function deleteApp(appId: string) {
-  const [secretsSnap, versionsSnap] = await Promise.all([
+  const [secretsSnap, versionsSnap, collaboratorsSnap] = await Promise.all([
     getDocs(collection(db, "apps", appId, "secrets")),
     getDocs(collection(db, "apps", appId, "versions")),
+    getDocs(collection(db, "apps", appId, "collaborators")),
   ]);
-  const subcollectionRefs = [...secretsSnap.docs, ...versionsSnap.docs].map((d) => d.ref);
+  const subcollectionRefs = [...secretsSnap.docs, ...versionsSnap.docs, ...collaboratorsSnap.docs].map(
+    (d) => d.ref
+  );
 
   for (const group of chunk(subcollectionRefs, BATCH_WRITE_LIMIT)) {
     const batch = writeBatch(db);

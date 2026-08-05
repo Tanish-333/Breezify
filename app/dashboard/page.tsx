@@ -320,7 +320,15 @@ function DashboardContent() {
                     {app.userId === user?.uid && (
                       <button
                         onClick={() => {
-                          if (confirm(`Delete "${app.name}"? This can't be undone.`)) {
+                          // Deleting only ever removes Breezify's own copy —
+                          // it never touches a linked GitHub repo (that's a
+                          // separate thing you own once pushed, not
+                          // Breezify's to delete). Without one, there's no
+                          // copy anywhere else once this is gone.
+                          const warning = app.githubUrl
+                            ? `Delete "${app.name}"? This can't be undone. Its GitHub repo stays untouched, but this app's history, deploy, and any custom domain on Breezify will be gone.`
+                            : `Delete "${app.name}"? This can't be undone, and it was never pushed to GitHub or downloaded — there's no copy of this code anywhere else.`;
+                          if (confirm(warning)) {
                             deleteApp(app.id).catch(() =>
                               alert("Couldn't delete this app. Please try again.")
                             );

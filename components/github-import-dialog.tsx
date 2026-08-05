@@ -28,7 +28,16 @@ async function authedFetch(path: string, idToken: string, body: unknown, signal?
     body: JSON.stringify(body),
     signal,
   });
-  const data = await res.json();
+  let data: any;
+  try {
+    data = await res.json();
+  } catch {
+    const err = new Error(`Something went wrong (${res.status}). Please try again in a moment.`) as Error & {
+      status: number;
+    };
+    err.status = res.status;
+    throw err;
+  }
   if (!res.ok) {
     const err = new Error(data.error || "Request failed.") as Error & { status: number };
     err.status = res.status;
