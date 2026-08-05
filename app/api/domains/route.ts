@@ -41,12 +41,35 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: message }, { status: 502 });
     }
 
+    // Attaching here always means "a domain I already own elsewhere" — a
+    // domain actually bought through Breezify is attached by the Stripe
+    // webhook instead (see app/api/stripe/webhook), which is the only place
+    // that legitimately sets domainPurchased/domainExpiresAt/domainAutoRenew.
+    // Without resetting them here, swapping in a different domain after a
+    // purchase (or after DELETE below already detached it) would leave this
+    // domain's record wrongly flagged as Breezify-purchased with another
+    // domain's stale expiry date.
+    const wasPurchased = Boolean(loaded.doc.fields.domainPurchased);
+    const stillSameDomain = loaded.doc.fields.customDomain === normalizedDomain;
+
     await commit(
       [
         updateWrite(
           `apps/${appId}`,
-          { customDomain: normalizedDomain, customDomainVerified: status.verified },
-          ["customDomain", "customDomainVerified"]
+          {
+            customDomain: normalizedDomain,
+            customDomainVerified: status.verified,
+            ...(wasPurchased && !stillSameDomain
+              ? { domainPurchased: false, domainExpiresAt: null, domainAutoRenew: false }
+              : {}),
+          },
+          [
+            "customDomain",
+            "customDomainVerified",
+            ...(wasPurchased && !stillSameDomain
+              ? ["domainPurchased", "domainExpiresAt", "domainAutoRenew"]
+              : []),
+          ]
         ),
       ],
       idToken
@@ -121,8 +144,25 @@ export async function DELETE(req: NextRequest) {
       }
     }
 
+    // Detaching doesn't cancel a real registration bought through Breezify —
+    // that domain is still registered and billed at the registrar regardless
+    // — but this app record shouldn't keep claiming ownership of a domain
+    // that's no longer attached to it, especially once a different domain
+    // might get attached here later (see the matching reset in POST above).
     await commit(
-      [updateWrite(`apps/${appId}`, { customDomain: null, customDomainVerified: false }, ["customDomain", "customDomainVerified"])],
+      [
+        updateWrite(
+          `apps/${appId}`,
+          {
+            customDomain: null,
+            customDomainVerified: false,
+            domainPurchased: false,
+            domainExpiresAt: null,
+            domainAutoRenew: false,
+          },
+          ["customDomain", "customDomainVerified", "domainPurchased", "domainExpiresAt", "domainAutoRenew"]
+        ),
+      ],
       idToken
     );
 
