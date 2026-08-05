@@ -66,6 +66,8 @@ function toApp(id: string, data: any): FeatherApp {
     deployedUrl: data.deployedUrl,
     githubUrl: data.githubUrl,
     subdomain: data.subdomain,
+    customDomain: data.customDomain,
+    customDomainVerified: data.customDomainVerified,
     errorMessage: data.errorMessage,
     visits: typeof data.visits === "number" ? data.visits : undefined,
     createdAt: toMillis(data.createdAt) ?? Date.now(),

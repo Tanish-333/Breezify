@@ -233,6 +233,9 @@ export const ANALYTICS_MIN_PLAN: PlanId = "pro";
 /** Lowest plan that can import an existing GitHub repo as a new app. */
 export const IMPORT_MIN_PLAN: PlanId = "plus";
 
+/** Lowest plan that can attach a custom domain to a deployed app. */
+export const CUSTOM_DOMAIN_MIN_PLAN: PlanId = "pro";
+
 /**
  * Deploys don't cost credits (they're a Vercel build/bandwidth cost, not an
  * AI cost), so without a separate cap a free account could redeploy
@@ -300,6 +303,8 @@ export interface FeatherApp {
   deployedUrl?: string;
   githubUrl?: string;
   subdomain?: string;
+  customDomain?: string;
+  customDomainVerified?: boolean;
   errorMessage?: string;
   createdAt: number;
   deployedAt?: number;

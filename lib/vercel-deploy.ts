@@ -150,3 +150,71 @@ export async function deployToVercel(
 
   throw new Error("The deployment is taking longer than expected. Check its status on Vercel directly.");
 }
+
+export interface DomainVerificationRecord {
+  type: string;
+  domain: string;
+  value: string;
+  reason: string;
+}
+
+export interface DomainStatus {
+  name: string;
+  verified: boolean;
+  verification?: DomainVerificationRecord[];
+}
+
+/**
+ * The Vercel project name a deployed app actually lives in. deployToVercel
+ * names the project after a slug computed from the app's name at deploy
+ * time — but the app's name can change later (a refine can rename it), so
+ * re-deriving that slug after the fact could land on a different project
+ * than the one that's actually live. Reading it back out of the deployed
+ * URL's own hostname is what the app is really running on right now,
+ * regardless of what it's since been renamed to.
+ */
+export function projectSlugFromDeployedUrl(deployedUrl: string): string | null {
+  try {
+    return new URL(deployedUrl).hostname.split(".")[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Attaches a custom domain to the Vercel project a specific app is
+ * deployed to. Returns Vercel's verification requirement (a DNS record to
+ * add) when the domain isn't already verified — which is the normal case
+ * for a domain nobody's pointed at Vercel yet.
+ */
+export async function addProjectDomain(projectSlug: string, domain: string): Promise<DomainStatus> {
+  const res = await vercelFetch(`/v10/projects/${encodeURIComponent(projectSlug)}/domains${scopeQuery()}`, {
+    method: "POST",
+    body: JSON.stringify({ name: domain }),
+  });
+  if (!res.ok) {
+    throw new Error(res.body?.error?.message || res.body?.message || "Couldn't add that domain.");
+  }
+  return { name: res.body.name, verified: Boolean(res.body.verified), verification: res.body.verification };
+}
+
+/** Re-checks a domain already attached to the project, e.g. after the caller has added the DNS record. */
+export async function getProjectDomainStatus(projectSlug: string, domain: string): Promise<DomainStatus> {
+  const res = await vercelFetch(
+    `/v9/projects/${encodeURIComponent(projectSlug)}/domains/${encodeURIComponent(domain)}${scopeQuery()}`
+  );
+  if (!res.ok) {
+    throw new Error(res.body?.error?.message || res.body?.message || "Couldn't check that domain's status.");
+  }
+  return { name: res.body.name, verified: Boolean(res.body.verified), verification: res.body.verification };
+}
+
+export async function removeProjectDomain(projectSlug: string, domain: string): Promise<void> {
+  const res = await vercelFetch(
+    `/v9/projects/${encodeURIComponent(projectSlug)}/domains/${encodeURIComponent(domain)}${scopeQuery()}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    throw new Error(res.body?.error?.message || res.body?.message || "Couldn't remove that domain.");
+  }
+}
