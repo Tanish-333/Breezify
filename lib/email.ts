@@ -43,6 +43,15 @@ export async function sendEmail({
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ from: fromAddress(), to, subject, html }),
+    // Every caller treats email as best-effort and wraps this in its own
+    // try/catch, but a fetch with no timeout can still hang indefinitely if
+    // Resend is slow or unreachable — and since some callers (e.g.
+    // app/api/feedback) await this before responding, that hang was
+    // silently blocking the whole request with no error ever surfacing,
+    // which looked exactly like "the button spins forever and never sends."
+    // Capping it here means the worst case is a bounded delay, not an
+    // indefinite one, regardless of what any given caller awaits.
+    signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) {
     const body = await res.text();
