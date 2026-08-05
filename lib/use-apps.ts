@@ -230,28 +230,13 @@ export async function deleteApp(appId: string) {
   await deleteDoc(doc(db, "apps", appId));
 }
 
-/**
- * Copies an app's prompt, model, and generated files into a brand new app,
- * with a clean history (no turns, no deploy/GitHub links carried over). No
- * AI call involved, so it costs nothing to offer as a plan perk.
- */
-export async function duplicateApp(app: FeatherApp, uid: string): Promise<string> {
-  const ref = doc(collection(db, "apps"));
-  await setDoc(ref, {
-    userId: uid,
-    name: `${app.name} (copy)`,
-    prompt: app.prompt,
-    model: app.model,
-    status: "ready",
-    summary: app.summary ?? "",
-    suggestions: [],
-    turns: [],
-    generatedCode: app.generatedCode ?? { files: {} },
-    createdAt: serverTimestamp(),
-    visits: 0,
-  });
-  return ref.id;
-}
+// Duplicating an app used to be a plain client-side Firestore write here,
+// gated only by the "Duplicate" button's own Pro+ check — firestore.rules'
+// apps/{appId} create rule only ever verified ownership, not plan, so that
+// was a paywall in the UI only, not an enforced one. Moved to
+// duplicateAppRequest() in lib/api-client.ts, which hits
+// app/api/apps/duplicate and checks the plan server-side like every other
+// paywalled action in this app.
 
 /**
  * Restores the file snapshot taken right after `versionTurnId`'s turn,

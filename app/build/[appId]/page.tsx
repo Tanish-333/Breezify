@@ -20,9 +20,9 @@ import { TurnCard } from "@/components/turn-card";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useApp, duplicateApp, revertToVersion } from "@/lib/use-apps";
+import { useApp, revertToVersion } from "@/lib/use-apps";
 import { useAuth } from "@/lib/auth-context";
-import { fetchModelAvailability, generateAppRequest } from "@/lib/api-client";
+import { fetchModelAvailability, generateAppRequest, duplicateAppRequest } from "@/lib/api-client";
 import {
   COLLABORATOR_MIN_PLAN,
   CUSTOM_DOMAIN_MIN_PLAN,
@@ -208,10 +208,10 @@ function AppWorkspace() {
     if (!app || !user) return;
     setDuplicating(true);
     try {
-      const newId = await duplicateApp(app, user.uid);
+      const newId = await duplicateAppRequest(app.id);
       router.push(`/build/${newId}`);
-    } catch {
-      setError("Couldn't duplicate this app.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Couldn't duplicate this app.");
       setDuplicating(false);
     }
   }

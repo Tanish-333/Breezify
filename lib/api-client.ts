@@ -103,3 +103,18 @@ export async function fetchModelAvailability(): Promise<Record<string, boolean>>
   const data = await res.json();
   return data.available ?? {};
 }
+
+/** Duplicates an app into a brand new one the caller owns — see app/api/apps/duplicate for the plan gate. */
+export async function duplicateAppRequest(appId: string): Promise<string> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You must be signed in.");
+  const idToken = await user.getIdToken();
+  const res = await fetch("/api/apps/duplicate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ appId }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Couldn't duplicate this app.");
+  return data.appId as string;
+}
