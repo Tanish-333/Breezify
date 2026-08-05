@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { commit, createWrite, getDoc } from "@/lib/firestore-rest";
+import { commit, createWrite, getDoc, listCollection } from "@/lib/firestore-rest";
 import { hasAppAccess } from "@/lib/app-collaborators";
 import { DUPLICATE_MIN_PLAN, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
 
@@ -60,6 +60,13 @@ export async function POST(req: NextRequest) {
     }
 
     const newAppId = crypto.randomUUID();
+    // A separate commit from the secrets copy below, not the same batch:
+    // secrets/{id}'s create rule does get(apps/{newAppId}).data.userId to
+    // check ownership (see firestore.rules), and within one commit that
+    // get() only ever sees pre-commit state — so if apps/{newAppId} were
+    // created in the same batch, it would still look like it doesn't exist
+    // yet and every secret write would be denied. Same reasoning as
+    // app/api/github/import's two-commit app+versions write.
     await commit(
       [
         createWrite(`apps/${newAppId}`, {
@@ -78,6 +85,34 @@ export async function POST(req: NextRequest) {
       ],
       idToken
     );
+
+    // Secrets are deliberately owner-only everywhere else (a collaborator
+    // never gets to read another owner's API keys — see
+    // lib/app-collaborators.ts and the deploy route's own secrets check),
+    // so only copy them when the OWNER is duplicating their own app, never
+    // when a collaborator duplicates an app they don't own: that would leak
+    // the real owner's key values into a new app the collaborator now
+    // fully controls. Best-effort — a generated app with no backend has no
+    // secrets to copy, and a failure here shouldn't undo the duplicate that
+    // already succeeded.
+    if (doc.fields.userId === uid) {
+      try {
+        const secretDocs = await listCollection(`apps/${appId}/secrets`, idToken);
+        const writes = secretDocs
+          .filter((s) => typeof s.fields.key === "string" && typeof s.fields.value === "string")
+          .map((s) =>
+            createWrite(`apps/${newAppId}/secrets/${crypto.randomUUID()}`, {
+              userId: uid,
+              key: s.fields.key,
+              value: s.fields.value,
+              createdAt: new Date(),
+            })
+          );
+        if (writes.length > 0) await commit(writes, idToken);
+      } catch (err) {
+        console.error(`[apps/duplicate] appId=${appId} newAppId=${newAppId} failed to copy secrets:`, err);
+      }
+    }
 
     return NextResponse.json({ appId: newAppId });
   } catch (err) {
