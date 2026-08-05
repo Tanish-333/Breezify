@@ -29,7 +29,7 @@ interface SubscriptionInfo {
 function BillingContent() {
   const { user, profile } = useAuth();
   const { transactions, loading } = useTransactions(user?.uid);
-  const lifetimeCreditsUsed = useLifetimeCreditsUsed(user?.uid);
+  const { total: lifetimeCreditsUsed, status: lifetimeCreditsStatus } = useLifetimeCreditsUsed(user?.uid);
   const searchParams = useSearchParams();
   const plan: PlanId = profile?.plan ?? "free";
 
@@ -39,6 +39,7 @@ function BillingContent() {
   const checkoutResult = searchParams.get("checkout");
 
   const [subscription, setSubscription] = useState<SubscriptionInfo | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
   const [subLoading, setSubLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
 
@@ -65,16 +66,23 @@ function BillingContent() {
   useEffect(() => {
     if (plan === "free" || !user) {
       setSubscription(null);
+      setCustomerId(null);
       return;
     }
     let cancelled = false;
     setSubLoading(true);
     authedFetch("/api/stripe/subscription")
       .then((data) => {
-        if (!cancelled) setSubscription(data.subscription ?? null);
+        if (!cancelled) {
+          setSubscription(data.subscription ?? null);
+          setCustomerId(data.customerId ?? null);
+        }
       })
       .catch(() => {
-        if (!cancelled) setSubscription(null);
+        if (!cancelled) {
+          setSubscription(null);
+          setCustomerId(null);
+        }
       })
       .finally(() => {
         if (!cancelled) setSubLoading(false);
@@ -170,9 +178,13 @@ function BillingContent() {
               Credits spent
             </p>
             <p className="text-3xl font-semibold tracking-tight">
-              {lifetimeCreditsUsed != null ? lifetimeCreditsUsed.toFixed(2) : "—"}
+              {lifetimeCreditsStatus === "error"
+                ? "Unavailable"
+                : lifetimeCreditsUsed != null
+                  ? lifetimeCreditsUsed.toFixed(2)
+                  : "—"}
             </p>
-            {plan !== "free" && (
+            {plan !== "free" && (subLoading || customerId) && (
               <Button size="sm" variant="secondary" onClick={openPortal} loading={portalLoading}>
                 Manage billing
               </Button>
@@ -185,7 +197,16 @@ function BillingContent() {
         <Card>
           <CardHeader>
             <CardTitle>Subscription</CardTitle>
-            <CardDescription>Auto-renew and cancellation, straight from Stripe.</CardDescription>
+            <CardDescription>
+              Auto-renew and cancellation, straight from Stripe.
+              {customerId && (
+                <>
+                  {" "}
+                  Stripe customer:{" "}
+                  <span className="font-mono text-foreground">{customerId}</span>
+                </>
+              )}
+            </CardDescription>
           </CardHeader>
           <CardContent>
             {subLoading ? (
@@ -233,14 +254,21 @@ function BillingContent() {
                   </Button>
                 )}
               </div>
-            ) : (
+            ) : customerId ? (
               <p className="text-sm text-muted-foreground">
-                No active Stripe subscription found for this plan. If you were upgraded manually,
-                use{" "}
+                No active subscription found for Stripe customer{" "}
+                <span className="font-mono text-foreground">{customerId}</span> — it may have
+                already been canceled.{" "}
                 <button type="button" onClick={openPortal} className="underline hover:text-foreground">
                   Manage billing
                 </button>{" "}
-                or contact support to set up billing.
+                to check.
+              </p>
+            ) : (
+              <p className="text-sm text-muted-foreground">
+                This {PLANS[plan]?.name ?? plan} plan wasn&apos;t set up through Stripe (no billing
+                customer on file), so there&apos;s no subscription to show or manage here — contact
+                support if you need to change or cancel it.
               </p>
             )}
           </CardContent>

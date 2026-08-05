@@ -72,13 +72,16 @@ export function useTransactions(uid: string | undefined, max = 50) {
  */
 export function useLifetimeCreditsUsed(uid: string | undefined) {
   const [total, setTotal] = useState<number | null>(null);
+  const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
 
   useEffect(() => {
     if (!uid) {
       setTotal(null);
+      setStatus("loading");
       return;
     }
     let cancelled = false;
+    setStatus("loading");
     const q = query(
       collection(db, "transactions"),
       where("userId", "==", uid),
@@ -86,15 +89,26 @@ export function useLifetimeCreditsUsed(uid: string | undefined) {
     );
     getAggregateFromServer(q, { creditsUsed: sum("creditsUsed") })
       .then((snap) => {
-        if (!cancelled) setTotal(snap.data().creditsUsed);
+        if (cancelled) return;
+        // Firestore's sum() returns 0 (not undefined) over an empty match
+        // set, so a genuine zero and "still loading" are never ambiguous
+        // once status flips to "ready".
+        setTotal(snap.data().creditsUsed ?? 0);
+        setStatus("ready");
       })
-      .catch(() => {
-        if (!cancelled) setTotal(null);
+      .catch((err) => {
+        if (cancelled) return;
+        // Surfaced so a real failure (e.g. a rules/index problem) shows up
+        // in the console instead of looking identical to "still loading"
+        // forever with no way to tell the two apart.
+        console.error("[use-transactions] lifetime credits aggregate failed:", err);
+        setTotal(null);
+        setStatus("error");
       });
     return () => {
       cancelled = true;
     };
   }, [uid]);
 
-  return total;
+  return { total, status };
 }

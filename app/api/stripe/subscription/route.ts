@@ -36,15 +36,19 @@ export async function POST(req: NextRequest) {
       typeof userDoc?.fields.stripeCustomerId === "string"
         ? (userDoc.fields.stripeCustomerId as string)
         : undefined;
+    // A Stripe customer id (cus_...) is just an identifier, not a secret —
+    // safe to hand back to the account that owns it, so the billing page can
+    // show plainly which Stripe customer (if any) this account maps to,
+    // instead of leaving that invisible until something breaks.
     if (!customerId) {
-      return NextResponse.json({ subscription: null });
+      return NextResponse.json({ subscription: null, customerId: null });
     }
 
     const stripe = getStripe();
     const subs = await stripe.subscriptions.list({ customer: customerId, status: "all", limit: 10 });
     const active = subs.data.find((s) => LIVE_STATUSES.has(s.status));
     if (!active) {
-      return NextResponse.json({ subscription: null });
+      return NextResponse.json({ subscription: null, customerId });
     }
 
     return NextResponse.json({
@@ -53,6 +57,7 @@ export async function POST(req: NextRequest) {
         cancelAtPeriodEnd: active.cancel_at_period_end,
         currentPeriodEnd: active.current_period_end,
       },
+      customerId,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to load subscription status.";
