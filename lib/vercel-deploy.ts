@@ -150,3 +150,179 @@ export async function deployToVercel(
 
   throw new Error("The deployment is taking longer than expected. Check its status on Vercel directly.");
 }
+
+export interface DomainVerificationRecord {
+  type: string;
+  domain: string;
+  value: string;
+  reason: string;
+}
+
+export interface DomainStatus {
+  name: string;
+  verified: boolean;
+  verification?: DomainVerificationRecord[];
+}
+
+/**
+ * The Vercel project name a deployed app actually lives in. deployToVercel
+ * names the project after a slug computed from the app's name at deploy
+ * time — but the app's name can change later (a refine can rename it), so
+ * re-deriving that slug after the fact could land on a different project
+ * than the one that's actually live. Reading it back out of the deployed
+ * URL's own hostname is what the app is really running on right now,
+ * regardless of what it's since been renamed to.
+ */
+export function projectSlugFromDeployedUrl(deployedUrl: string): string | null {
+  try {
+    return new URL(deployedUrl).hostname.split(".")[0] || null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Attaches a custom domain to the Vercel project a specific app is
+ * deployed to. Returns Vercel's verification requirement (a DNS record to
+ * add) when the domain isn't already verified — which is the normal case
+ * for a domain nobody's pointed at Vercel yet.
+ */
+export async function addProjectDomain(projectSlug: string, domain: string): Promise<DomainStatus> {
+  const res = await vercelFetch(`/v10/projects/${encodeURIComponent(projectSlug)}/domains${scopeQuery()}`, {
+    method: "POST",
+    body: JSON.stringify({ name: domain }),
+  });
+  if (!res.ok) {
+    throw new Error(res.body?.error?.message || res.body?.message || "Couldn't add that domain.");
+  }
+  return { name: res.body.name, verified: Boolean(res.body.verified), verification: res.body.verification };
+}
+
+/** Re-checks a domain already attached to the project, e.g. after the caller has added the DNS record. */
+export async function getProjectDomainStatus(projectSlug: string, domain: string): Promise<DomainStatus> {
+  const res = await vercelFetch(
+    `/v9/projects/${encodeURIComponent(projectSlug)}/domains/${encodeURIComponent(domain)}${scopeQuery()}`
+  );
+  if (!res.ok) {
+    throw new Error(res.body?.error?.message || res.body?.message || "Couldn't check that domain's status.");
+  }
+  return { name: res.body.name, verified: Boolean(res.body.verified), verification: res.body.verification };
+}
+
+export async function removeProjectDomain(projectSlug: string, domain: string): Promise<void> {
+  const res = await vercelFetch(
+    `/v9/projects/${encodeURIComponent(projectSlug)}/domains/${encodeURIComponent(domain)}${scopeQuery()}`,
+    { method: "DELETE" }
+  );
+  if (!res.ok) {
+    throw new Error(res.body?.error?.message || res.body?.message || "Couldn't remove that domain.");
+  }
+}
+
+function withTeam(path: string, params: Record<string, string | number | undefined> = {}) {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined) sp.set(k, String(v));
+  }
+  if (process.env.VERCEL_TEAM_ID) sp.set("teamId", process.env.VERCEL_TEAM_ID);
+  const qs = sp.toString();
+  return qs ? `${path}?${qs}` : path;
+}
+
+/** Registrar (buy-a-domain) contact — Vercel requires the full set on purchase, none of it optional. */
+export interface DomainContact {
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  address1: string;
+  address2?: string;
+  city: string;
+  state: string;
+  zip: string;
+  country: string;
+  companyName?: string;
+}
+
+export async function checkDomainAvailability(domain: string): Promise<boolean> {
+  const res = await vercelFetch(withTeam(`/v1/registrar/domains/${encodeURIComponent(domain)}/availability`));
+  if (!res.ok) {
+    throw new Error(res.body?.error?.message || res.body?.message || "Couldn't check that domain's availability.");
+  }
+  return Boolean(res.body.available);
+}
+
+/** Vercel's own registrar price (wholesale), before Breezify's markup — see markedUpDomainPrice() in lib/types.ts. */
+export async function getDomainPrice(domain: string, years = 1): Promise<{ years: number; purchasePrice: number }> {
+  const res = await vercelFetch(withTeam(`/v1/registrar/domains/${encodeURIComponent(domain)}/price`, { years }));
+  if (!res.ok) {
+    throw new Error(res.body?.error?.message || res.body?.message || "Couldn't price that domain.");
+  }
+  const price = Number(res.body.purchasePrice);
+  if (!Number.isFinite(price)) {
+    throw new Error("Vercel didn't return a usable price for that domain.");
+  }
+  return { years: res.body.years ?? years, purchasePrice: price };
+}
+
+/**
+ * Registers a domain through Vercel's registrar. `expectedPrice` must match
+ * Vercel's own current price (from getDomainPrice, in Vercel's wholesale
+ * terms, NOT whatever Breezify charged the customer) — Vercel rejects the
+ * order if it's drifted. Purchase is asynchronous: this returns an order ID
+ * to poll via getDomainOrderStatus, not a confirmed registration.
+ */
+export async function purchaseDomainOnVercel(
+  domain: string,
+  years: number,
+  expectedPrice: number,
+  contact: DomainContact,
+  autoRenew: boolean
+): Promise<string> {
+  const res = await vercelFetch(withTeam(`/v1/registrar/domains/${encodeURIComponent(domain)}/buy`), {
+    method: "POST",
+    body: JSON.stringify({
+      autoRenew,
+      years,
+      expectedPrice,
+      contactInformation: {
+        firstName: contact.firstName,
+        lastName: contact.lastName,
+        email: contact.email,
+        phone: contact.phone,
+        address1: contact.address1,
+        address2: contact.address2,
+        city: contact.city,
+        state: contact.state,
+        zip: contact.zip,
+        country: contact.country,
+        companyName: contact.companyName,
+      },
+    }),
+  });
+  if (!res.ok) {
+    throw new Error(res.body?.error?.message || res.body?.message || "Couldn't purchase that domain.");
+  }
+  const orderId = res.body.orderId as string | undefined;
+  if (!orderId) {
+    throw new Error("Vercel didn't return an order ID for the purchase.");
+  }
+  return orderId;
+}
+
+export interface DomainOrderStatus {
+  status: "draft" | "purchasing" | "completed" | "failed";
+  error?: string;
+}
+
+export async function getDomainOrderStatus(orderId: string): Promise<DomainOrderStatus> {
+  const res = await vercelFetch(withTeam(`/v1/registrar/orders/${encodeURIComponent(orderId)}`));
+  if (!res.ok) {
+    throw new Error(res.body?.error?.message || res.body?.message || "Couldn't check that order's status.");
+  }
+  const firstDomainError = Array.isArray(res.body.domains) ? res.body.domains[0]?.error : undefined;
+  return {
+    status: res.body.status,
+    error: firstDomainError ? String(firstDomainError) : res.body.error?.message,
+  };
+}

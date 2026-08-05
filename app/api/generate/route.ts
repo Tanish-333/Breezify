@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { NextRequest } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, createWrite, getDoc, incrementWrite, updateWrite } from "@/lib/firestore-rest";
+import { hasAppAccess } from "@/lib/app-collaborators";
 import { generateApp, isModelAvailable, refineApp } from "@/lib/generation";
 import { checkClarity } from "@/lib/generation/clarify";
 import {
@@ -138,6 +139,7 @@ export async function POST(req: NextRequest) {
   // For a refine, load the existing app up front so ownership and file
   // availability fail fast, before any credits are involved.
   let existing: {
+    ownerUid: string;
     prompt: string;
     files: Record<string, string>;
     createdAt: unknown;
@@ -152,13 +154,17 @@ export async function POST(req: NextRequest) {
       return errorStream("Couldn't load that app. Please try again.");
     }
     if (!doc) return errorStream("App not found.");
-    if (doc.fields.userId !== uid) return errorStream("You don't have access to this app.");
+    const ownerUid = doc.fields.userId as string;
+    if (!(await hasAppAccess(refineAppId, ownerUid, uid, idToken))) {
+      return errorStream("You don't have access to this app.");
+    }
     const files =
       (doc.fields.generatedCode as { files?: Record<string, string> } | undefined)?.files ?? {};
     if (Object.keys(files).length === 0) {
       return errorStream("This app has no files to refine yet.");
     }
     existing = {
+      ownerUid,
       prompt: (doc.fields.prompt as string) ?? "",
       files,
       createdAt: doc.fields.createdAt,
@@ -273,7 +279,12 @@ export async function POST(req: NextRequest) {
         await commit(
           [
             updateWrite(appPath, {
-              userId: uid,
+              // A refine must never move ownership of the app to whichever
+              // collaborator happened to run it — firestore.rules rejects an
+              // apps/{appId} update that changes userId, so writing the
+              // caller's uid here didn't just mis-attribute ownership, it
+              // made every refine done by a collaborator fail outright.
+              userId: existing ? existing.ownerUid : uid,
               name: result.appName,
               // A refine keeps the original brief; the instruction is not the prompt.
               prompt: existing ? existing.prompt : prompt,

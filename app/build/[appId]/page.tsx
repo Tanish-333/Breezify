@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { doc, updateDoc } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { AppShell } from "@/components/app-shell";
@@ -14,6 +14,8 @@ import { GenerationProgress } from "@/components/generation-progress";
 import { GithubPushDialog } from "@/components/github-push-dialog";
 import { GithubSyncDialog } from "@/components/github-sync-dialog";
 import { AppSecretsDialog } from "@/components/app-secrets-dialog";
+import { CustomDomainDialog } from "@/components/custom-domain-dialog";
+import { CollaboratorsDialog } from "@/components/collaborators-dialog";
 import { TurnCard } from "@/components/turn-card";
 import { StatusBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -22,6 +24,8 @@ import { useApp, duplicateApp, revertToVersion } from "@/lib/use-apps";
 import { useAuth } from "@/lib/auth-context";
 import { fetchModelAvailability, generateAppRequest } from "@/lib/api-client";
 import {
+  COLLABORATOR_MIN_PLAN,
+  CUSTOM_DOMAIN_MIN_PLAN,
   DUPLICATE_MIN_PLAN,
   IMPORT_MIN_PLAN,
   MODEL_INFO,
@@ -41,12 +45,14 @@ import {
   Copy,
   Eye,
   ExternalLink,
+  Globe,
   KeyRound,
   Loader2,
   Lock,
   Pencil,
   RefreshCw,
   Rocket,
+  Users,
   X,
 } from "lucide-react";
 
@@ -54,6 +60,8 @@ type Pane = "preview" | "code";
 
 function AppWorkspace() {
   const params = useParams<{ appId: string }>();
+  const searchParams = useSearchParams();
+  const domainCheckout = searchParams.get("domain");
   const router = useRouter();
   const { app, loading } = useApp(params.appId);
   const { user, profile, refreshProfile } = useAuth();
@@ -62,6 +70,9 @@ function AppWorkspace() {
   // GitHub sync shares Push/Import's Plus-and-up gate (also enforced
   // server-side in app/api/github/sync).
   const canSyncGithub = PLAN_RANK[plan] >= PLAN_RANK[IMPORT_MIN_PLAN];
+  const canCustomDomain = PLAN_RANK[plan] >= PLAN_RANK[CUSTOM_DOMAIN_MIN_PLAN];
+  const isOwner = app?.userId === user?.uid;
+  const canInviteCollaborators = PLAN_RANK[plan] >= PLAN_RANK[COLLABORATOR_MIN_PLAN];
 
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<ModelId>("haiku");
@@ -73,6 +84,8 @@ function AppWorkspace() {
   const [showGithub, setShowGithub] = useState(false);
   const [showSync, setShowSync] = useState(false);
   const [showSecrets, setShowSecrets] = useState(false);
+  const [showDomain, setShowDomain] = useState(false);
+  const [showCollaborators, setShowCollaborators] = useState(false);
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState("");
   const [duplicating, setDuplicating] = useState(false);
@@ -356,11 +369,55 @@ function AppWorkspace() {
               </Link>
             ))}
 
-          {hasFiles && (
+          {hasFiles && isOwner && (
             <Button variant="ghost" size="sm" onClick={() => setShowSecrets(true)}>
               <KeyRound className="h-4 w-4" />
               <span className="hidden sm:inline">Secrets</span>
             </Button>
+          )}
+
+          {hasFiles && (
+            !isOwner || canInviteCollaborators ? (
+              <Button variant="ghost" size="sm" onClick={() => setShowCollaborators(true)}>
+                <Users className="h-4 w-4" />
+                <span className="hidden sm:inline">Team</span>
+              </Button>
+            ) : (
+              <Link href="/billing" title="Upgrade to Plus to invite collaborators">
+                <Button variant="ghost" size="sm">
+                  <span className="relative inline-flex">
+                    <Users className="h-4 w-4" />
+                    <Lock
+                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
+                      strokeWidth={3}
+                    />
+                  </span>
+                  <span className="hidden sm:inline">Team</span>
+                </Button>
+              </Link>
+            )
+          )}
+
+          {hasFiles && isOwner && app.deployedUrl && (
+            canCustomDomain ? (
+              <Button variant="ghost" size="sm" onClick={() => setShowDomain(true)}>
+                <Globe className="h-4 w-4" />
+                <span className="hidden sm:inline">Domain</span>
+              </Button>
+            ) : (
+              <Link href="/billing" title="Upgrade to Pro to attach a custom domain">
+                <Button variant="ghost" size="sm">
+                  <span className="relative inline-flex">
+                    <Globe className="h-4 w-4" />
+                    <Lock
+                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
+                      strokeWidth={3}
+                    />
+                  </span>
+                  <span className="hidden sm:inline">Domain</span>
+                </Button>
+              </Link>
+            )
           )}
 
           {hasFiles && (
@@ -437,6 +494,22 @@ function AppWorkspace() {
               <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{deployError}</span>
+              </div>
+            )}
+
+            {domainCheckout === "purchased" && (
+              <div className="flex items-start gap-2 rounded-lg border border-success/30 bg-success/5 p-3 text-sm text-success">
+                <Check className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  Payment received — registering your domain and attaching it to this app. This can
+                  take a minute; open the Domain panel to check status.
+                </span>
+              </div>
+            )}
+            {domainCheckout === "canceled" && (
+              <div className="flex items-start gap-2 rounded-lg border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>Domain purchase canceled — you weren&apos;t charged.</span>
               </div>
             )}
           </div>
@@ -528,6 +601,18 @@ function AppWorkspace() {
       )}
 
       {showSecrets && <AppSecretsDialog appId={app.id} onClose={() => setShowSecrets(false)} />}
+
+      {showDomain && (
+        <CustomDomainDialog
+          appId={app.id}
+          currentDomain={app.customDomain}
+          onClose={() => setShowDomain(false)}
+        />
+      )}
+
+      {showCollaborators && (
+        <CollaboratorsDialog appId={app.id} isOwner={isOwner} onClose={() => setShowCollaborators(false)} />
+      )}
     </div>
   );
 }

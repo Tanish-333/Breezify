@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   collection,
+  collectionGroup,
   deleteDoc,
   doc,
   getDoc,
@@ -66,6 +67,11 @@ function toApp(id: string, data: any): FeatherApp {
     deployedUrl: data.deployedUrl,
     githubUrl: data.githubUrl,
     subdomain: data.subdomain,
+    customDomain: data.customDomain,
+    customDomainVerified: data.customDomainVerified,
+    domainPurchased: data.domainPurchased,
+    domainExpiresAt: toMillis(data.domainExpiresAt),
+    domainAutoRenew: data.domainAutoRenew,
     errorMessage: data.errorMessage,
     visits: typeof data.visits === "number" ? data.visits : undefined,
     createdAt: toMillis(data.createdAt) ?? Date.now(),
@@ -105,6 +111,87 @@ export function useUserApps(uid: string | undefined) {
       }
     );
     return () => unsub();
+  }, [uid]);
+
+  return { apps, loading };
+}
+
+/**
+ * Apps the current user has been invited to collaborate on, not apps they
+ * own — see apps/{appId}/collaborators/{uid} in firestore.rules. A
+ * collection-group query filtered to documents whose own ID is this uid
+ * finds every "membership" doc across all apps, then each matching app is
+ * watched individually so the list stays live as membership or the app
+ * itself changes.
+ */
+export function useCollaboratingApps(uid: string | undefined) {
+  const [apps, setApps] = useState<FeatherApp[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!uid) {
+      setApps([]);
+      setLoading(false);
+      return;
+    }
+    const appDocs = new Map<string, FeatherApp>();
+    const appUnsubs = new Map<string, () => void>();
+
+    function publish() {
+      setApps(Array.from(appDocs.values()));
+    }
+
+    // Filtering on the "uid" field, not documentId(): a collectionGroup
+    // query's documentId() equality requires a full document path, and a
+    // bare uid is a 1-segment (odd) path, so `where(documentId(), "==", uid)`
+    // throws "invalid document path" as soon as the query is built. See the
+    // collaborators POST route, which duplicates the doc ID into this field
+    // for exactly this reason.
+    const q = query(collectionGroup(db, "collaborators"), where("uid", "==", uid));
+    const unsubMemberships = onSnapshot(
+      q,
+      (snap) => {
+        const currentAppIds = new Set(snap.docs.map((d) => d.ref.parent.parent!.id));
+
+        for (const [appId, unsub] of appUnsubs) {
+          if (!currentAppIds.has(appId)) {
+            unsub();
+            appUnsubs.delete(appId);
+            appDocs.delete(appId);
+          }
+        }
+
+        for (const appId of currentAppIds) {
+          if (appUnsubs.has(appId)) continue;
+          const unsub = onSnapshot(
+            doc(db, "apps", appId),
+            (appSnap) => {
+              if (appSnap.exists()) {
+                appDocs.set(appId, toApp(appSnap.id, appSnap.data()));
+              } else {
+                appDocs.delete(appId);
+              }
+              publish();
+            },
+            (err) => logListenerError("useCollaboratingApps:app", err)
+          );
+          appUnsubs.set(appId, unsub);
+        }
+
+        setLoading(false);
+        publish();
+      },
+      (err) => {
+        logListenerError("useCollaboratingApps", err);
+        setApps([]);
+        setLoading(false);
+      }
+    );
+
+    return () => {
+      unsubMemberships();
+      for (const unsub of appUnsubs.values()) unsub();
+    };
   }, [uid]);
 
   return { apps, loading };

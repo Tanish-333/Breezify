@@ -233,6 +233,37 @@ export const ANALYTICS_MIN_PLAN: PlanId = "pro";
 /** Lowest plan that can import an existing GitHub repo as a new app. */
 export const IMPORT_MIN_PLAN: PlanId = "plus";
 
+/** Lowest plan that can attach a custom domain to a deployed app. */
+export const CUSTOM_DOMAIN_MIN_PLAN: PlanId = "pro";
+
+/**
+ * Markup over Vercel's own wholesale registrar price when a user buys a new
+ * domain through Breezify (see app/api/domains/purchase). Covers Stripe's
+ * processing fee and the risk of a domain going unpurchased-but-non-
+ * refundable if something fails after Vercel is charged.
+ */
+export const DOMAIN_PRICE_MARKUP = 1.2;
+
+export function markedUpDomainPrice(wholesalePrice: number): number {
+  return Math.round(wholesalePrice * DOMAIN_PRICE_MARKUP * 100) / 100;
+}
+
+/** Lowest plan that can invite collaborators onto an app. */
+export const COLLABORATOR_MIN_PLAN: PlanId = "plus";
+
+/**
+ * Collaborators work on a shared app using their OWN credits, plan-gated
+ * model access, and (for GitHub push/sync) their own connected GitHub
+ * account — there's no pooled team billing yet, each person just brings
+ * their own. This cap only limits how many people can be invited at once.
+ */
+export const MAX_COLLABORATORS: Record<PlanId, number> = {
+  free: 0,
+  plus: 5,
+  pro: 15,
+  max: 50,
+};
+
 /**
  * Deploys don't cost credits (they're a Vercel build/bandwidth cost, not an
  * AI cost), so without a separate cap a free account could redeploy
@@ -300,6 +331,13 @@ export interface FeatherApp {
   deployedUrl?: string;
   githubUrl?: string;
   subdomain?: string;
+  customDomain?: string;
+  customDomainVerified?: boolean;
+  /** True when this domain was bought through Breezify (see app/api/domains/purchase), not brought by the user. */
+  domainPurchased?: boolean;
+  domainExpiresAt?: number;
+  /** Always false today — purchased domains don't auto-renew yet, see app/api/stripe/webhook. */
+  domainAutoRenew?: boolean;
   errorMessage?: string;
   createdAt: number;
   deployedAt?: number;
