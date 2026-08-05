@@ -22,6 +22,7 @@ const KIND_LABEL: Record<AppTurn["kind"], string> = {
   refine: "Applied your change",
   revert: "Reverted to an earlier version",
   sync: "Synced from GitHub",
+  edit: "Edited directly",
 };
 
 export function TurnCard({

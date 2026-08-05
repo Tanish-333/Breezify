@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import Editor from "@monaco-editor/react";
 import { cn } from "@/lib/utils";
@@ -8,6 +8,7 @@ import { downloadZip } from "@/lib/zip";
 import { withWatermark } from "@/lib/watermark";
 import { Button } from "@/components/ui/button";
 import {
+  AlertCircle,
   Check,
   ChevronRight,
   Copy,
@@ -19,6 +20,8 @@ import {
   Folder,
   Loader2,
   Lock,
+  Save,
+  Undo2,
 } from "lucide-react";
 
 function languageFor(path: string) {
@@ -156,22 +159,60 @@ export function CodePreview({
   appName = "app",
   streamingPaths,
   locked = false,
+  editable = false,
+  onSave,
 }: {
   files: Record<string, string>;
   appName?: string;
   streamingPaths?: Set<string>;
   /** Viewing, copying, and exporting code is a Plus-and-up feature. */
   locked?: boolean;
+  /** Lets the active file be hand-edited directly, saved as a new "edit" turn. Same plan gate as viewing (see `locked`) — pass alongside `onSave`. */
+  editable?: boolean;
+  onSave?: (files: Record<string, string>) => Promise<void>;
 }) {
   const paths = useMemo(() => Object.keys(files).sort(), [files]);
   const [active, setActive] = useState(paths[0] ?? "");
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState(false);
+  // Keyed by path, only ever holds files that actually differ from `files`.
+  const [pendingEdits, setPendingEdits] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState("");
 
   const tree = useMemo(() => buildTree(paths), [paths]);
 
+  // A fresh generation/refine/revert landed — anything edited against the
+  // old file set no longer applies cleanly to the new one, and silently
+  // keeping it around risks saving a hand edit over AI-written changes the
+  // user hasn't even seen yet.
+  useEffect(() => {
+    setPendingEdits({});
+    setSaveError("");
+  }, [files]);
+
   // The first file can arrive after mount while streaming.
   const activePath = active && files[active] !== undefined ? active : paths[0] ?? "";
+  const dirtyCount = Object.keys(pendingEdits).length;
+
+  async function saveEdits() {
+    if (!onSave || dirtyCount === 0) return;
+    setSaving(true);
+    setSaveError("");
+    try {
+      await onSave({ ...files, ...pendingEdits });
+      setPendingEdits({});
+    } catch (err) {
+      setSaveError(err instanceof Error ? err.message : "Couldn't save your changes.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function discardEdits() {
+    setPendingEdits({});
+    setSaveError("");
+  }
 
   function toggle(path: string) {
     setCollapsed((prev) => {
@@ -185,7 +226,7 @@ export function CodePreview({
   async function copyActive() {
     if (!activePath) return;
     try {
-      await navigator.clipboard.writeText(files[activePath] ?? "");
+      await navigator.clipboard.writeText(pendingEdits[activePath] ?? files[activePath] ?? "");
       setCopied(true);
       setTimeout(() => setCopied(false), 1600);
     } catch {
@@ -230,6 +271,21 @@ export function CodePreview({
           <span>{totalLines.toLocaleString()} lines</span>
         </div>
         <div className="flex items-center gap-2">
+          {editable && dirtyCount > 0 && (
+            <>
+              <span className="text-xs text-warning">
+                {dirtyCount} file{dirtyCount > 1 ? "s" : ""} unsaved
+              </span>
+              <Button variant="ghost" size="sm" onClick={discardEdits} disabled={saving}>
+                <Undo2 className="h-3.5 w-3.5" />
+                Discard
+              </Button>
+              <Button size="sm" onClick={saveEdits} loading={saving}>
+                <Save className="h-3.5 w-3.5" />
+                Save changes
+              </Button>
+            </>
+          )}
           <Button variant="ghost" size="sm" onClick={copyActive} disabled={!activePath}>
             {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
             {copied ? "Copied" : "Copy file"}
@@ -237,13 +293,20 @@ export function CodePreview({
           <Button
             variant="secondary"
             size="sm"
-            onClick={() => downloadZip(withWatermark(files, false), appName)}
+            onClick={() => downloadZip(withWatermark({ ...files, ...pendingEdits }, false), appName)}
           >
             <Download className="h-3.5 w-3.5" />
             Download ZIP
           </Button>
         </div>
       </div>
+
+      {saveError && (
+        <div className="flex items-start gap-2 border-b border-error/30 bg-error/5 px-4 py-2.5 text-sm text-error">
+          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{saveError}</span>
+        </div>
+      )}
 
       <div className="grid h-[560px] grid-cols-1 sm:grid-cols-[240px_1fr]">
         <div className="overflow-y-auto border-b border-border bg-muted/20 py-1 sm:border-b-0 sm:border-r">
@@ -265,10 +328,29 @@ export function CodePreview({
             <Editor
               path={activePath}
               language={languageFor(activePath)}
-              value={files[activePath]}
+              value={pendingEdits[activePath] ?? files[activePath]}
+              onChange={
+                editable
+                  ? (value) => {
+                      const next = value ?? "";
+                      setPendingEdits((prev) => {
+                        // Editing back to exactly the original content drops
+                        // it from pendingEdits rather than saving a no-op
+                        // "change" — keeps dirtyCount (and the save button)
+                        // honest about whether there's anything to save.
+                        if (next === files[activePath]) {
+                          if (!(activePath in prev)) return prev;
+                          const { [activePath]: _drop, ...rest } = prev;
+                          return rest;
+                        }
+                        return { ...prev, [activePath]: next };
+                      });
+                    }
+                  : undefined
+              }
               theme="vs-dark"
               options={{
-                readOnly: true,
+                readOnly: !editable,
                 minimap: { enabled: false },
                 fontSize: 13,
                 scrollBeyondLastLine: false,

@@ -178,6 +178,13 @@ function fail(message) {
   el.id = "feather-preview-error";
   el.textContent = "Preview error\\n\\n" + message;
   document.body.appendChild(el);
+  // Sandbox omits allow-same-origin (see AppPreview's own comment on why),
+  // so the parent page can't read this iframe's DOM directly — postMessage
+  // is the one channel that still works across an opaque-origin boundary,
+  // and is what lets the parent offer a one-click "Fix this error" refine.
+  try {
+    window.parent.postMessage({ source: "breezify-preview", type: "error", message: message }, "*");
+  } catch (e) {}
 }
 
 function dirname(p) { const i = p.lastIndexOf("/"); return i === -1 ? "" : p.slice(0, i); }

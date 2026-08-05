@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { buildPreview } from "@/lib/preview";
 import { Button } from "@/components/ui/button";
 import { Monitor, RefreshCw, Smartphone, TriangleAlert } from "lucide-react";
@@ -11,14 +11,20 @@ type Viewport = "desktop" | "mobile";
 export function AppPreview({
   files,
   removeBadge = false,
+  onError,
+  onReload,
 }: {
   files: Record<string, string>;
   /** Paid plans preview clean; free stays badged. */
   removeBadge?: boolean;
+  /** Fires when the preview iframe reports an uncaught error or rejection — see lib/preview.ts's injected window error handlers, which postMessage it out since the sandboxed iframe's DOM isn't otherwise reachable from here. */
+  onError?: (message: string) => void;
+  onReload?: () => void;
 }) {
   const [viewport, setViewport] = useState<Viewport>("desktop");
   // Bumping this remounts the iframe, which is the simplest reliable reload.
   const [nonce, setNonce] = useState(0);
+  const iframeRef = useRef<HTMLIFrameElement>(null);
 
   const appUrl =
     process.env.NEXT_PUBLIC_APP_URL ||
@@ -28,6 +34,24 @@ export function AppPreview({
     () => buildPreview(files, appUrl, !removeBadge),
     [files, appUrl, removeBadge]
   );
+
+  useEffect(() => {
+    if (!onError) return;
+    const handleError = onError;
+    function onMessage(event: MessageEvent) {
+      // Only trust messages from this exact iframe, not any other frame/tab
+      // that happens to postMessage this window — contentWindow is still a
+      // valid reference to compare even though the iframe's opaque origin
+      // (no allow-same-origin) blocks reading anything else about it.
+      if (event.source !== iframeRef.current?.contentWindow) return;
+      const data = event.data;
+      if (data && data.source === "breezify-preview" && data.type === "error" && typeof data.message === "string") {
+        handleError(data.message);
+      }
+    }
+    window.addEventListener("message", onMessage);
+    return () => window.removeEventListener("message", onMessage);
+  }, [onError]);
 
   if (result.kind === "unsupported") {
     return (
@@ -70,7 +94,14 @@ export function AppPreview({
             <Smartphone className="h-3.5 w-3.5" />
           </button>
         </div>
-        <Button variant="ghost" size="sm" onClick={() => setNonce((n) => n + 1)}>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setNonce((n) => n + 1);
+            onReload?.();
+          }}
+        >
           <RefreshCw className="h-3.5 w-3.5" />
           Reload
         </Button>
@@ -78,6 +109,7 @@ export function AppPreview({
 
       <div className="flex flex-1 justify-center overflow-auto bg-muted/20 p-3">
         <iframe
+          ref={iframeRef}
           key={nonce}
           title="App preview"
           // allow-same-origin is deliberately omitted: combined with

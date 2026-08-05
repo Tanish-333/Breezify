@@ -334,9 +334,10 @@ export interface AppTurn {
   /**
    * "build" is the original generation, "refine" is a follow-up change,
    * "revert" restores an earlier version and costs nothing (no AI call),
-   * "sync" pulls the latest commit from the linked GitHub repo.
+   * "sync" pulls the latest commit from the linked GitHub repo, "edit" is a
+   * hand edit made directly in the code panel (also free, no AI call).
    */
-  kind: "build" | "refine" | "revert" | "sync";
+  kind: "build" | "refine" | "revert" | "sync" | "edit";
   /** The user's words for this turn. */
   instruction: string;
   /** What the model says it did. */

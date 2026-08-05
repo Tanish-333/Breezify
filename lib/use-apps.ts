@@ -17,7 +17,7 @@ import {
   where,
   writeBatch,
 } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
 import { logClientError } from "@/lib/client-error-log";
 import type { AppSecret, AppTurn, FeatherApp } from "@/lib/types";
 
@@ -287,7 +287,54 @@ export async function revertToVersion(app: FeatherApp, versionTurnId: string): P
       turns: [...preservedTurns, newTurn],
     }),
     setDoc(doc(db, "apps", app.id, "versions", newTurn.id), {
-      userId: app.userId,
+      // The version doc's own userId must be the actual writer's uid, not
+      // the app's owner: firestore.rules' versions/{turnId} create rule
+      // checks isOwner(request.resource.data.userId), i.e. that the field
+      // matches request.auth.uid — deliberately not routed through a get()
+      // on the parent app doc (see that rule's own comment on why). Stamping
+      // app.userId here instead meant a COLLABORATOR reverting (this isn't
+      // owner-gated in the UI — see the onRevert wiring in
+      // app/build/[appId]/page.tsx) always failed this create with
+      // permission-denied, since request.auth.uid (the collaborator) never
+      // equals app.userId (the owner). The generatedCode/turns update above
+      // isn't atomic with this write, so that failure didn't even undo the
+      // revert — it silently applied while the whole revertToVersion() call
+      // still threw and told the user it hadn't worked.
+      userId: auth.currentUser?.uid ?? app.userId,
+      files,
+      createdAt: new Date(),
+    }),
+  ]);
+}
+
+/**
+ * Persists a hand-edited file set as a new "edit" turn, the same shape as
+ * every other change (build/refine/revert/sync) so it shows up in history
+ * and can itself be reverted from later. No AI call, so it's free — see
+ * the editable Monaco editor in components/code-preview.tsx this powers.
+ */
+export async function saveManualEdit(app: FeatherApp, files: Record<string, string>): Promise<void> {
+  const preservedTurns = (app.turns ?? []).map((t) => ({
+    ...t,
+    createdAt: new Date(t.createdAt),
+  }));
+  const newTurn: Omit<AppTurn, "createdAt"> & { createdAt: Date } = {
+    id: crypto.randomUUID(),
+    kind: "edit",
+    instruction: "Manually edited code",
+    summary: "Files were edited directly in the code panel. Nothing was charged.",
+    model: app.model,
+    fileCount: Object.keys(files).length,
+    createdAt: new Date(),
+  };
+
+  await Promise.all([
+    updateDoc(doc(db, "apps", app.id), {
+      generatedCode: { files },
+      turns: [...preservedTurns, newTurn],
+    }),
+    setDoc(doc(db, "apps", app.id, "versions", newTurn.id), {
+      userId: auth.currentUser?.uid ?? app.userId,
       files,
       createdAt: new Date(),
     }),

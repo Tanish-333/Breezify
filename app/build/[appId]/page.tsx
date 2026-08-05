@@ -20,7 +20,7 @@ import { TurnCard } from "@/components/turn-card";
 import { StatusBadge, DeployBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useApp, useAppSecrets, revertToVersion } from "@/lib/use-apps";
+import { useApp, useAppSecrets, revertToVersion, saveManualEdit } from "@/lib/use-apps";
 import { usePresence } from "@/lib/use-presence";
 import { missingEnvVars } from "@/lib/backend-env";
 import { useAuth } from "@/lib/auth-context";
@@ -100,6 +100,7 @@ function AppWorkspace() {
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [pane, setPane] = useState<Pane>("preview");
+  const [previewError, setPreviewError] = useState<string | null>(null);
   const conversationRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -117,6 +118,13 @@ function AppWorkspace() {
       behavior: "smooth",
     });
   }, [app?.turns?.length, refining]);
+
+  // A new turn means new file content, which the previous preview error may
+  // no longer even apply to (it could already be fixed, or the error could
+  // be about code that no longer exists).
+  useEffect(() => {
+    setPreviewError(null);
+  }, [app?.turns?.length]);
 
   if (loading) {
     return (
@@ -244,6 +252,11 @@ function AppWorkspace() {
     } finally {
       setReverting(null);
     }
+  }
+
+  async function saveEdit(editedFiles: Record<string, string>) {
+    if (!app) throw new Error("App not loaded yet.");
+    await saveManualEdit(app, editedFiles);
   }
 
   return (
@@ -572,6 +585,30 @@ function AppWorkspace() {
               </div>
             )}
 
+            {previewError && (
+              <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p>The live preview hit a runtime error.</p>
+                  <pre className="mt-1.5 max-h-24 overflow-y-auto whitespace-pre-wrap break-words rounded bg-error/10 p-2 font-mono text-xs">
+                    {previewError}
+                  </pre>
+                </div>
+                <Button
+                  size="sm"
+                  variant="secondary"
+                  className="shrink-0"
+                  loading={refining}
+                  disabled={refining || insufficient || blockedByOtherEditor}
+                  onClick={() =>
+                    refine(`Fix this runtime error from the live preview:\n\n${previewError}`)
+                  }
+                >
+                  Fix this error
+                </Button>
+              </div>
+            )}
+
             {blockedByOtherEditor && (
               <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
                 <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
@@ -662,10 +699,21 @@ function AppWorkspace() {
             </div>
           ) : hasFiles ? (
             pane === "preview" ? (
-              <AppPreview files={files} removeBadge={plan !== "free"} />
+              <AppPreview
+                files={files}
+                removeBadge={plan !== "free"}
+                onError={setPreviewError}
+                onReload={() => setPreviewError(null)}
+              />
             ) : (
               <div className="h-full overflow-auto p-4">
-                <CodePreview files={files} appName={app.name} locked={plan === "free"} />
+                <CodePreview
+                  files={files}
+                  appName={app.name}
+                  locked={plan === "free"}
+                  editable={plan !== "free" && !blockedByOtherEditor}
+                  onSave={saveEdit}
+                />
               </div>
             )
           ) : null}
