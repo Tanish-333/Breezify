@@ -94,7 +94,7 @@ Apply the requested change. Return the COMPLETE updated file set in the same JSO
  * generations; every other plan shares the same default budget.
  */
 export function maxOutputTokensFor(plan: PlanId): number {
-  return plan === "max" ? 32000 : 16000;
+  return plan === "max" ? 32000 : 24000;
 }
 
 export interface GenerationResult {
