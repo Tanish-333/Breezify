@@ -161,28 +161,6 @@ export async function POST(req: NextRequest) {
     return errorStream("Not enough credits. Top up your balance to keep building.");
   }
 
-  // Charge upfront so failed generations still cost something (they burn API tokens).
-  // Credits are deducted immediately, before calling the model.
-  const txId = randomUUID();
-  try {
-    await commit(
-      [
-        incrementWrite(userPath, "credits", -cost),
-        createWrite(`transactions/${txId}`, {
-          userId: uid,
-          type: "generation",
-          creditsUsed: cost,
-          model,
-          createdAt: new Date(),
-        }),
-      ],
-      idToken
-    );
-  } catch (err) {
-    console.error(`[generate] Failed to charge upfront for ${model}:`, err);
-    return errorStream("Couldn't process your request. Please try again.");
-  }
-
   // For a refine, load the existing app up front so ownership and file
   // availability fail fast, before any credits are involved.
   let existing: {
@@ -282,23 +260,58 @@ export async function POST(req: NextRequest) {
             // Charge a small flat fee for asking rather than the full model
             // cost, since no generation actually ran. 0.5 is always covered:
             // the credits check above already required currentCredits >= cost,
-            // and every model's cost is >= 0.5.
+            // and every model's cost is >= 0.5. This is the ONLY charge for
+            // this turn — the full model cost below is only ever charged once
+            // clarification is resolved (or was never needed), never both:
+            // firestore.rules forbids a client-authenticated write from ever
+            // increasing credits, so there'd be no way to refund the
+            // difference back if both fired.
             const clarifyTxId = randomUUID();
-            await commit(
-              [
-                incrementWrite(userPath, "credits", -0.5),
-                createWrite(`transactions/${clarifyTxId}`, {
-                  userId: uid,
-                  type: "generation",
-                  creditsUsed: 0.5,
-                  createdAt: new Date(),
-                }),
-              ],
-              idToken
-            );
+            try {
+              await commit(
+                [
+                  incrementWrite(userPath, "credits", -0.5),
+                  createWrite(`transactions/${clarifyTxId}`, {
+                    userId: uid,
+                    type: "generation",
+                    creditsUsed: 0.5,
+                    createdAt: new Date(),
+                  }),
+                ],
+                idToken
+              );
+            } catch (err) {
+              console.error(`[generate] uid=${uid} failed to charge clarify fee:`, err);
+              throw err;
+            }
             send({ type: "clarify", question: clarity.question, options: clarity.options });
             return;
           }
+        }
+
+        // Charge the full model cost now, before the app doc is created or the
+        // model is called — so a mid-generation disconnect or an error partway
+        // through still costs something (the API call itself already happened),
+        // rather than nothing. Must happen only once clarification is resolved:
+        // see the comment above.
+        const txId = randomUUID();
+        try {
+          await commit(
+            [
+              incrementWrite(userPath, "credits", -cost),
+              createWrite(`transactions/${txId}`, {
+                userId: uid,
+                type: "generation",
+                creditsUsed: cost,
+                model,
+                createdAt: new Date(),
+              }),
+            ],
+            idToken
+          );
+        } catch (err) {
+          console.error(`[generate] uid=${uid} failed to charge upfront for ${model}:`, err);
+          throw err;
         }
 
         if (existing) {
