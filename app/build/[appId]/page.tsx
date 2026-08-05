@@ -179,6 +179,11 @@ function AppWorkspace() {
         app!.id
       );
       setInstruction("");
+      // A successful refine (e.g. "Fix this error") produces new files that
+      // the preview reloads with, but the old error banner otherwise stuck
+      // around until a manual Reload click — even once the fix actually
+      // worked, it still looked broken.
+      setPreviewError(null);
       await refreshProfile();
     } catch (err) {
       setError(err instanceof Error ? err.message : "Update failed.");
@@ -709,6 +714,7 @@ function AppWorkspace() {
                 removeBadge={plan !== "free"}
                 onError={setPreviewError}
                 onReload={() => setPreviewError(null)}
+                reloadKey={turns.length}
               />
             ) : (
               <div className="h-full overflow-auto p-4">

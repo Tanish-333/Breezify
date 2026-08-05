@@ -1,3 +1,9 @@
+// jose is pinned to v4 in package.json, not the latest major: v5+ dropped
+// CommonJS support entirely (ESM-only exports), and firebase-admin's own
+// dependency jwks-rsa still does a plain `require("jose")` internally —
+// under Vercel's Node runtime that throws ERR_REQUIRE_ESM the moment any
+// route imports firebase-admin (e.g. the collaborators invite lookup),
+// v4 is the newest release that still ships a working `require` entry.
 import { createRemoteJWKSet, jwtVerify } from "jose";
 import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
 

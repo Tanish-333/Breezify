@@ -13,6 +13,7 @@ export function AppPreview({
   removeBadge = false,
   onError,
   onReload,
+  reloadKey,
 }: {
   files: Record<string, string>;
   /** Paid plans preview clean; free stays badged. */
@@ -20,6 +21,8 @@ export function AppPreview({
   /** Fires when the preview iframe reports an uncaught error or rejection — see lib/preview.ts's injected window error handlers, which postMessage it out since the sandboxed iframe's DOM isn't otherwise reachable from here. */
   onError?: (message: string) => void;
   onReload?: () => void;
+  /** Changing this remounts the iframe from scratch, same as clicking Reload — pass something that changes on every new generation/refine (e.g. a turn count) so a fix never runs in a preview tab still carrying state or timers from the crashed attempt it's replacing. */
+  reloadKey?: string | number;
 }) {
   const [viewport, setViewport] = useState<Viewport>("desktop");
   // Bumping this remounts the iframe, which is the simplest reliable reload.
@@ -110,7 +113,7 @@ export function AppPreview({
       <div className="flex flex-1 justify-center overflow-auto bg-muted/20 p-3">
         <iframe
           ref={iframeRef}
-          key={nonce}
+          key={`${nonce}-${reloadKey ?? ""}`}
           title="App preview"
           // allow-same-origin is deliberately omitted: combined with
           // allow-scripts it would give the generated app (arbitrary,
