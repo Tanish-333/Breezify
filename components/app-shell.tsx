@@ -84,8 +84,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     function onKey(e: KeyboardEvent) {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-        e.preventDefault();
-        setPaletteOpen((o) => !o);
+        // Closing an already-open palette should always work (e.g. from its
+        // own search input), but OPENING it while the user is mid-keystroke
+        // in a text field (composing a prompt, typing in any input/textarea)
+        // must not hijack that keystroke — it both swallows the character
+        // and throws a full-screen modal over whatever they were typing,
+        // which reads as "the prompt box stopped working."
+        const target = e.target as HTMLElement | null;
+        const isEditable =
+          target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable;
+        setPaletteOpen((o) => {
+          if (!o && isEditable) return o;
+          e.preventDefault();
+          return !o;
+        });
       }
     }
     window.addEventListener("keydown", onKey);
