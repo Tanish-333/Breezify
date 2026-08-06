@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { PromptComposer } from "@/components/prompt-composer";
-import { TemplatesSection } from "@/components/templates-section";
+import { QuickPrompts } from "@/components/quick-prompts";
 import { GenerationProgress } from "@/components/generation-progress";
 import { GithubImportDialog } from "@/components/github-import-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -302,7 +302,7 @@ function DashboardContent() {
               <p className="mb-3 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Try these
               </p>
-              <TemplatesSection plan={plan} onSelectPrompt={setPrompt} variant="featured" />
+              <QuickPrompts onSelect={setPrompt} />
             </div>
           )}
 
