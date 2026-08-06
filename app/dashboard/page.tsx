@@ -97,7 +97,15 @@ function DashboardContent() {
   const [status, setStatus] = useState("");
   const [progress, setProgress] = useState({ chars: 0, files: [] as string[] });
   const [error, setError] = useState("");
-  const [clarify, setClarify] = useState<ClarifyQuestion | null>(null);
+  // 0-2 questions from a single clarify round (see MAX_QUESTIONS in
+  // lib/generation/clarify.ts) walked through sequentially — clarifyIndex
+  // is which one is currently shown, clarifyAnswers accumulates answers to
+  // the ones already answered so they can all be folded into one prompt
+  // once the last one is answered, rather than round-tripping to the server
+  // per question.
+  const [clarify, setClarify] = useState<ClarifyQuestion[] | null>(null);
+  const [clarifyIndex, setClarifyIndex] = useState(0);
+  const [clarifyAnswers, setClarifyAnswers] = useState<string[]>([]);
   const [clarifyAnswer, setClarifyAnswer] = useState("");
   const [search, setSearch] = useState("");
   const [showAll, setShowAll] = useState(false);
@@ -120,6 +128,8 @@ function DashboardContent() {
   async function handleGenerate(composedPrompt: string, isClarified = false) {
     setError("");
     setClarify(null);
+    setClarifyIndex(0);
+    setClarifyAnswers([]);
     setClarifyAnswer("");
     setProgress({ chars: 0, files: [] });
     setStatus("Starting");
@@ -147,8 +157,19 @@ function DashboardContent() {
   }
 
   function answerClarify(answer: string) {
-    if (!clarify || !answer.trim()) return;
-    const combined = `${prompt}\n\n${clarify.question} ${answer.trim()}`;
+    const trimmed = answer.trim();
+    if (!clarify || !trimmed) return;
+    const answers = [...clarifyAnswers, trimmed];
+    if (clarifyIndex + 1 < clarify.length) {
+      // More questions in this round — advance in place, no network call.
+      setClarifyAnswers(answers);
+      setClarifyIndex((i) => i + 1);
+      setClarifyAnswer("");
+      return;
+    }
+    // Last question answered: fold the whole Q&A round into one prompt and build.
+    const qa = clarify.map((q, i) => `${q.question} ${answers[i]}`).join("\n\n");
+    const combined = `${prompt}\n\n${qa}`;
     setPrompt(combined);
     handleGenerate(combined, true);
   }
@@ -239,10 +260,15 @@ function DashboardContent() {
 
           {clarify && !generating && (
             <div className="mt-4 animate-in space-y-3 rounded-lg border border-border bg-muted/20 p-4 text-left">
-              <p className="text-sm font-medium">{clarify.question}</p>
-              {clarify.options.length > 0 && (
+              {clarify.length > 1 && (
+                <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                  Question {clarifyIndex + 1} of {clarify.length}
+                </p>
+              )}
+              <p className="text-sm font-medium">{clarify[clarifyIndex].question}</p>
+              {clarify[clarifyIndex].options.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                  {clarify.options.map((opt) => (
+                  {clarify[clarifyIndex].options.map((opt) => (
                     <button
                       key={opt}
                       type="button"
@@ -265,7 +291,7 @@ function DashboardContent() {
                   className="h-9"
                 />
                 <Button size="sm" disabled={!clarifyAnswer.trim()} onClick={() => answerClarify(clarifyAnswer)}>
-                  Continue
+                  {clarifyIndex + 1 < clarify.length ? "Next" : "Continue"}
                 </Button>
               </div>
             </div>

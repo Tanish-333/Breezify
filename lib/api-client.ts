@@ -13,6 +13,9 @@ export interface ClarifyQuestion {
   options: string[];
 }
 
+/** At most 2 — see MAX_QUESTIONS in lib/generation/clarify.ts. */
+export type ClarifyQuestions = ClarifyQuestion[];
+
 export interface GenerateHandlers {
   onStatus?: (message: string) => void;
   onProgress?: (progress: { chars: number; files: string[] }) => void;
@@ -33,7 +36,7 @@ export async function generateAppRequest(
   appId?: string,
   /** Set once the user has already answered a clarifying question. */
   clarified?: boolean
-): Promise<GenerateResult | { clarify: ClarifyQuestion }> {
+): Promise<GenerateResult | { clarify: ClarifyQuestions }> {
   const user = auth.currentUser;
   if (!user) throw new Error("You must be signed in to generate an app.");
 
@@ -59,7 +62,7 @@ export async function generateAppRequest(
   const decoder = new TextDecoder();
   let buffer = "";
   let result: GenerateResult | null = null;
-  let clarify: ClarifyQuestion | null = null;
+  let clarify: ClarifyQuestions | null = null;
   let error: string | null = null;
 
   while (true) {
@@ -86,7 +89,7 @@ export async function generateAppRequest(
         handlers.onProgress?.({ chars: event.chars, files: event.files });
       else if (event.type === "done") result = event;
       else if (event.type === "clarify")
-        clarify = { question: event.question, options: event.options };
+        clarify = Array.isArray(event.questions) ? event.questions : [];
       else if (event.type === "error") error = event.error;
     }
   }

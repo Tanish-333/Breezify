@@ -31,7 +31,7 @@ type Event =
   | { type: "status"; message: string }
   | { type: "progress"; chars: number; files: string[] }
   | { type: "done"; appId: string; appName: string; summary: string; files: Record<string, string> }
-  | { type: "clarify"; question: string; options: string[] }
+  | { type: "clarify"; questions: { question: string; options: string[] }[] }
   | { type: "error"; error: string };
 
 function sse(event: Event) {
@@ -257,13 +257,16 @@ export async function POST(req: NextRequest) {
         if (!existing && !clarified) {
           send({ type: "status", message: "Reviewing your request" });
           const clarity = await checkClarity(prompt);
-          if (clarity.needsClarification) {
-            // Charge a small flat fee for asking rather than the full model
-            // cost, since no generation actually ran. 0.5 is always covered:
-            // the credits check above already required currentCredits >= cost,
-            // and every model's cost is >= 0.5. This is the ONLY charge for
-            // this turn — the full model cost below is only ever charged once
-            // clarification is resolved (or was never needed), never both:
+          if (clarity.questions.length > 0) {
+            // Charge a single flat fee for the whole clarify round — one
+            // 0.5 charge no matter how many of the (at most 2, see
+            // lib/generation/clarify.ts) questions came back, not once per
+            // question. No generation actually ran yet, so this isn't the
+            // full model cost. 0.5 is always covered: the credits check
+            // above already required currentCredits >= cost, and every
+            // model's cost is >= 0.5. This is the ONLY charge for this turn
+            // — the full model cost below is only ever charged once every
+            // question is answered (or none were needed), never both:
             // firestore.rules forbids a client-authenticated write from ever
             // increasing credits, so there'd be no way to refund the
             // difference back if both fired.
@@ -285,7 +288,7 @@ export async function POST(req: NextRequest) {
               console.error(`[generate] uid=${uid} failed to charge clarify fee:`, err);
               throw err;
             }
-            send({ type: "clarify", question: clarity.question, options: clarity.options });
+            send({ type: "clarify", questions: clarity.questions });
             return;
           }
         }
