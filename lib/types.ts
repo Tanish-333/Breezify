@@ -255,8 +255,11 @@ export const CUSTOM_DOMAIN_MIN_PLAN: PlanId = "pro";
  */
 export const DOMAIN_PRICE_MARKUP = 1.2;
 
+/** Flat profit per domain (registration or renewal), added on top of the multiplier above. */
+export const DOMAIN_PRICE_FLAT_ADDON = 2.0;
+
 export function markedUpDomainPrice(wholesalePrice: number): number {
-  return Math.round(wholesalePrice * DOMAIN_PRICE_MARKUP * 100) / 100;
+  return Math.round((wholesalePrice * DOMAIN_PRICE_MARKUP + DOMAIN_PRICE_FLAT_ADDON) * 100) / 100;
 }
 
 /** Lowest plan that can invite collaborators onto an app. */
