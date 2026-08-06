@@ -1,9 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useAppSecrets, deleteAppSecret, upsertAppSecret } from "@/lib/use-apps";
 import { useAuth } from "@/lib/auth-context";
-import { CONNECTORS, connectorForKey, type Connector } from "@/lib/connectors";
+import { CONNECTOR_CATEGORIES, CONNECTORS, connectorForKey, type Connector } from "@/lib/connectors";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { ModalPortal } from "@/components/modal-portal";
@@ -17,6 +17,7 @@ import {
   EyeOff,
   KeyRound,
   Plug,
+  Search,
   Trash2,
   X,
 } from "lucide-react";
@@ -158,6 +159,7 @@ export function AppSecretsDialog({ appId, onClose }: { appId: string; onClose: (
   const { secrets, loading } = useAppSecrets(appId);
   const [openConnector, setOpenConnector] = useState<string | null>(null);
   const [savingConnector, setSavingConnector] = useState<string | null>(null);
+  const [search, setSearch] = useState("");
   const [showCustom, setShowCustom] = useState(false);
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
@@ -170,6 +172,20 @@ export function AppSecretsDialog({ appId, onClose }: { appId: string; onClose: (
   // Anything that isn't one of a known connector's fields — a hand-added key
   // from before this UI existed, or a service with no dedicated card yet.
   const customSecrets = secrets.filter((s) => !connectorForKey(s.key));
+
+  // Grouped by category (in CONNECTOR_CATEGORIES' declared order) rather
+  // than one long flat list — with 20+ connectors now, an unsorted list is
+  // a lot of scrolling to find one service. A category with no matches
+  // while searching is simply omitted, not shown empty.
+  const groupedConnectors = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    const matches = (c: Connector) =>
+      !q || c.name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q) || c.category.toLowerCase().includes(q);
+    return CONNECTOR_CATEGORIES.map((category) => ({
+      category,
+      connectors: CONNECTORS.filter((c) => c.category === category && matches(c)),
+    })).filter((g) => g.connectors.length > 0);
+  }, [search]);
 
   async function saveConnector(connector: Connector, fields: Record<string, string>) {
     if (!user) return;
@@ -233,46 +249,70 @@ export function AppSecretsDialog({ appId, onClose }: { appId: string; onClose: (
       onMouseDown={onClose}
     >
       <div
-        className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl border border-border bg-background p-6 shadow-2xl animate-in"
+        className="flex max-h-[85vh] w-full max-w-xl flex-col overflow-hidden rounded-xl border border-border bg-background shadow-2xl animate-in"
         onMouseDown={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <h2 className="flex items-center gap-2 font-semibold">
-              <Plug className="h-4 w-4" />
-              Connectors
-            </h2>
-            <p className="mt-1 text-xs text-muted-foreground">
-              Connect a service this app&apos;s backend can call — each one stores real env vars its
-              api/ routes read via process.env. Only you can see the values.
-            </p>
+        <div className="shrink-0 p-6 pb-0">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h2 className="flex items-center gap-2 font-semibold">
+                <Plug className="h-4 w-4" />
+                Connectors
+              </h2>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Connect a service this app&apos;s backend can call — each one stores real env vars its
+                api/ routes read via process.env. Only you can see the values.
+              </p>
+            </div>
+            <button
+              onClick={onClose}
+              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <X className="h-4 w-4" />
+            </button>
           </div>
-          <button
-            onClick={onClose}
-            className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            <X className="h-4 w-4" />
-          </button>
+
+          <div className="relative mt-4">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search connectors..."
+              className="h-9 pl-8 text-sm"
+            />
+          </div>
         </div>
 
-        {loading ? (
-          <p className="mt-5 text-sm text-muted-foreground">Loading…</p>
-        ) : (
-          <div className="mt-5 space-y-2">
-            {CONNECTORS.map((connector) => (
-              <ConnectorCard
-                key={connector.id}
-                connector={connector}
-                values={valuesByKey}
-                open={openConnector === connector.id}
-                onToggle={() => setOpenConnector((c) => (c === connector.id ? null : connector.id))}
-                onSave={(fields) => saveConnector(connector, fields)}
-                onDisconnect={() => disconnectConnector(connector)}
-                saving={savingConnector === connector.id}
-              />
-            ))}
-          </div>
-        )}
+        <div className="flex-1 overflow-y-auto p-6 pt-4">
+          {loading ? (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          ) : groupedConnectors.length === 0 ? (
+            <p className="py-6 text-center text-sm text-muted-foreground">No connectors match “{search}”.</p>
+          ) : (
+            <div className="space-y-5">
+              {groupedConnectors.map((group) => (
+                <div key={group.category}>
+                  <p className="mb-2 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                    {group.category}
+                  </p>
+                  <div className="space-y-2">
+                    {group.connectors.map((connector) => (
+                      <ConnectorCard
+                        key={connector.id}
+                        connector={connector}
+                        values={valuesByKey}
+                        open={openConnector === connector.id}
+                        onToggle={() => setOpenConnector((c) => (c === connector.id ? null : connector.id))}
+                        onSave={(fields) => saveConnector(connector, fields)}
+                        onDisconnect={() => disconnectConnector(connector)}
+                        saving={savingConnector === connector.id}
+                      />
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
 
         <div className="mt-5 border-t border-border pt-4">
           <button
@@ -363,6 +403,7 @@ export function AppSecretsDialog({ appId, onClose }: { appId: string; onClose: (
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
     </ModalPortal>

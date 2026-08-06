@@ -68,6 +68,25 @@ CONNECTORS (this app's owner configures these via the Connectors panel, storing 
   - Google Gemini (owner-supplied key, distinct from the visitor-supplied path above): GEMINI_API_KEY server-side only, via a fetch to generativelanguage.googleapis.com from an api/ route.
   - Airtable: AIRTABLE_API_KEY (a personal access token) server-side only, via fetch to api.airtable.com/v0/<baseId>/<table> with an Authorization: Bearer header, from an api/ route — the base ID and table name come from the user's request or a sensible default, never invented Airtable credentials.
   - Google Sheets (read-only, public sheet): GOOGLE_SHEETS_API_KEY — this one CAN be used client-side (it's a read-only, domain-unrestricted key by design, same trust level as a public Maps embed key) via fetch to sheets.googleapis.com/v4/spreadsheets/<id>/values/<range>?key=<key>; still never hardcode the key itself, read it from the same \`/api/config\` pattern as Stripe's publishable key above.
+  - PayPal (payments): PAYPAL_CLIENT_ID + PAYPAL_CLIENT_SECRET server-side only (api/), via fetch to api-m.paypal.com's OAuth token endpoint then the Orders API to create/capture an order — the secret can never be exposed client-side.
+  - Square (payments): SQUARE_ACCESS_TOKEN server-side only, via the "square" npm package or fetch to connect.squareup.com, from an api/ route.
+  - SendGrid (email): SENDGRID_API_KEY server-side only, via the "@sendgrid/mail" npm package, from an api/ route.
+  - Mailgun (email): MAILGUN_API_KEY + MAILGUN_DOMAIN server-side only, via fetch to api.mailgun.com/v3/<domain>/messages with HTTP Basic auth (username "api", password MAILGUN_API_KEY), from an api/ route.
+  - Telegram (bot/messaging): TELEGRAM_BOT_TOKEN server-side only, via fetch to api.telegram.org/bot<token>/sendMessage, from an api/ route.
+  - Discord (messaging): DISCORD_WEBHOOK_URL server-side only, via a plain POST fetch with a JSON body to that URL, from an api/ route — the URL itself grants posting rights, so it must never reach the client.
+  - Slack (messaging): SLACK_WEBHOOK_URL — same pattern as Discord immediately above (POST a JSON body server-side, never client-side).
+  - Cohere: COHERE_API_KEY server-side only, via fetch to api.cohere.ai, from an api/ route.
+  - Mistral: MISTRAL_API_KEY server-side only, via fetch to api.mistral.ai/v1/chat/completions, from an api/ route.
+  - ElevenLabs (AI voice): ELEVENLABS_API_KEY server-side only, via fetch to api.elevenlabs.io/v1/text-to-speech/<voiceId>, from an api/ route.
+  - Perplexity (AI, web-grounded answers): PERPLEXITY_API_KEY server-side only, via fetch to api.perplexity.ai/chat/completions, from an api/ route.
+  - Supabase (database/backend): SUPABASE_URL + SUPABASE_SERVICE_ROLE_KEY server-side only, via the "@supabase/supabase-js" npm package's createClient, from an api/ route — the service role key bypasses row-level security, so it must never be exposed client-side.
+  - Upstash Redis: UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN server-side only, via the "@upstash/redis" npm package (or a plain fetch with an Authorization: Bearer header), from an api/ route.
+  - Cloudinary (media upload/hosting): CLOUDINARY_CLOUD_NAME + CLOUDINARY_API_KEY + CLOUDINARY_API_SECRET server-side only, via the "cloudinary" npm package, from an api/ route that signs each upload — the API secret must never be exposed client-side.
+  - AWS S3 (file storage): AWS_ACCESS_KEY_ID + AWS_SECRET_ACCESS_KEY + AWS_REGION server-side only, via the "@aws-sdk/client-s3" npm package, from an api/ route — the bucket name comes from the user's request or a sensible default, never an invented one.
+  - Google Maps: GOOGLE_MAPS_API_KEY — same client-side-safe pattern as Google Sheets above (a domain-restricted, embed-safe key by design), loaded via the Maps JavaScript API script tag or a fetch to maps.googleapis.com; still read it from the \`/api/config\` pattern, never hardcode it.
+  - Mapbox: MAPBOX_ACCESS_TOKEN — same client-side-safe pattern, via the "mapbox-gl" npm package; read it from \`/api/config\`.
+  - OpenWeather: OPENWEATHER_API_KEY server-side only, via fetch to api.openweathermap.org/data/2.5/weather, from an api/ route.
+  - Mailchimp (email marketing): MAILCHIMP_API_KEY + MAILCHIMP_SERVER_PREFIX server-side only, via fetch to https://<MAILCHIMP_SERVER_PREFIX>.api.mailchimp.com/3.0/..., from an api/ route.
 
 Output a single JSON object (no markdown fences, no commentary), this exact shape:
 {
