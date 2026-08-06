@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, updateWrite } from "@/lib/firestore-rest";
 import { getOrCreateUserDoc } from "@/lib/ensure-user-doc-server";
-import { getStripe, isStripeConfigured, priceIdFor } from "@/lib/stripe";
+import { getStripe, isStripeConfigured, priceIdFor, resolveStripeCustomerId } from "@/lib/stripe";
 import { PLAN_RANK, isPlanId, type PlanId } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -67,10 +67,22 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-    const existingCustomerId =
+    let existingCustomerId =
       typeof userDoc?.fields.stripeCustomerId === "string"
         ? (userDoc.fields.stripeCustomerId as string)
         : undefined;
+    // Without this, a missing stripeCustomerId (the exact gap the self-heal
+    // above and lib/stripe.ts's own doc comment describe) fell straight
+    // through to `customer_email` below — which makes Stripe Checkout
+    // create a BRAND NEW customer even when a real one already exists for
+    // that email (e.g. from an earlier canceled subscription, or a domain
+    // purchase). That's how one person ends up with several Stripe
+    // customer records, each with its own subscriptions the app never
+    // looks at together — the exact "can't identify the customer" failure
+    // mode this route otherwise works hard to avoid.
+    if (!existingCustomerId) {
+      existingCustomerId = await resolveStripeCustomerId(uid, email, idToken);
+    }
 
     const stripe = getStripe();
 
