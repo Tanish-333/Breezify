@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useAppSecrets, addAppSecret, deleteAppSecret, upsertAppSecret } from "@/lib/use-apps";
+import { useAppSecrets, deleteAppSecret, upsertAppSecret } from "@/lib/use-apps";
 import { useAuth } from "@/lib/auth-context";
 import { CONNECTORS, connectorForKey, type Connector } from "@/lib/connectors";
 import { Button } from "@/components/ui/button";
