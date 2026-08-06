@@ -26,22 +26,26 @@ export const metadata: Metadata = {
   // show up in search results and browser tabs; the SVG stays first for
   // browsers that do support it (sharper on high-DPI displays).
   //
-  // The ?v= query string on every URL below matters more than it looks:
-  // browsers cache a favicon by its exact URL, essentially forever, and
-  // largely ignore normal cache-control headers for it — replacing the
-  // FILE at the same path (which is what happened here, swapping in the
-  // current black-badge/white-wave logo) doesn't reliably make already-
-  // visited browsers pick up the change. Bumping this version string forces
-  // every browser to treat it as a new resource. Bump it again any time
-  // these icon files themselves change in the future.
+  // Every icon here except favicon.ico itself is named with a "-v2" suffix,
+  // not just a query string: browsers cache a favicon by its exact URL,
+  // essentially forever, largely ignoring cache-control headers for it —
+  // and some browsers additionally auto-probe the literal /favicon.ico path
+  // directly regardless of <link> tags, a request they'd already cached
+  // from before this logo existed, unaffected by a query-string change on
+  // the <link> entry. A genuinely new filename is the one thing guaranteed
+  // to be a cache miss everywhere. favicon.ico itself is left unrenamed on
+  // purpose — something has to keep answering that literal legacy path for
+  // browsers/crawlers that check it with no <link> tag involved at all, so
+  // its *contents* were updated in place instead. Bump "-v2" to "-v3" (and
+  // rename the files) if these icons ever need to change again.
   icons: {
     icon: [
-      { url: "/favicon.svg?v=2", type: "image/svg+xml" },
-      { url: "/favicon-32.png?v=2", type: "image/png", sizes: "32x32" },
-      { url: "/favicon-192.png?v=2", type: "image/png", sizes: "192x192" },
+      { url: "/favicon-v2.svg", type: "image/svg+xml" },
+      { url: "/favicon-v2-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-v2-192.png", type: "image/png", sizes: "192x192" },
     ],
-    shortcut: "/favicon.ico?v=2",
-    apple: "/apple-touch-icon.png?v=2",
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon-v2.png",
   },
   manifest: "/site.webmanifest",
   openGraph: {

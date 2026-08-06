@@ -662,9 +662,9 @@ function AppWorkspace() {
               <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
                 <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
                 <span>
-                  {app.generatingByEmail ?? "Someone else"} is refining this app right now — your own
-                  refine will be blocked until they finish, to avoid the two changes overwriting each
-                  other.
+                  {app.generatingByEmail ?? "Someone else"} is refining or syncing this app right now
+                  — your own change will be blocked until they finish, to avoid the two overwriting
+                  each other.
                 </span>
               </div>
             )}
