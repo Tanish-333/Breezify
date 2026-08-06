@@ -54,6 +54,10 @@ function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const view = (searchParams.get("view") as DashboardView | null) ?? "all";
+  // The prompt composer is Dashboard-home-only — the gallery views
+  // (?view=... for All/Starred/Owned/Shared/Recent) are a pure app list,
+  // not a second place to kick off a build.
+  const isHome = searchParams.get("view") === null;
   const { user, profile, refreshProfile } = useAuth();
   const { apps: ownedApps, loading: ownedLoading } = useUserApps(user?.uid);
   const { apps: sharedApps, loading: sharedLoading } = useCollaboratingApps(user?.uid);
@@ -193,6 +197,7 @@ function DashboardContent() {
 
   return (
     <div className="mx-auto max-w-4xl">
+      {isHome && (
       <section className="py-10 text-center md:py-14">
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
           {firstName ? `Let's build something, ${firstName}` : "Let's build something"}
@@ -318,8 +323,20 @@ function DashboardContent() {
           )}
         </div>
       </section>
+      )}
 
-      <section className="mt-10 border-t border-border pt-8">
+      <section className={cn(isHome ? "mt-10 border-t border-border pt-8" : "pt-10")}>
+        {!isHome && apps.length > 6 && (
+          <div className="relative mb-4 w-full sm:w-80">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              placeholder="Search your apps"
+              className="h-9 pl-8 text-sm"
+            />
+          </div>
+        )}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-base font-medium">
             {heading}
@@ -327,7 +344,7 @@ function DashboardContent() {
               <span className="ml-2 text-sm font-normal text-muted-foreground">{apps.length}</span>
             )}
           </h2>
-          {apps.length > 6 && (
+          {isHome && apps.length > 6 && (
             <div className="relative w-full sm:w-64">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
