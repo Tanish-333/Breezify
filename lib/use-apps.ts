@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   collectionGroup,
   deleteDoc,
@@ -282,6 +284,20 @@ export async function transferOwnership(
     addedAt: serverTimestamp(),
   });
   await batch.commit();
+}
+
+/**
+ * Stars/unstars an app for the current viewer. Stored on users/{uid} rather
+ * than on the app doc itself — starring is a per-viewer preference (a
+ * collaborator might star an app the owner hasn't), and apps/{appId}'s
+ * owner/editor-gated write rules (see firestore.rules' isAppEditor) aren't a
+ * fit for a viewer-appropriate toggle like this. See firestore.rules'
+ * users/{userId} update rule for the matching starredAppIds-only branch.
+ */
+export async function toggleStarredApp(uid: string, appId: string, currentlyStarred: boolean): Promise<void> {
+  await updateDoc(doc(db, "users", uid), {
+    starredAppIds: currentlyStarred ? arrayRemove(appId) : arrayUnion(appId),
+  });
 }
 
 // Deleting an app used to be a plain client-side Firestore batch delete

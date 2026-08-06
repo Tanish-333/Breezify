@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { PromptComposer } from "@/components/prompt-composer";
@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge, DeployBadge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth-context";
-import { useUserApps, useCollaboratingApps } from "@/lib/use-apps";
+import { useUserApps, useCollaboratingApps, toggleStarredApp } from "@/lib/use-apps";
 import {
   fetchModelAvailability,
   generateAppRequest,
@@ -24,7 +24,7 @@ import {
   type ClarifyQuestion,
 } from "@/lib/api-client";
 import { takePendingPrompt } from "@/lib/pending-prompt";
-import { formatDate } from "@/lib/utils";
+import { cn, formatDate } from "@/lib/utils";
 import {
   displayStatus,
   effectiveDeployStatus,
@@ -35,19 +35,63 @@ import {
   type ModelId,
   type PlanId,
 } from "@/lib/types";
-import { AlertCircle, FolderOpen, Loader2, Lock, PowerOff, Search, Trash2, Users } from "lucide-react";
+import { AlertCircle, FolderOpen, Loader2, Lock, PowerOff, Search, Star, Trash2, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
+
+/** The four Projects-group destinations plus Recent — see components/app-shell.tsx's PROJECT_VIEWS. */
+type DashboardView = "all" | "owned" | "shared" | "starred" | "recent";
+
+const RECENT_COUNT = 5;
+
+const VIEW_COPY: Record<DashboardView, { title: string; empty: string }> = {
+  all: { title: "Your apps", empty: "Nothing here yet. Your generated apps will show up in this space." },
+  owned: { title: "Owned by me", empty: "You don't own any apps yet." },
+  shared: { title: "Shared with me", empty: "No one has shared an app with you yet." },
+  starred: { title: "Starred", empty: "Star an app from its card or build page to find it here fast." },
+  recent: { title: "Recent", empty: "Nothing opened yet." },
+};
 
 function DashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const view = (["all", "owned", "shared", "starred", "recent"] as const).includes(
+    searchParams.get("view") as DashboardView
+  )
+    ? (searchParams.get("view") as DashboardView)
+    : "all";
   const { user, profile, refreshProfile } = useAuth();
   const { apps: ownedApps, loading: ownedLoading } = useUserApps(user?.uid);
   const { apps: sharedApps, loading: sharedLoading } = useCollaboratingApps(user?.uid);
-  const apps = useMemo(
+  const starredIds = useMemo(() => new Set(profile?.starredAppIds ?? []), [profile?.starredAppIds]);
+  const allApps = useMemo(
     () => [...ownedApps, ...sharedApps].sort((a, b) => b.createdAt - a.createdAt),
     [ownedApps, sharedApps]
   );
+  // "Recently opened" would need a separate last-opened timestamp tracked
+  // somewhere; reusing the createdAt sort already computed above is the
+  // simplest honest approximation until that's worth building.
+  const apps = useMemo(() => {
+    switch (view) {
+      case "owned":
+        return ownedApps;
+      case "shared":
+        return sharedApps;
+      case "starred":
+        return allApps.filter((a) => starredIds.has(a.id));
+      case "recent":
+        return allApps.slice(0, RECENT_COUNT);
+      default:
+        return allApps;
+    }
+  }, [view, ownedApps, sharedApps, allApps, starredIds]);
   const appsLoading = ownedLoading || sharedLoading;
+
+  async function onToggleStar(appId: string, e: React.MouseEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!user) return;
+    await toggleStarredApp(user.uid, appId, starredIds.has(appId));
+  }
   const plan: PlanId = profile?.plan ?? "free";
   const canImport = PLAN_RANK[plan] >= PLAN_RANK[IMPORT_MIN_PLAN];
   const [showImport, setShowImport] = useState(false);
@@ -139,6 +183,18 @@ function DashboardContent() {
 
   return (
     <div className="mx-auto max-w-4xl">
+      {view !== "all" && (
+        <section className="py-10 md:py-14">
+          <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">{VIEW_COPY[view].title}</h1>
+          <p className="mt-2.5 text-sm text-muted-foreground">
+            <Link href="/dashboard" className="underline hover:text-foreground">
+              All projects
+            </Link>
+          </p>
+        </section>
+      )}
+
+      {view === "all" && (
       <section className="py-10 text-center md:py-14">
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
           {firstName ? `Let's build something, ${firstName}` : "Let's build something"}
@@ -256,16 +312,20 @@ function DashboardContent() {
           )}
         </div>
       </section>
+      )}
 
-      <section className="mt-10 border-t border-border pt-8">
+      <section className={cn("mt-10 border-t border-border pt-8", view !== "all" && "mt-0 border-t-0 pt-0")}>
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          {/* The page header above already names the view for anything but "all", so this line would just repeat it. */}
           <h2 className="text-base font-medium">
-            Your apps
+            {view === "all" && VIEW_COPY.all.title}
             {apps.length > 0 && (
-              <span className="ml-2 text-sm font-normal text-muted-foreground">{apps.length}</span>
+              <span className={cn("text-sm font-normal text-muted-foreground", view === "all" && "ml-2")}>
+                {apps.length}
+              </span>
             )}
           </h2>
-          {apps.length > 6 && (
+          {apps.length > 6 && view !== "recent" && (
             <div className="relative w-full sm:w-64">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -286,9 +346,7 @@ function DashboardContent() {
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
               <FolderOpen className="h-7 w-7 text-muted-foreground" strokeWidth={1.25} />
-              <p className="text-sm text-muted-foreground">
-                Nothing here yet. Your generated apps will show up in this space.
-              </p>
+              <p className="text-sm text-muted-foreground">{VIEW_COPY[view].empty}</p>
             </CardContent>
           </Card>
         ) : (
@@ -306,6 +364,18 @@ function DashboardContent() {
                       </h3>
                     </Link>
                     <div className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        onClick={(e) => onToggleStar(app.id, e)}
+                        title={starredIds.has(app.id) ? "Unstar" : "Star"}
+                        className={cn(
+                          "rounded p-1 transition-colors hover:bg-muted",
+                          starredIds.has(app.id)
+                            ? "text-warning opacity-100"
+                            : "text-muted-foreground opacity-0 group-hover:opacity-100"
+                        )}
+                      >
+                        <Star className="h-3.5 w-3.5" fill={starredIds.has(app.id) ? "currentColor" : "none"} />
+                      </button>
                       {app.userId !== user?.uid && (
                         <span className="flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
                           <Users className="h-2.5 w-2.5" />

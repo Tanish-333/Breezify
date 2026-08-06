@@ -72,14 +72,25 @@ service cloud.firestore {
       // enforcement, not the caller's trustworthiness. (The Stripe webhook
       // sets plan/credits on a real payment via the Admin SDK, which
       // bypasses these rules entirely, not through this path.)
-      allow update: if isOwner(userId)
-        && request.resource.data.plan == resource.data.plan
-        && request.resource.data.credits <= resource.data.credits
-        && (
-          request.resource.data.credits == resource.data.credits
-          || isValidCost(resource.data.credits - request.resource.data.credits)
+      //
+      // Starring an app is a second, unrelated write shape on this same
+      // doc — a viewer-appropriate preference, not a credit/plan change —
+      // so it gets its own OR branch that only ever touches
+      // starredAppIds, rather than being squeezed through the credit
+      // bookkeeping above.
+      allow update: if isOwner(userId) && (
+        (
+          request.resource.data.plan == resource.data.plan
+          && request.resource.data.credits <= resource.data.credits
+          && (
+            request.resource.data.credits == resource.data.credits
+            || isValidCost(resource.data.credits - request.resource.data.credits)
+          )
+          && request.resource.data.credits >= 0
+        ) || (
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["starredAppIds"])
         )
-        && request.resource.data.credits >= 0;
+      );
       allow delete: if isOwner(userId);
     }
 

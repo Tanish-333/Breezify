@@ -20,7 +20,14 @@ import { TurnCard } from "@/components/turn-card";
 import { StatusBadge, DeployBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useApp, useAppSecrets, useMyCollaboratorRole, revertToVersion, saveManualEdit } from "@/lib/use-apps";
+import {
+  useApp,
+  useAppSecrets,
+  useMyCollaboratorRole,
+  revertToVersion,
+  saveManualEdit,
+  toggleStarredApp,
+} from "@/lib/use-apps";
 import { usePresence } from "@/lib/use-presence";
 import { missingEnvVars } from "@/lib/backend-env";
 import { useAuth } from "@/lib/auth-context";
@@ -60,6 +67,7 @@ import {
   Pencil,
   RefreshCw,
   Rocket,
+  Star,
   Users,
   X,
 } from "lucide-react";
@@ -143,6 +151,9 @@ function AppWorkspace() {
   const canSyncGithub = PLAN_RANK[plan] >= PLAN_RANK[IMPORT_MIN_PLAN];
   const canCustomDomain = PLAN_RANK[plan] >= PLAN_RANK[CUSTOM_DOMAIN_MIN_PLAN];
   const isOwner = app?.userId === user?.uid;
+  // Starring is a per-viewer preference stored on the user's own doc, not
+  // gated by canEdit — see lib/use-apps.ts's toggleStarredApp.
+  const starred = !!app && (profile?.starredAppIds ?? []).includes(app.id);
   const canInviteCollaborators = PLAN_RANK[plan] >= PLAN_RANK[COLLABORATOR_MIN_PLAN];
   const otherViewers = usePresence(app?.id, user?.uid, user?.email);
   const { secrets: appSecrets } = useAppSecrets(isOwner ? app?.id : undefined);
@@ -446,6 +457,16 @@ function AppWorkspace() {
               )}
             </>
           )}
+          <button
+            onClick={() => user && toggleStarredApp(user.uid, app!.id, starred)}
+            title={starred ? "Unstar" : "Star"}
+            className={cn(
+              "rounded p-1 transition-colors hover:bg-muted",
+              starred ? "text-warning" : "text-muted-foreground hover:text-foreground"
+            )}
+          >
+            <Star className="h-3.5 w-3.5" fill={starred ? "currentColor" : "none"} />
+          </button>
           <StatusBadge status={displayStatus(app.status)} />
           <DeployBadge status={effectiveDeployStatus(app)} />
           {otherViewers.length > 0 && (

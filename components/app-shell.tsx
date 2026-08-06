@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Logo, BreezeMark } from "@/components/logo";
 import { CommandPalette } from "@/components/command-palette";
 import { AccountMenu } from "@/components/account-menu";
@@ -13,19 +13,30 @@ import { cn } from "@/lib/utils";
 import { PLANS } from "@/lib/types";
 import {
   BarChart3,
+  Clock,
   CreditCard,
+  FolderOpen,
   LayoutGrid,
   PanelLeft,
   Plus,
   Search,
   Settings,
+  Star,
+  User,
+  Users,
 } from "lucide-react";
 
-const MAIN_NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
-  { href: "/build", label: "New app", icon: Plus },
-  { href: "/analytics", label: "Analytics", icon: BarChart3 },
-];
+/** Standalone top-level destinations, active purely by pathname. */
+const TOP_NAV = [{ href: "/build", label: "New app", icon: Plus }];
+const BOTTOM_NAV = [{ href: "/analytics", label: "Analytics", icon: BarChart3 }];
+
+/** A single dashboard view, e.g. /dashboard?view=owned — "all" omits the param entirely so the existing bare /dashboard link keeps working. */
+const PROJECT_VIEWS = [
+  { view: "all", label: "All projects", icon: FolderOpen },
+  { view: "starred", label: "Starred", icon: Star },
+  { view: "owned", label: "Owned by me", icon: User },
+  { view: "shared", label: "Shared with me", icon: Users },
+] as const;
 
 const ACCOUNT_NAV = [
   { href: "/billing", label: "Billing", icon: CreditCard },
@@ -65,10 +76,16 @@ function NavLink({
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const { user, profile } = useAuth();
   const { apps } = useUserApps(user?.uid);
   const [collapsed, setCollapsed] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+
+  // Only meaningful on /dashboard itself — everywhere else nothing in the
+  // Projects group or Recent should read as active.
+  const onDashboard = pathname === "/dashboard";
+  const dashboardView = onDashboard ? searchParams.get("view") ?? "all" : null;
 
   // Restore the collapsed preference so the layout doesn't reset every visit.
   useEffect(() => {
@@ -153,7 +170,42 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           )}
 
-          {MAIN_NAV.map((item) => (
+          {TOP_NAV.map((item) => (
+            <NavLink
+              key={item.href}
+              {...item}
+              collapsed={collapsed}
+              active={pathname === item.href}
+            />
+          ))}
+
+          <NavLink
+            href="/dashboard?view=recent"
+            label="Recent"
+            icon={Clock}
+            collapsed={collapsed}
+            active={dashboardView === "recent"}
+          />
+
+          <div className="pt-3">
+            {!collapsed && (
+              <p className="px-2.5 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Projects
+              </p>
+            )}
+            {PROJECT_VIEWS.map((item) => (
+              <NavLink
+                key={item.view}
+                href={item.view === "all" ? "/dashboard" : `/dashboard?view=${item.view}`}
+                label={item.label}
+                icon={item.icon}
+                collapsed={collapsed}
+                active={dashboardView === item.view}
+              />
+            ))}
+          </div>
+
+          {BOTTOM_NAV.map((item) => (
             <NavLink
               key={item.href}
               {...item}

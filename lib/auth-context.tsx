@@ -107,6 +107,7 @@ function toProfile(uid: string, data: any): FeatherUser {
     lastLoginAt: data.lastLoginAt?.toMillis?.() ?? Date.now(),
     authProviders: data.authProviders ?? [],
     emailNotifications: data.emailNotifications !== false,
+    starredAppIds: Array.isArray(data.starredAppIds) ? data.starredAppIds : [],
   };
 }
 

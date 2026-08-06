@@ -520,6 +520,8 @@ export interface FeatherUser {
   authProviders: string[];
   /** Whether to email this user for things like a collaborator invite. Absent/undefined means on — see the Settings page's Notifications card. */
   emailNotifications?: boolean;
+  /** App IDs this user has starred — a per-viewer preference, not stored on the app doc itself. See firestore.rules' users/{userId} update rule and lib/use-apps.ts's toggleStarredApp. */
+  starredAppIds?: string[];
 }
 
 export type TransactionType = "generation" | "topup" | "subscription";
