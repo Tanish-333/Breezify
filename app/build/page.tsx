@@ -50,7 +50,13 @@ function BuildContent() {
   const [progress, setProgress] = useState({ chars: 0, files: [] as string[] });
   const [error, setError] = useState("");
   const [result, setResult] = useState<GenerateResult | null>(null);
-  const [clarify, setClarify] = useState<ClarifyQuestion | null>(null);
+  // Up to 2 questions come back in one shot (see checkClarity), asked one at
+  // a time — clarifyIndex is which one's showing, clarifyAnswers holds
+  // what's been answered so far, appended to the prompt all at once once the
+  // last question is answered. Same flow as app/dashboard/page.tsx.
+  const [clarifyQueue, setClarifyQueue] = useState<ClarifyQuestion[] | null>(null);
+  const [clarifyIndex, setClarifyIndex] = useState(0);
+  const [clarifyAnswers, setClarifyAnswers] = useState<string[]>([]);
   const [clarifyAnswer, setClarifyAnswer] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
@@ -89,7 +95,9 @@ function BuildContent() {
     }
     setError("");
     setResult(null);
-    setClarify(null);
+    setClarifyQueue(null);
+    setClarifyIndex(0);
+    setClarifyAnswers([]);
     setClarifyAnswer("");
     setProgress({ chars: 0, files: [] });
     setStatus("Starting");
@@ -112,7 +120,9 @@ function BuildContent() {
       );
       await refreshProfile();
       if ("clarify" in res) {
-        setClarify(res.clarify);
+        setClarifyQueue(res.clarify);
+        setClarifyIndex(0);
+        setClarifyAnswers([]);
       } else {
         setResult(res);
       }
@@ -129,8 +139,18 @@ function BuildContent() {
   }
 
   function answerClarify(answer: string) {
-    if (!clarify || !answer.trim()) return;
-    const combined = `${prompt}\n\n${clarify.question} ${answer.trim()}`;
+    if (!clarifyQueue || !answer.trim()) return;
+    const allAnswers = [...clarifyAnswers, answer.trim()];
+    setClarifyAnswer("");
+
+    if (clarifyIndex + 1 < clarifyQueue.length) {
+      setClarifyAnswers(allAnswers);
+      setClarifyIndex(clarifyIndex + 1);
+      return;
+    }
+
+    const qa = clarifyQueue.map((q, i) => `${q.question} ${allAnswers[i]}`).join("\n\n");
+    const combined = `${prompt}\n\n${qa}`;
     setPrompt(combined);
     handleGenerate(combined, true);
   }
@@ -274,15 +294,20 @@ function BuildContent() {
           />
         )}
 
-        {clarify && !loading && (
+        {clarifyQueue && !loading && (
           <div className="animate-in space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-            <p className="text-sm font-medium">{clarify.question}</p>
+            {clarifyQueue.length > 1 && (
+              <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Question {clarifyIndex + 1} of {clarifyQueue.length}
+              </p>
+            )}
+            <p className="text-sm font-medium">{clarifyQueue[clarifyIndex].question}</p>
             <p className="text-xs text-muted-foreground">
               Answering costs nothing extra beyond the 0.50 credits already used to ask.
             </p>
-            {clarify.options.length > 0 && (
+            {clarifyQueue[clarifyIndex].options.length > 0 && (
               <div className="flex flex-wrap gap-2">
-                {clarify.options.map((opt) => (
+                {clarifyQueue[clarifyIndex].options.map((opt) => (
                   <button
                     key={opt}
                     type="button"
@@ -305,7 +330,7 @@ function BuildContent() {
                 className="flex h-9 w-full rounded border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground"
               />
               <Button size="sm" disabled={!clarifyAnswer.trim()} onClick={() => answerClarify(clarifyAnswer)}>
-                Continue
+                {clarifyIndex + 1 < clarifyQueue.length ? "Next" : "Continue"}
               </Button>
             </div>
           </div>

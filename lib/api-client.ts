@@ -19,10 +19,11 @@ export interface GenerateHandlers {
 }
 
 /**
- * Streams a generation over SSE. Resolves with the finished app, or with a
- * clarifying question the model needs answered before it can build (only
- * possible on a first-time build, never a refine), or rejects with the
- * server's error message.
+ * Streams a generation over SSE. Resolves with the finished app, or with up
+ * to 2 clarifying questions the model needs answered before it can build
+ * (only possible on a first-time build, never a refine) — asked one at a
+ * time client-side, see answerClarify in app/dashboard/page.tsx — or
+ * rejects with the server's error message.
  */
 export async function generateAppRequest(
   prompt: string,
@@ -31,9 +32,9 @@ export async function generateAppRequest(
   signal?: AbortSignal,
   /** Pass an app id to refine that app instead of building a new one. */
   appId?: string,
-  /** Set once the user has already answered a clarifying question. */
+  /** Set once the user has already answered every clarifying question. */
   clarified?: boolean
-): Promise<GenerateResult | { clarify: ClarifyQuestion }> {
+): Promise<GenerateResult | { clarify: ClarifyQuestion[] }> {
   const user = auth.currentUser;
   if (!user) throw new Error("You must be signed in to generate an app.");
 
@@ -59,7 +60,7 @@ export async function generateAppRequest(
   const decoder = new TextDecoder();
   let buffer = "";
   let result: GenerateResult | null = null;
-  let clarify: ClarifyQuestion | null = null;
+  let clarify: ClarifyQuestion[] | null = null;
   let error: string | null = null;
 
   while (true) {
@@ -85,8 +86,7 @@ export async function generateAppRequest(
       else if (event.type === "progress")
         handlers.onProgress?.({ chars: event.chars, files: event.files });
       else if (event.type === "done") result = event;
-      else if (event.type === "clarify")
-        clarify = { question: event.question, options: event.options };
+      else if (event.type === "clarify") clarify = event.questions;
       else if (event.type === "error") error = event.error;
     }
   }

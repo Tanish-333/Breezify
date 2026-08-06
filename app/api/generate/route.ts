@@ -5,7 +5,7 @@ import { commit, createWrite, getDoc, incrementWrite, updateWrite } from "@/lib/
 import { getOrCreateUserDoc } from "@/lib/ensure-user-doc-server";
 import { hasEditAccess } from "@/lib/app-collaborators";
 import { generateApp, isModelAvailable, refineApp } from "@/lib/generation";
-import { checkClarity } from "@/lib/generation/clarify";
+import { checkClarity, type ClarifyQuestion } from "@/lib/generation/clarify";
 import {
   MODEL_INFO,
   PLANS,
@@ -31,7 +31,7 @@ type Event =
   | { type: "status"; message: string }
   | { type: "progress"; chars: number; files: string[] }
   | { type: "done"; appId: string; appName: string; summary: string; files: Record<string, string> }
-  | { type: "clarify"; question: string; options: string[] }
+  | { type: "clarify"; questions: ClarifyQuestion[] }
   | { type: "error"; error: string };
 
 function sse(event: Event) {
@@ -258,7 +258,9 @@ export async function POST(req: NextRequest) {
           send({ type: "status", message: "Reviewing your request" });
           const clarity = await checkClarity(prompt);
           if (clarity.needsClarification) {
-            // Charge a small flat fee for asking rather than the full model
+            // Charge a small flat fee for the whole clarify round — once,
+            // regardless of whether it's 1 or 2 questions, since it's a
+            // single triage call either way — rather than the full model
             // cost, since no generation actually ran. 0.5 is always covered:
             // the credits check above already required currentCredits >= cost,
             // and every model's cost is >= 0.5. This is the ONLY charge for
@@ -285,7 +287,10 @@ export async function POST(req: NextRequest) {
               console.error(`[generate] uid=${uid} failed to charge clarify fee:`, err);
               throw err;
             }
-            send({ type: "clarify", question: clarity.question, options: clarity.options });
+            // The client asks these sequentially (one at a time) out of this
+            // single array rather than round-tripping back here per
+            // question — see answerClarify in app/dashboard/page.tsx.
+            send({ type: "clarify", questions: clarity.questions });
             return;
           }
         }

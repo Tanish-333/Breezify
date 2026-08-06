@@ -108,7 +108,13 @@ function DashboardContent() {
   const [status, setStatus] = useState("");
   const [progress, setProgress] = useState({ chars: 0, files: [] as string[] });
   const [error, setError] = useState("");
-  const [clarify, setClarify] = useState<ClarifyQuestion | null>(null);
+  // Up to 2 questions come back in one shot (see checkClarity), but are
+  // asked one at a time — clarifyIndex is which one's showing, clarifyAnswers
+  // holds what's been answered so far, appended to the prompt all at once
+  // once the last question is answered.
+  const [clarifyQueue, setClarifyQueue] = useState<ClarifyQuestion[] | null>(null);
+  const [clarifyIndex, setClarifyIndex] = useState(0);
+  const [clarifyAnswers, setClarifyAnswers] = useState<string[]>([]);
   const [clarifyAnswer, setClarifyAnswer] = useState("");
   const [search, setSearch] = useState("");
   const [showAll, setShowAll] = useState(false);
@@ -130,7 +136,9 @@ function DashboardContent() {
 
   async function handleGenerate(composedPrompt: string, isClarified = false) {
     setError("");
-    setClarify(null);
+    setClarifyQueue(null);
+    setClarifyIndex(0);
+    setClarifyAnswers([]);
     setClarifyAnswer("");
     setProgress({ chars: 0, files: [] });
     setStatus("Starting");
@@ -146,7 +154,9 @@ function DashboardContent() {
       );
       await refreshProfile();
       if ("clarify" in res) {
-        setClarify(res.clarify);
+        setClarifyQueue(res.clarify);
+        setClarifyIndex(0);
+        setClarifyAnswers([]);
         setGenerating(false);
       } else {
         router.push(`/build/${res.appId}`);
@@ -158,8 +168,21 @@ function DashboardContent() {
   }
 
   function answerClarify(answer: string) {
-    if (!clarify || !answer.trim()) return;
-    const combined = `${prompt}\n\n${clarify.question} ${answer.trim()}`;
+    if (!clarifyQueue || !answer.trim()) return;
+    const allAnswers = [...clarifyAnswers, answer.trim()];
+    setClarifyAnswer("");
+
+    if (clarifyIndex + 1 < clarifyQueue.length) {
+      // More questions left — just advance, nothing is submitted yet.
+      setClarifyAnswers(allAnswers);
+      setClarifyIndex(clarifyIndex + 1);
+      return;
+    }
+
+    // Last (or only) question answered — fold every Q&A pair into the
+    // prompt at once and resubmit, same shape a single-question round used.
+    const qa = clarifyQueue.map((q, i) => `${q.question} ${allAnswers[i]}`).join("\n\n");
+    const combined = `${prompt}\n\n${qa}`;
     setPrompt(combined);
     handleGenerate(combined, true);
   }
@@ -261,12 +284,17 @@ function DashboardContent() {
             </div>
           )}
 
-          {clarify && !generating && (
+          {clarifyQueue && !generating && (
             <div className="mt-4 animate-in space-y-3 rounded-lg border border-border bg-muted/20 p-4 text-left">
-              <p className="text-sm font-medium">{clarify.question}</p>
-              {clarify.options.length > 0 && (
+              {clarifyQueue.length > 1 && (
+                <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                  Question {clarifyIndex + 1} of {clarifyQueue.length}
+                </p>
+              )}
+              <p className="text-sm font-medium">{clarifyQueue[clarifyIndex].question}</p>
+              {clarifyQueue[clarifyIndex].options.length > 0 && (
                 <div className="flex flex-wrap gap-2">
-                  {clarify.options.map((opt) => (
+                  {clarifyQueue[clarifyIndex].options.map((opt) => (
                     <button
                       key={opt}
                       type="button"
@@ -289,7 +317,7 @@ function DashboardContent() {
                   className="h-9"
                 />
                 <Button size="sm" disabled={!clarifyAnswer.trim()} onClick={() => answerClarify(clarifyAnswer)}>
-                  Continue
+                  {clarifyIndex + 1 < clarifyQueue.length ? "Next" : "Continue"}
                 </Button>
               </div>
             </div>
