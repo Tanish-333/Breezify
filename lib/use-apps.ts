@@ -499,6 +499,28 @@ export async function deleteAppSecret(appId: string, secretId: string): Promise<
 }
 
 /**
+ * Sets a secret by key, replacing any existing entry (or entries — the
+ * freeform "Custom" form and a connector card can both write the same key,
+ * and addAppSecret() always creates a fresh doc rather than checking for
+ * one) rather than piling up duplicates with the same key. Used by the
+ * Connectors panel (components/app-secrets-dialog.tsx) so re-saving a
+ * connector's key overwrites its old value instead of leaving both around —
+ * the deploy route's secretsEnv lookup would otherwise pick whichever one
+ * happened to sort last, silently.
+ */
+export async function upsertAppSecret(
+  appId: string,
+  userId: string,
+  key: string,
+  value: string,
+  existing: AppSecret[]
+): Promise<void> {
+  const dupes = existing.filter((s) => s.key === key);
+  await Promise.all(dupes.map((s) => deleteAppSecret(appId, s.id)));
+  await addAppSecret(appId, userId, key, value);
+}
+
+/**
  * Toggles one app id in/out of the current user's own starredAppIds — see
  * firestore.rules' users/{userId} update rule, which allows this exact
  * write (and only this field) regardless of role on the starred app. Not

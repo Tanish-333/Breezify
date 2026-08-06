@@ -597,7 +597,7 @@ function AppWorkspace() {
                   {isOwner && (
                     <MenuItem
                       icon={KeyRound}
-                      label="Secrets"
+                      label="Connectors"
                       warn={missingSecrets.length > 0}
                       disabledTitle={
                         missingSecrets.length > 0
