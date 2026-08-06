@@ -91,6 +91,93 @@ export function hasApiRoutes(files: Record<string, string>) {
 }
 
 /**
+ * Powers the build page's Visual tab (components/app-visual-editor.tsx):
+ * makes every element hoverable/clickable inside the sandboxed preview and
+ * reports the clicked element back to the parent page over postMessage —
+ * the same channel window.onerror already uses above to escape the
+ * opaque-origin iframe (no allow-same-origin, so the parent can't read this
+ * DOM directly any other way). The parent turns the selection into a
+ * natural-language instruction and runs it through the normal refine
+ * pipeline; nothing in here ever touches the app's source.
+ */
+const VISUAL_EDIT_STYLE = `<style>[data-breezify-hover]{outline:2px solid #3b82f6!important;outline-offset:1px!important;cursor:pointer!important}</style>`;
+
+function visualEditScript(): string {
+  return `<script>
+(function () {
+  var EXCLUDE_IDS = ["breezify-badge", "feather-api-banner"];
+  function isExcluded(el) {
+    while (el) {
+      if (el.id && EXCLUDE_IDS.indexOf(el.id) !== -1) return true;
+      el = el.parentElement;
+    }
+    return false;
+  }
+  // A short tag+nth-of-type path from the clicked element up to <body> —
+  // not a globally unique CSS selector, just descriptive enough for the
+  // model to locate the right element from the natural-language instruction
+  // this feeds (see AppVisualEditor's onRequestEdit).
+  function selectorFor(el) {
+    var parts = [];
+    var node = el;
+    while (node && node.nodeType === 1 && node !== document.body) {
+      var tag = node.tagName.toLowerCase();
+      var parent = node.parentElement;
+      if (parent) {
+        var siblings = Array.prototype.filter.call(parent.children, function (c) { return c.tagName === node.tagName; });
+        if (siblings.length > 1) {
+          tag += ":nth-of-type(" + (Array.prototype.indexOf.call(siblings, node) + 1) + ")";
+        }
+      }
+      parts.unshift(tag);
+      node = parent;
+    }
+    return parts.join(" > ");
+  }
+  var hovered = null;
+  document.addEventListener("mouseover", function (e) {
+    if (isExcluded(e.target)) return;
+    if (hovered) hovered.removeAttribute("data-breezify-hover");
+    hovered = e.target;
+    hovered.setAttribute("data-breezify-hover", "");
+  }, true);
+  document.addEventListener("mouseout", function (e) {
+    if (e.target === hovered) {
+      hovered.removeAttribute("data-breezify-hover");
+      hovered = null;
+    }
+  }, true);
+  document.addEventListener("click", function (e) {
+    if (isExcluded(e.target)) return;
+    // Capture-phase preventDefault/stopPropagation: a click here is a
+    // selection, never a real interaction with the generated app (a link
+    // navigating away, a button submitting) — those would fire before this
+    // even gets a chance to report the click otherwise.
+    e.preventDefault();
+    e.stopPropagation();
+    var el = e.target;
+    var rect = el.getBoundingClientRect();
+    var style = window.getComputedStyle(el);
+    var directText = "";
+    for (var i = 0; i < el.childNodes.length; i++) {
+      var n = el.childNodes[i];
+      if (n.nodeType === 3) directText += n.textContent;
+    }
+    window.parent.postMessage({
+      source: "breezify-preview",
+      type: "element-select",
+      selector: selectorFor(el),
+      tag: el.tagName.toLowerCase(),
+      text: (directText || el.textContent || "").trim().slice(0, 300),
+      styles: { color: style.color, fontSize: style.fontSize, padding: style.padding },
+      rect: { top: rect.top, left: rect.left, width: rect.width, height: rect.height }
+    }, "*");
+  }, true);
+})();
+<\/script>`;
+}
+
+/**
  * The iframe's sandbox deliberately omits `allow-same-origin` (see below):
  * combined with `allow-scripts`, that flag is a well-known way for
  * sandboxed content to escape the sandbox entirely. But an opaque-origin
@@ -157,13 +244,15 @@ window.process = window.process || { env: window.__BREEZIFY_ENV__ };
 export function buildPreview(
   files: Record<string, string>,
   appUrl: string,
-  showBadge: boolean = true
+  showBadge: boolean = true,
+  enableVisualEdit: boolean = false
 ): PreviewResult {
   const unsupported = unsupportedReason(files, "preview");
   if (unsupported) return { kind: "unsupported", reason: unsupported };
 
   const htmlEntry = findHtmlEntry(files);
   const apiBanner = hasApiRoutes(files) ? apiRoutesBanner() : "";
+  const visualEditHead = enableVisualEdit ? `${VISUAL_EDIT_STYLE}${visualEditScript()}` : "";
 
   // Plain static site: use it directly.
   if (htmlEntry && isStandaloneHtml(files[htmlEntry])) {
@@ -171,8 +260,8 @@ export function buildPreview(
     // Must land before any of the page's own scripts run, so inject right
     // after <head> opens rather than at </head> like the stylesheet below.
     doc = doc.includes("<head>")
-      ? doc.replace("<head>", `<head>${STORAGE_POLYFILL}`)
-      : `${STORAGE_POLYFILL}${doc}`;
+      ? doc.replace("<head>", `<head>${STORAGE_POLYFILL}${visualEditHead}`)
+      : `${STORAGE_POLYFILL}${visualEditHead}${doc}`;
     const css = collectCss(files);
     if (css && doc.includes("</head>")) {
       doc = doc.replace("</head>", `<style>${css}</style></head>`);
@@ -216,6 +305,7 @@ export function buildPreview(
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 ${STORAGE_POLYFILL}
 ${envShimScript()}
+${visualEditHead}
 <script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"><\/script>
 <script src="https://cdn.tailwindcss.com"><\/script>
 <style>${css}</style>

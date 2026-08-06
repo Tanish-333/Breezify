@@ -9,6 +9,7 @@ import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { CodePreview } from "@/components/code-preview";
 import { AppPreview } from "@/components/app-preview";
+import { AppVisualEditor } from "@/components/app-visual-editor";
 import { PromptComposer } from "@/components/prompt-composer";
 import { GenerationProgress } from "@/components/generation-progress";
 import { GithubPushDialog } from "@/components/github-push-dialog";
@@ -64,6 +65,7 @@ import {
   Loader2,
   Lock,
   MoreHorizontal,
+  MousePointerClick,
   Pencil,
   RefreshCw,
   Rocket,
@@ -72,7 +74,7 @@ import {
   X,
 } from "lucide-react";
 
-type Pane = "preview" | "code";
+type Pane = "preview" | "visual" | "code";
 
 /** One row in the workspace header's "More" menu — a link (external or locked-upsell) or an action button, never both. */
 function MenuItem({
@@ -664,7 +666,7 @@ function AppWorkspace() {
 
           {hasFiles && (
             <div className="flex items-center rounded-lg border border-border p-0.5">
-              {(["preview", "code"] as Pane[]).map((p) => (
+              {(["preview", "visual", "code"] as Pane[]).map((p) => (
                 <button
                   key={p}
                   onClick={() => setPane(p)}
@@ -677,6 +679,8 @@ function AppWorkspace() {
                 >
                   {p === "preview" ? (
                     <Eye className="h-3 w-3" />
+                  ) : p === "visual" ? (
+                    <MousePointerClick className="h-3 w-3" />
                   ) : (
                     <Code2 className="h-3 w-3" />
                   )}
@@ -919,6 +923,23 @@ function AppWorkspace() {
                   removeBadge={plan !== "free"}
                   onError={setPreviewError}
                   onReload={() => setPreviewError(null)}
+                  reloadKey={turns.length}
+                />
+              ) : pane === "visual" ? (
+                <AppVisualEditor
+                  files={files}
+                  removeBadge={plan !== "free"}
+                  canEdit={canEdit}
+                  disabled={insufficient || blockedByOtherEditor}
+                  disabledReason={
+                    insufficient
+                      ? "Out of credits"
+                      : blockedByOtherEditor
+                        ? "Wait for the other refine in progress to finish..."
+                        : undefined
+                  }
+                  cost={cost}
+                  onRequestEdit={refine}
                   reloadKey={turns.length}
                 />
               ) : (
