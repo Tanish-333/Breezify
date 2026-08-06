@@ -183,8 +183,20 @@ export async function deployToVercel(
     url = check.body.url ?? url;
     const inspectorUrl = typeof check.body.inspectorUrl === "string" ? check.body.inspectorUrl : null;
     if (state === "READY") {
+      // A production deployment (target: "production", set above) gets
+      // Vercel's own clean project alias — "<slug>.vercel.app" — assigned
+      // automatically alongside its per-deployment URL. `check.body.url`
+      // above is always that longer per-deployment one though (e.g.
+      // "habit-tracker-a1b2c3-<account>-projects.vercel.app"), which
+      // publicly embeds the Vercel account/team name in every generated
+      // app's URL. `alias` (plural, a separate field from `url`) lists
+      // every hostname actually assigned to this deployment; prefer the
+      // clean one when Vercel did assign it, rather than always exposing
+      // the account name.
+      const aliases: string[] = Array.isArray(check.body.alias) ? check.body.alias : [];
+      const cleanAlias = aliases.find((a) => a === `${slug}.vercel.app`);
       const customAlias = await tryCustomAlias(id, slug);
-      return { url: `https://${customAlias ?? url}`, id };
+      return { url: `https://${customAlias ?? cleanAlias ?? url}`, id };
     }
     if (state === "ERROR" || state === "CANCELED") {
       const canceled = state === "CANCELED";

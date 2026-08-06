@@ -1,8 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { commit, incrementWrite } from "@/lib/firestore-rest";
 import { rateLimit } from "@/lib/rate-limit";
+import { corsPreflight, withCors } from "@/lib/cors";
 
 export const runtime = "nodejs";
+
+export async function OPTIONS() {
+  return corsPreflight();
+}
 
 /**
  * Public, unauthenticated visit-counter beacon for deployed apps (see
@@ -12,6 +17,14 @@ export const runtime = "nodejs";
  * "visits" and nothing else) rather than from anything checked in this
  * route. A bad or missing appId just fails the Firestore write silently,
  * same as any other beacon.
+ *
+ * The beacon always runs on the deployed app's own separate *.vercel.app
+ * origin, never this one, and sends `Content-Type: application/json` —
+ * which makes it a CORS-preflighted request. Without the OPTIONS handler
+ * and withCors() below, every browser silently blocked the preflight,
+ * meaning this beacon never once completed on any deployed app: visit
+ * counts stayed at 0 regardless of real traffic, with nothing in the UI
+ * to explain why.
  */
 async function handler(req: NextRequest) {
   try {
@@ -24,7 +37,7 @@ async function handler(req: NextRequest) {
   }
   // Always 204, regardless of outcome: this is a fire-and-forget beacon
   // and nothing about its result is meaningful to the visitor's browser.
-  return new NextResponse(null, { status: 204 });
+  return withCors(new NextResponse(null, { status: 204 }));
 }
 
 // Generous: real deployed apps can get real bursts of traffic, and many
