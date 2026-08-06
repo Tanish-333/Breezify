@@ -6,6 +6,8 @@
  * and the badge can be updated without regenerating anything.
  */
 
+import { getAppBaseUrl } from "@/lib/app-base-url";
+
 const BADGE_ID = "breezify-badge";
 
 export function watermarkSnippet(appUrl: string) {
@@ -24,10 +26,6 @@ export function watermarkSnippet(appUrl: string) {
 </a>`;
 }
 
-function appUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
-}
-
 /**
  * Returns a copy of the file set with the badge added to every HTML entry
  * point. Files without an HTML document are returned untouched. Paid plans
@@ -38,7 +36,7 @@ export function withWatermark(
   show: boolean = true
 ): Record<string, string> {
   if (!show) return files;
-  const snippet = watermarkSnippet(appUrl());
+  const snippet = watermarkSnippet(getAppBaseUrl());
   const out: Record<string, string> = { ...files };
   let injected = false;
 

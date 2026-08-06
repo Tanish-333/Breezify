@@ -1,14 +1,11 @@
 import type { PlanId } from "@/lib/types";
 import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
-
-function appBaseUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
-}
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
 function backendDataApiBlock(appId: string) {
   return `\n\nBACKEND DATA API (use only if this app needs persistence or shared data, see system prompt):
 APP_ID: ${appId}
-Base URL: ${appBaseUrl()}
+Base URL: ${getAppBaseUrl()}
 FIREBASE_API_KEY: ${FIREBASE_PUBLIC_CONFIG.apiKey}`;
 }
 

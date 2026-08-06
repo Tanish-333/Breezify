@@ -3,12 +3,9 @@ import { getTenantApp } from "@/lib/tenant-app";
 import { checkAndRecordView } from "@/lib/traffic-guard";
 import { buildPreview } from "@/lib/preview";
 import { isFirebaseAdminConfigured } from "@/lib/firebase-admin";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
 export const runtime = "nodejs";
-
-function appUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
-}
 
 function htmlResponse(doc: string, status = 200) {
   return new NextResponse(doc, {
@@ -56,13 +53,13 @@ export async function GET(req: NextRequest, { params }: { params: { subdomain: s
 
   const { blocked, reason } = await checkAndRecordView(tenant.appId);
   if (blocked) {
-    const url = new URL("/limit-reached", appUrl());
+    const url = new URL("/limit-reached", getAppBaseUrl());
     url.searchParams.set("app", tenant.appId);
     url.searchParams.set("reason", reason ?? "traffic");
     return NextResponse.redirect(url);
   }
 
-  const preview = buildPreview(tenant.files, appUrl(), true);
+  const preview = buildPreview(tenant.files, getAppBaseUrl(), true);
   if (preview.kind === "unsupported") {
     return htmlResponse(simplePage("Can't run this app", preview.reason));
   }

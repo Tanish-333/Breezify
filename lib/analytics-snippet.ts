@@ -13,15 +13,13 @@
  * when it's configured (see lib/traffic-guard.ts).
  */
 
+import { getAppBaseUrl } from "@/lib/app-base-url";
+
 const SNIPPET_ID = "breezify-analytics";
 
-function appUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
-}
-
 export function analyticsSnippet(appId: string) {
-  const trackUrl = `${appUrl()}/api/track`;
-  const limitBase = `${appUrl()}/limit-reached?app=${encodeURIComponent(appId)}`;
+  const trackUrl = `${getAppBaseUrl()}/api/track`;
+  const limitBase = `${getAppBaseUrl()}/limit-reached?app=${encodeURIComponent(appId)}`;
   return `<script id="${SNIPPET_ID}">(function(){try{fetch(${JSON.stringify(
     trackUrl
   )},{method:"POST",keepalive:true,headers:{"Content-Type":"application/json"},body:JSON.stringify({appId:${JSON.stringify(

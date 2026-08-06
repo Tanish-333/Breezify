@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyState } from "@/lib/google-oauth-state";
 import { adminAuth, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
 export const runtime = "nodejs";
-
-function appBaseUrl(req: NextRequest) {
-  return process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
-}
 
 /**
  * Tiny self-closing page that hands the sign-in result back to the
@@ -71,7 +68,7 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const redirectUri = `${appBaseUrl(req)}/api/oauth/google/callback`;
+    const redirectUri = `${getAppBaseUrl(req.nextUrl.origin)}/api/oauth/google/callback`;
     const tokenRes = await fetch("https://oauth2.googleapis.com/token", {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },

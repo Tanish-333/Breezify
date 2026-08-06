@@ -4,6 +4,7 @@ import { authenticate, requirePlan, loadDeployedApp, DOMAIN_RE } from "@/lib/dom
 import { checkDomainAvailability, getDomainPrice, isDeployConfigured, type DomainContact } from "@/lib/vercel-deploy";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { markedUpDomainPrice } from "@/lib/types";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
 export const runtime = "nodejs";
 
@@ -18,10 +19,6 @@ const CONTACT_FIELDS = [
   "zip",
   "country",
 ] as const;
-
-function appUrl(req: NextRequest) {
-  return process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
-}
 
 /**
  * Starts a domain purchase: re-validates availability/price server-side
@@ -104,7 +101,7 @@ export async function POST(req: NextRequest) {
         : undefined;
 
     const stripe = getStripe();
-    const returnUrl = `${appUrl(req)}/build/${appId}`;
+    const returnUrl = `${getAppBaseUrl(req.nextUrl.origin)}/build/${appId}`;
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
       // The account has Managed Payments (Stripe-as-merchant-of-record) on

@@ -1,12 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { signState } from "@/lib/google-oauth-state";
 import { isOriginForApp } from "@/lib/generated-app-origin";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
 export const runtime = "nodejs";
-
-function appBaseUrl(req: NextRequest) {
-  return process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
-}
 
 /**
  * First leg of the Google sign-in proxy generated apps use (see the
@@ -57,7 +54,7 @@ export async function GET(req: NextRequest) {
   }
 
   const state = signState({ appId, origin });
-  const redirectUri = `${appBaseUrl(req)}/api/oauth/google/callback`;
+  const redirectUri = `${getAppBaseUrl(req.nextUrl.origin)}/api/oauth/google/callback`;
 
   const authUrl = new URL("https://accounts.google.com/o/oauth2/v2/auth");
   authUrl.searchParams.set("client_id", clientId);

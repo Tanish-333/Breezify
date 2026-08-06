@@ -4,12 +4,9 @@ import { commit, updateWrite } from "@/lib/firestore-rest";
 import { getOrCreateUserDoc } from "@/lib/ensure-user-doc-server";
 import { getStripe, isStripeConfigured, priceIdFor, resolveStripeCustomerId } from "@/lib/stripe";
 import { PLAN_RANK, isPlanId, type PlanId } from "@/lib/types";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
 export const runtime = "nodejs";
-
-function appUrl(req: NextRequest) {
-  return process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
-}
 
 export async function POST(req: NextRequest) {
   try {
@@ -115,7 +112,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const returnUrl = `${appUrl(req)}/billing`;
+    const returnUrl = `${getAppBaseUrl(req.nextUrl.origin)}/billing`;
 
     const session = await stripe.checkout.sessions.create({
       mode: "subscription",

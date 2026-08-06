@@ -9,6 +9,7 @@ import {
   resolveStripeCustomerId,
 } from "@/lib/stripe";
 import { isPlanId, type PlanId } from "@/lib/types";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
 export const runtime = "nodejs";
 
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
     const maxUpgradedAt = typeof userDoc?.fields.maxUpgradedAt === "string" ? userDoc.fields.maxUpgradedAt : undefined;
     const { locked } = maxDowngradeLockStatus(plan, maxUpgradedAt);
 
-    const returnUrl = `${process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin}/billing`;
+    const returnUrl = `${getAppBaseUrl(req.nextUrl.origin)}/billing`;
     let configuration: string | undefined;
     if (locked) {
       try {

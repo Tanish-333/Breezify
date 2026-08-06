@@ -11,12 +11,9 @@ import {
   PLANS,
   type PlanId,
 } from "@/lib/types";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
 export const runtime = "nodejs";
-
-function appUrl(req: NextRequest) {
-  return process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
-}
 
 async function authenticate(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? "";
@@ -198,7 +195,7 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
           to: trimmedEmail,
           appName: (doc.fields.name as string) || "an app",
           appId: params.appId,
-          appUrl: appUrl(req),
+          appUrl: getAppBaseUrl(req.nextUrl.origin),
         });
       } catch (err) {
         console.error(`[collaborators] appId=${params.appId} failed to send invite email to ${trimmedEmail}:`, err);

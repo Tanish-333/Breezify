@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
-const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
+const SITE_URL = getAppBaseUrl();
 
 // A fixed date rather than `new Date()` — the latter reports every route as
 // "just changed" on every crawl, which is misleading to crawlers and can
