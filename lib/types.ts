@@ -488,6 +488,8 @@ export interface FeatherApp {
   monthlyViews?: number;
   /** Start (ms) of the current monthlyViews window; the window rolls over ~30 days after this. */
   monthlyViewsWindowStart?: number;
+  /** True for a seed app the Templates section duplicates from (see app/api/admin/seed-templates and components/templates-section.tsx) — the one case firestore.rules lets a non-owner, non-collaborator signed-in user read this doc at all. */
+  isTemplate?: boolean;
 }
 
 /** A key/value pair scoped to one app, e.g. an API key the generated app calls out with. */

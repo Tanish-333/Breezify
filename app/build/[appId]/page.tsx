@@ -154,7 +154,15 @@ function AppWorkspace() {
   // role (still loading, or the owner who has no collaborator doc at all)
   // defaults to allowed, same back-compat-safe default used everywhere else.
   const { role: myRole } = useMyCollaboratorRole(app?.id, user?.uid);
-  const canEdit = isOwner || myRole !== "viewer";
+  // A template app (see firestore.rules' apps/{appId} read rule) is
+  // readable by any signed-in user, not just an owner or invited
+  // collaborator — the one case where "no collaborator doc at all" no
+  // longer safely implies "the owner, or still loading" the way it does
+  // for every other app. Force it read-only for anyone but its actual
+  // owner (the system template account), rather than letting the
+  // no-role-means-editor default below apply to a completely unrelated
+  // visitor.
+  const canEdit = isOwner || (!app?.isTemplate && myRole !== "viewer");
   // Starring is a per-viewer preference (users/{uid}.starredAppIds, see
   // lib/use-apps.ts), not gated by canEdit — a Viewer can star same as anyone.
   const starred = app ? (profile?.starredAppIds ?? []).includes(app.id) : false;

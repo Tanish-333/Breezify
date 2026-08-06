@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { PromptComposer } from "@/components/prompt-composer";
-import { TemplateGallery } from "@/components/template-gallery";
+import { TemplatesSection } from "@/components/templates-section";
 import { GenerationProgress } from "@/components/generation-progress";
 import { GithubImportDialog } from "@/components/github-import-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -298,8 +298,11 @@ function DashboardContent() {
           )}
 
           {!generating && !prompt && (
-            <div className="mt-6">
-              <TemplateGallery onSelect={setPrompt} />
+            <div className="mt-8">
+              <p className="mb-3 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Templates
+              </p>
+              <TemplatesSection plan={plan} onSelectPrompt={setPrompt} />
             </div>
           )}
 

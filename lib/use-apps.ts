@@ -85,6 +85,7 @@ function toApp(id: string, data: any): FeatherApp {
     visits: typeof data.visits === "number" ? data.visits : undefined,
     createdAt: toMillis(data.createdAt) ?? Date.now(),
     deployedAt: toMillis(data.deployedAt),
+    isTemplate: data.isTemplate === true,
   };
 }
 
@@ -531,6 +532,44 @@ export async function toggleStarredApp(uid: string, appId: string, starred: bool
   await updateDoc(doc(db, "users", uid), {
     starredAppIds: starred ? arrayRemove(appId) : arrayUnion(appId),
   });
+}
+
+/**
+ * Maps a template's slug (lib/templates.ts' AppTemplate.id) to the real
+ * generated app that duplicates from — see app/api/admin/seed-templates, which
+ * is what actually creates these once through the normal generation
+ * pipeline, owned by a dedicated system account, and firestore.rules'
+ * apps/{appId} read rule, which is what makes isTemplate docs readable by
+ * any signed-in user rather than just their owner. A template with no
+ * matching entry here hasn't been seeded yet — components/templates-section.tsx
+ * falls back to a plain prompt prefill for it instead of duplicating.
+ */
+export function useTemplateApps() {
+  const [bySlug, setBySlug] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, "apps"), where("isTemplate", "==", true));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const next: Record<string, string> = {};
+        for (const d of snap.docs) {
+          const slug = d.data().templateSlug;
+          if (typeof slug === "string") next[slug] = d.id;
+        }
+        setBySlug(next);
+        setLoading(false);
+      },
+      (err) => {
+        logListenerError("useTemplateApps", err);
+        setLoading(false);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  return { bySlug, loading };
 }
 
 export function useApp(appId: string | undefined) {

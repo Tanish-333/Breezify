@@ -118,7 +118,18 @@ service cloud.firestore {
 
     // apps/{appId}: generated apps.
     match /apps/{appId} {
-      allow read: if isOwner(resource.data.userId) || isAppCollaborator(database, appId);
+      // Template apps (isTemplate == true, see app/api/admin/seed-templates and
+      // components/templates-section.tsx) are readable by any signed-in
+      // user, not just their owner — that's what lets the Templates
+      // section discover which slugs are seeded, and lets
+      // app/api/apps/duplicate read one to copy from for someone who's
+      // never been invited onto it. Still gated on isSignedIn(), same as
+      // everything else here — the dashboard that surfaces this is itself
+      // behind sign-in, so there's no case where a fully anonymous reader
+      // needs this.
+      allow read: if isOwner(resource.data.userId)
+        || isAppCollaborator(database, appId)
+        || (isSignedIn() && resource.data.isTemplate == true);
       allow create: if isOwner(request.resource.data.userId);
       allow update: if (
         isAppEditor(database, appId)

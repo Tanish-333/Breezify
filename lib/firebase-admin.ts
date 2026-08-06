@@ -17,6 +17,10 @@
 //     all, and firestore.rules can't expose an owner's plan or a monthly
 //     cap to an unauthenticated reader. Optional: without this configured,
 //     traffic-cap enforcement fails open (see that file for the fallback).
+//   - app/api/admin/seed-templates uses adminDb() to write the Templates
+//     section's seed apps: an operator-triggered admin request, not a
+//     signed-in user's own action, so there's no ID token to write with
+//     through the normal lib/firestore-rest.ts path either.
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";
