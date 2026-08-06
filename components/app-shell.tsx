@@ -19,6 +19,7 @@ import {
   LayoutDashboard,
   LayoutGrid,
   LayoutTemplate,
+  Plug,
   PanelLeft,
   Plus,
   Search,
@@ -37,7 +38,8 @@ const PROJECTS_NAV = [
 ] as const;
 
 const TOP_NAV = [
-  { href: "/build", label: "New app", icon: Plus },
+  { href: "/templates", label: "Templates", icon: LayoutTemplate },
+  { href: "/connectors", label: "Connectors", icon: Plug },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
@@ -182,13 +184,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             active={isDashboardHome}
           />
 
-          <NavLink
-            href="/templates"
-            label="Templates"
-            icon={LayoutTemplate}
-            collapsed={collapsed}
-            active={pathname === "/templates"}
-          />
+          {TOP_NAV.map((item) => (
+            <NavLink
+              key={item.href}
+              {...item}
+              collapsed={collapsed}
+              active={pathname === item.href}
+            />
+          ))}
 
           <div className="pt-5">
             {!collapsed && (
@@ -215,15 +218,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             collapsed={collapsed}
             active={activeView === "recent"}
           />
-
-          {TOP_NAV.map((item) => (
-            <NavLink
-              key={item.href}
-              {...item}
-              collapsed={collapsed}
-              active={pathname === item.href}
-            />
-          ))}
 
           <button
             onClick={() => setPaletteOpen(true)}
