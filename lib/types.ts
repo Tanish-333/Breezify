@@ -520,6 +520,14 @@ export interface FeatherUser {
   authProviders: string[];
   /** Whether to email this user for things like a collaborator invite. Absent/undefined means on — see the Settings page's Notifications card. */
   emailNotifications?: boolean;
+  /**
+   * App ids this user has starred. Lives on the viewer's own doc, not on
+   * apps/{appId} — starring is a per-viewer preference (a collaborator can
+   * star an app the owner hasn't), and the app doc's write rules are
+   * owner/editor-gated in a way that's overkill for a trivial toggle. See
+   * toggleStarredApp() in lib/use-apps.ts.
+   */
+  starredAppIds?: string[];
 }
 
 export type TransactionType = "generation" | "topup" | "subscription";

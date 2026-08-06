@@ -20,7 +20,7 @@ import { TurnCard } from "@/components/turn-card";
 import { StatusBadge, DeployBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useApp, useAppSecrets, useMyCollaboratorRole, revertToVersion, saveManualEdit } from "@/lib/use-apps";
+import { useApp, useAppSecrets, useMyCollaboratorRole, revertToVersion, saveManualEdit, toggleStarredApp } from "@/lib/use-apps";
 import { usePresence } from "@/lib/use-presence";
 import { missingEnvVars } from "@/lib/backend-env";
 import { useAuth } from "@/lib/auth-context";
@@ -60,6 +60,7 @@ import {
   Pencil,
   RefreshCw,
   Rocket,
+  Star,
   Users,
   X,
 } from "lucide-react";
@@ -154,6 +155,9 @@ function AppWorkspace() {
   // defaults to allowed, same back-compat-safe default used everywhere else.
   const { role: myRole } = useMyCollaboratorRole(app?.id, user?.uid);
   const canEdit = isOwner || myRole !== "viewer";
+  // Starring is a per-viewer preference (users/{uid}.starredAppIds, see
+  // lib/use-apps.ts), not gated by canEdit — a Viewer can star same as anyone.
+  const starred = app ? (profile?.starredAppIds ?? []).includes(app.id) : false;
 
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<ModelId>("haiku");
@@ -448,6 +452,15 @@ function AppWorkspace() {
           )}
           <StatusBadge status={displayStatus(app.status)} />
           <DeployBadge status={effectiveDeployStatus(app)} />
+          {user && (
+            <button
+              onClick={() => toggleStarredApp(user.uid, app.id, starred)}
+              title={starred ? "Unstar" : "Star"}
+              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Star className={cn("h-3.5 w-3.5", starred && "fill-current text-foreground")} />
+            </button>
+          )}
           {otherViewers.length > 0 && (
             <span
               title={`Also here right now: ${otherViewers.map((v) => v.email || "another collaborator").join(", ")}`}

@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Logo, BreezeMark } from "@/components/logo";
 import { CommandPalette } from "@/components/command-palette";
 import { AccountMenu } from "@/components/account-menu";
@@ -13,16 +13,28 @@ import { cn } from "@/lib/utils";
 import { PLANS } from "@/lib/types";
 import {
   BarChart3,
+  Clock,
   CreditCard,
+  FolderKanban,
   LayoutGrid,
   PanelLeft,
   Plus,
   Search,
   Settings,
+  Star,
+  User,
+  Users,
 } from "lucide-react";
 
-const MAIN_NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
+/** The dashboard's own app grid reads this from the URL (see app/dashboard/page.tsx) to decide which slice of the user's apps to show — one page, no route duplication. */
+const PROJECTS_NAV = [
+  { view: "all", label: "All projects", icon: FolderKanban },
+  { view: "starred", label: "Starred", icon: Star },
+  { view: "owned", label: "Owned by me", icon: User },
+  { view: "shared", label: "Shared with me", icon: Users },
+] as const;
+
+const TOP_NAV = [
   { href: "/build", label: "New app", icon: Plus },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
@@ -65,6 +77,8 @@ function NavLink({
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const activeView = pathname === "/dashboard" ? searchParams.get("view") ?? "all" : null;
   const { user, profile } = useAuth();
   const { apps } = useUserApps(user?.uid);
   const [collapsed, setCollapsed] = useState(false);
@@ -153,7 +167,33 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           )}
 
-          {MAIN_NAV.map((item) => (
+          <div>
+            {!collapsed && (
+              <p className="px-2.5 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Projects
+              </p>
+            )}
+            {PROJECTS_NAV.map((item) => (
+              <NavLink
+                key={item.view}
+                href={`/dashboard${item.view === "all" ? "" : `?view=${item.view}`}`}
+                label={item.label}
+                icon={item.icon}
+                collapsed={collapsed}
+                active={activeView === item.view}
+              />
+            ))}
+          </div>
+
+          <NavLink
+            href="/dashboard?view=recent"
+            label="Recent"
+            icon={Clock}
+            collapsed={collapsed}
+            active={activeView === "recent"}
+          />
+
+          {TOP_NAV.map((item) => (
             <NavLink
               key={item.href}
               {...item}

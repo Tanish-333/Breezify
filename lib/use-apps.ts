@@ -2,6 +2,8 @@
 
 import { useEffect, useState } from "react";
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   collectionGroup,
   deleteDoc,
@@ -494,6 +496,19 @@ export async function addAppSecret(
 
 export async function deleteAppSecret(appId: string, secretId: string): Promise<void> {
   await deleteDoc(doc(db, "apps", appId, "secrets", secretId));
+}
+
+/**
+ * Toggles one app id in/out of the current user's own starredAppIds — see
+ * firestore.rules' users/{userId} update rule, which allows this exact
+ * write (and only this field) regardless of role on the starred app. Not
+ * gated by canEdit anywhere it's called: starring is a viewer-appropriate
+ * action, same as any other bookmark.
+ */
+export async function toggleStarredApp(uid: string, appId: string, starred: boolean): Promise<void> {
+  await updateDoc(doc(db, "users", uid), {
+    starredAppIds: starred ? arrayRemove(appId) : arrayUnion(appId),
+  });
 }
 
 export function useApp(appId: string | undefined) {

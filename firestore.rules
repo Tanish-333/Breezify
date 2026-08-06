@@ -72,14 +72,26 @@ service cloud.firestore {
       // enforcement, not the caller's trustworthiness. (The Stripe webhook
       // sets plan/credits on a real payment via the Admin SDK, which
       // bypasses these rules entirely, not through this path.)
-      allow update: if isOwner(userId)
-        && request.resource.data.plan == resource.data.plan
-        && request.resource.data.credits <= resource.data.credits
-        && (
-          request.resource.data.credits == resource.data.credits
-          || isValidCost(resource.data.credits - request.resource.data.credits)
+      allow update: if isOwner(userId) && (
+        (
+          request.resource.data.plan == resource.data.plan
+          && request.resource.data.credits <= resource.data.credits
+          && (
+            request.resource.data.credits == resource.data.credits
+            || isValidCost(resource.data.credits - request.resource.data.credits)
+          )
+          && request.resource.data.credits >= 0
+        ) || (
+          // Starring is a lightweight, per-viewer preference (see
+          // toggleStarredApp() in lib/use-apps.ts) — deliberately not routed
+          // through the credit/plan checks above, which don't apply to it at
+          // all, but also deliberately not left to a bare isOwner() either:
+          // this scopes the exception to touching starredAppIds and nothing
+          // else, so a client can't piggyback an unrelated field change
+          // (say, plan) onto a write that looks like a star toggle.
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["starredAppIds"])
         )
-        && request.resource.data.credits >= 0;
+      );
       allow delete: if isOwner(userId);
     }
 

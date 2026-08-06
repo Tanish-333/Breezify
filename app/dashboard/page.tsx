@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { PromptComposer } from "@/components/prompt-composer";
@@ -15,7 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge, DeployBadge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth-context";
-import { useUserApps, useCollaboratingApps } from "@/lib/use-apps";
+import { useUserApps, useCollaboratingApps, toggleStarredApp } from "@/lib/use-apps";
 import {
   fetchModelAvailability,
   generateAppRequest,
@@ -24,7 +24,7 @@ import {
   type ClarifyQuestion,
 } from "@/lib/api-client";
 import { takePendingPrompt } from "@/lib/pending-prompt";
-import { formatDate } from "@/lib/utils";
+import { formatDate, cn } from "@/lib/utils";
 import {
   displayStatus,
   effectiveDeployStatus,
@@ -35,19 +35,52 @@ import {
   type ModelId,
   type PlanId,
 } from "@/lib/types";
-import { AlertCircle, FolderOpen, Loader2, Lock, PowerOff, Search, Trash2, Users } from "lucide-react";
+import { AlertCircle, FolderOpen, Loader2, Lock, PowerOff, Search, Star, Trash2, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
+
+type DashboardView = "all" | "starred" | "owned" | "shared" | "recent";
+
+const VIEW_COPY: Record<DashboardView, { heading: string; empty: string }> = {
+  all: { heading: "Your apps", empty: "Nothing here yet. Your generated apps will show up in this space." },
+  starred: { heading: "Starred", empty: "Star an app from its card or workspace header to pin it here." },
+  owned: { heading: "Owned by me", empty: "Apps you create will show up here." },
+  shared: { heading: "Shared with me", empty: "Apps a collaborator invites you to will show up here." },
+  recent: { heading: "Recent", empty: "Nothing opened yet." },
+};
+
+const RECENT_LIMIT = 5;
 
 function DashboardContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const view = (searchParams.get("view") as DashboardView | null) ?? "all";
   const { user, profile, refreshProfile } = useAuth();
   const { apps: ownedApps, loading: ownedLoading } = useUserApps(user?.uid);
   const { apps: sharedApps, loading: sharedLoading } = useCollaboratingApps(user?.uid);
-  const apps = useMemo(
+  const allApps = useMemo(
     () => [...ownedApps, ...sharedApps].sort((a, b) => b.createdAt - a.createdAt),
     [ownedApps, sharedApps]
   );
+  const starredIds = useMemo(() => profile?.starredAppIds ?? [], [profile?.starredAppIds]);
+  // "Recent" reuses createdAt sort rather than tracking a separate
+  // last-opened timestamp — simplest thing that satisfies "most recently
+  // opened/edited" without a new tracking mechanism nobody asked for yet.
+  const apps = useMemo(() => {
+    switch (view) {
+      case "owned":
+        return ownedApps;
+      case "shared":
+        return sharedApps;
+      case "starred":
+        return allApps.filter((a) => starredIds.includes(a.id));
+      case "recent":
+        return allApps.slice(0, RECENT_LIMIT);
+      default:
+        return allApps;
+    }
+  }, [view, allApps, ownedApps, sharedApps, starredIds]);
   const appsLoading = ownedLoading || sharedLoading;
+  const { heading, empty } = VIEW_COPY[view] ?? VIEW_COPY.all;
   const plan: PlanId = profile?.plan ?? "free";
   const canImport = PLAN_RANK[plan] >= PLAN_RANK[IMPORT_MIN_PLAN];
   const [showImport, setShowImport] = useState(false);
@@ -260,7 +293,7 @@ function DashboardContent() {
       <section className="mt-10 border-t border-border pt-8">
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
           <h2 className="text-base font-medium">
-            Your apps
+            {heading}
             {apps.length > 0 && (
               <span className="ml-2 text-sm font-normal text-muted-foreground">{apps.length}</span>
             )}
@@ -286,9 +319,7 @@ function DashboardContent() {
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center gap-3 py-14 text-center">
               <FolderOpen className="h-7 w-7 text-muted-foreground" strokeWidth={1.25} />
-              <p className="text-sm text-muted-foreground">
-                Nothing here yet. Your generated apps will show up in this space.
-              </p>
+              <p className="text-sm text-muted-foreground">{empty}</p>
             </CardContent>
           </Card>
         ) : (
@@ -306,6 +337,18 @@ function DashboardContent() {
                       </h3>
                     </Link>
                     <div className="flex shrink-0 items-center gap-1.5">
+                      <button
+                        onClick={() => toggleStarredApp(user!.uid, app.id, starredIds.includes(app.id))}
+                        title={starredIds.includes(app.id) ? "Unstar" : "Star"}
+                        className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
+                      >
+                        <Star
+                          className={cn(
+                            "h-3.5 w-3.5",
+                            starredIds.includes(app.id) && "fill-current text-foreground"
+                          )}
+                        />
+                      </button>
                       {app.userId !== user?.uid && (
                         <span className="flex items-center gap-1 rounded-full border border-border px-1.5 py-0.5 text-[10px] text-muted-foreground">
                           <Users className="h-2.5 w-2.5" />
