@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     // check would find no profile to grant the plan onto — a real charge
     // with the plan silently never applied, and Stripe support pointing
     // back at an app that insists no such customer exists.
-    const userDoc = await getOrCreateUserDoc(uid, idToken, email);
+    const userDoc = await getOrCreateUserDoc(uid, idToken, email, req.headers);
     if (!userDoc) {
       return NextResponse.json(
         { error: "We couldn't find or set up your account. Please sign out and back in, then try again." },

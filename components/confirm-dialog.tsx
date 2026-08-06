@@ -2,6 +2,7 @@
 
 import { AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { ModalPortal } from "@/components/modal-portal";
 
 /**
  * Replaces window.confirm()/alert() for destructive actions: those render as
@@ -26,6 +27,7 @@ export function ConfirmDialog({
   onClose: () => void;
 }) {
   return (
+    <ModalPortal>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onMouseDown={() => !loading && onClose()}
@@ -54,5 +56,6 @@ export function ConfirmDialog({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

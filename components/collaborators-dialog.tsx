@@ -5,6 +5,7 @@ import { auth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
+import { ModalPortal } from "@/components/modal-portal";
 import { AlertCircle, LogOut, Trash2, UserPlus, Users, X } from "lucide-react";
 
 interface Collaborator {
@@ -115,6 +116,7 @@ export function CollaboratorsDialog({
   }
 
   return (
+    <ModalPortal>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onMouseDown={onClose}
@@ -202,5 +204,6 @@ export function CollaboratorsDialog({
         )}
       </div>
     </div>
+    </ModalPortal>
   );
 }

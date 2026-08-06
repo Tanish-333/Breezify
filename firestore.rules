@@ -36,16 +36,16 @@ service cloud.firestore {
     // users/{uid}: profile + credit balance.
     match /users/{userId} {
       allow read: if isOwner(userId);
-      // A brand new profile can only ever start on the free plan with
-      // exactly the signup bonus, and only once per uid ever (see
-      // signups/{userId} below): without both constraints, a user could
-      // call the client SDK directly (bypassing the app entirely) to
-      // delete their own doc and recreate it with any plan/credits they
-      // want, or just keep re-claiming the signup bonus forever.
+      // The signup bonus itself is only ever granted by
+      // app/api/claim-signup (Admin SDK, bypasses these rules entirely),
+      // which also enforces a per-IP monthly cap that a security rule has
+      // no way to see or check. A direct client-side create is still
+      // allowed as a defensive fallback (e.g. that endpoint being briefly
+      // unreachable), but capped at 0 credits so it can never itself be
+      // used to claim or re-claim the bonus.
       allow create: if isOwner(userId)
         && request.resource.data.plan == "free"
-        && request.resource.data.credits == 5.0
-        && !exists(/databases/$(database)/documents/signups/$(userId));
+        && request.resource.data.credits == 0;
       // Plan can't be self-assigned, and credits can only ever move by
       // staying the same or dropping by exactly one valid generation cost.
       // That's what makes it safe for /api/generate to spend credit using
@@ -74,6 +74,15 @@ service cloud.firestore {
       allow read: if isOwner(userId);
       allow create: if isOwner(userId) && request.resource.data.keys().hasOnly(["claimedAt"]);
       allow update, delete: if false;
+    }
+
+    // signupIps/{ip_month}: per-IP, per-month counter of how many accounts
+    // have claimed the signup bonus from that address (see
+    // app/api/claim-signup). Admin SDK only — a security rule has no way to
+    // read the caller's real IP, so this can't be enforced here; it exists
+    // purely so the client can never read or tamper with its own count.
+    match /signupIps/{ipKey} {
+      allow read, write: if false;
     }
 
     // apps/{appId}: generated apps.

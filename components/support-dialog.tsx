@@ -5,6 +5,7 @@ import { auth } from "@/lib/firebase";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input, Label, Textarea } from "@/components/ui/input";
+import { ModalPortal } from "@/components/modal-portal";
 import { AlertCircle, CheckCircle2, X } from "lucide-react";
 
 export function SupportDialog({ onClose }: { onClose: () => void }) {
@@ -48,6 +49,7 @@ export function SupportDialog({ onClose }: { onClose: () => void }) {
   if (!user) return null;
 
   return (
+    <ModalPortal>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onMouseDown={onClose}
@@ -120,5 +122,6 @@ export function SupportDialog({ onClose }: { onClose: () => void }) {
         )}
       </div>
     </div>
+    </ModalPortal>
   );
 }

@@ -7,6 +7,7 @@ import { friendlyAuthError } from "@/lib/auth-errors";
 import { getGithubToken, hasGithubToken, clearGithubToken } from "@/lib/github-connect";
 import { Button } from "@/components/ui/button";
 import { GithubIcon } from "@/components/oauth-icons";
+import { ModalPortal } from "@/components/modal-portal";
 import { AlertCircle, CheckCircle2, RefreshCw, X } from "lucide-react";
 
 export function GithubSyncDialog({
@@ -86,6 +87,7 @@ export function GithubSyncDialog({
   }
 
   return (
+    <ModalPortal>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onMouseDown={onClose}
@@ -163,5 +165,6 @@ export function GithubSyncDialog({
         )}
       </div>
     </div>
+    </ModalPortal>
   );
 }

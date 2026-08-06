@@ -28,9 +28,7 @@ import {
   doc,
   getDoc,
   onSnapshot,
-  serverTimestamp,
   updateDoc,
-  writeBatch,
 } from "firebase/firestore";
 import {
   auth,
@@ -41,8 +39,6 @@ import {
 } from "@/lib/firebase";
 import { setGithubToken } from "@/lib/github-connect";
 import type { FeatherUser } from "@/lib/types";
-
-const SIGNUP_BONUS_CREDITS = 5.0;
 
 /**
  * True for password accounts that haven't clicked their verification link
@@ -73,41 +69,30 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
+/**
+ * Ensures users/{uid} exists, granting the signup bonus the first time.
+ * Delegates to /api/claim-signup (Admin SDK) rather than writing directly
+ * from the client: that's the only path that can enforce a per-IP monthly
+ * cap on how many bonus signups happen from one address, since a Firestore
+ * security rule has no way to see the caller's IP (see that route and
+ * firestore.rules' users/{userId} create rule for the full reasoning).
+ */
 async function ensureUserDoc(user: User) {
-  const ref = doc(db, "users", user.uid);
-  const signupRef = doc(db, "signups", user.uid);
-  const [snap, signupSnap] = await Promise.all([getDoc(ref), getDoc(signupRef)]);
+  const token = await user.getIdToken();
   const providers = user.providerData.map((p) => p.providerId);
-
-  const batch = writeBatch(db);
-  if (!snap.exists()) {
-    batch.set(ref, {
-      email: user.email,
+  const res = await fetch("/api/claim-signup", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({
       displayName: user.displayName,
       photoURL: user.photoURL,
-      credits: SIGNUP_BONUS_CREDITS,
-      plan: "free",
-      createdAt: serverTimestamp(),
-      lastLoginAt: serverTimestamp(),
       authProviders: providers,
-    });
-  } else {
-    batch.update(ref, {
-      lastLoginAt: serverTimestamp(),
-      authProviders: providers,
-      displayName: user.displayName ?? snap.data().displayName ?? null,
-      photoURL: user.photoURL ?? snap.data().photoURL ?? null,
-    });
+    }),
+  });
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || "Couldn't set up your account.");
   }
-  // Firestore rules only allow the free signup credit on a `users/{uid}`
-  // create when this marker does NOT already exist, so a deleted-and-
-  // recreated profile can't keep re-claiming it. Written here for both a
-  // brand new signup and, once, to grandfather in any account that
-  // predates this marker existing at all.
-  if (!signupSnap.exists()) {
-    batch.set(signupRef, { claimedAt: serverTimestamp() });
-  }
-  await batch.commit();
 }
 
 function toProfile(uid: string, data: any): FeatherUser {

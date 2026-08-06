@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { ModalPortal } from "@/components/modal-portal";
 import type { FeatherApp } from "@/lib/types";
 import {
   CreditCard,
@@ -101,6 +102,7 @@ export function CommandPalette({
   }
 
   return (
+    <ModalPortal>
     <div
       className="fixed inset-0 z-50 flex items-start justify-center bg-black/60 p-4 pt-[12vh] backdrop-blur-sm"
       onMouseDown={onClose}
@@ -154,5 +156,6 @@ export function CommandPalette({
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }

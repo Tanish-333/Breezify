@@ -8,6 +8,7 @@ import { getGithubToken, hasGithubToken, clearGithubToken } from "@/lib/github-c
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { GithubIcon } from "@/components/oauth-icons";
+import { ModalPortal } from "@/components/modal-portal";
 import { AlertCircle, CheckCircle2, ExternalLink, X } from "lucide-react";
 
 export function GithubPushDialog({
@@ -80,6 +81,7 @@ export function GithubPushDialog({
   }
 
   return (
+    <ModalPortal>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onMouseDown={onClose}
@@ -172,5 +174,6 @@ export function GithubPushDialog({
         )}
       </div>
     </div>
+    </ModalPortal>
   );
 }

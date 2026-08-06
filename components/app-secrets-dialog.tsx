@@ -5,6 +5,7 @@ import { useAppSecrets, addAppSecret, deleteAppSecret } from "@/lib/use-apps";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
+import { ModalPortal } from "@/components/modal-portal";
 import { AlertCircle, Eye, EyeOff, KeyRound, Trash2, X } from "lucide-react";
 
 export function AppSecretsDialog({ appId, onClose }: { appId: string; onClose: () => void }) {
@@ -54,6 +55,7 @@ export function AppSecretsDialog({ appId, onClose }: { appId: string; onClose: (
   }
 
   return (
+    <ModalPortal>
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm"
       onMouseDown={onClose}
@@ -154,5 +156,6 @@ export function AppSecretsDialog({ appId, onClose }: { appId: string; onClose: (
         </div>
       </div>
     </div>
+    </ModalPortal>
   );
 }
