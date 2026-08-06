@@ -107,6 +107,15 @@ export async function POST(req: NextRequest) {
     const returnUrl = `${appUrl(req)}/build/${appId}`;
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
+      // The account has Managed Payments (Stripe-as-merchant-of-record) on
+      // by default, which requires every line item's product to carry a
+      // Stripe Tax product tax_code — this ad-hoc, dynamically-priced
+      // domain-resale item never had one, so every purchase 400'd before a
+      // customer could even see the checkout page. Opting this one-off
+      // session out of Managed Payments is Stripe's own documented fix and
+      // matches how the subscription checkout (create-checkout-session)
+      // already behaves without needing a tax code at all.
+      managed_payments: { enabled: false },
       line_items: [
         {
           price_data: {

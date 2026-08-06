@@ -56,6 +56,7 @@ import {
   KeyRound,
   Loader2,
   Lock,
+  MoreHorizontal,
   Pencil,
   RefreshCw,
   Rocket,
@@ -64,6 +65,69 @@ import {
 } from "lucide-react";
 
 type Pane = "preview" | "code";
+
+/** One row in the workspace header's "More" menu — a link (external or locked-upsell) or an action button, never both. */
+function MenuItem({
+  icon: Icon,
+  label,
+  onClick,
+  href,
+  external,
+  locked,
+  disabled,
+  disabledTitle,
+  warn,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  onClick?: () => void;
+  href?: string;
+  external?: boolean;
+  locked?: boolean;
+  disabled?: boolean;
+  disabledTitle?: string;
+  warn?: boolean;
+}) {
+  const rowClassName = cn(
+    "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+    disabled ? "cursor-not-allowed text-muted-foreground/50" : "hover:bg-muted"
+  );
+  const content = (
+    <>
+      <span className="relative inline-flex shrink-0">
+        <Icon className="h-4 w-4" />
+        {locked && (
+          <Lock
+            className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
+            strokeWidth={3}
+          />
+        )}
+        {warn && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-warning" />}
+      </span>
+      <span className="flex-1">{label}</span>
+      {external && <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />}
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        target={external ? "_blank" : undefined}
+        rel={external ? "noreferrer" : undefined}
+        className={rowClassName}
+        title={locked ? "Upgrade to unlock" : undefined}
+      >
+        {content}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} title={disabledTitle} className={rowClassName}>
+      {content}
+    </button>
+  );
+}
 
 function AppWorkspace() {
   const params = useParams<{ appId: string }>();
@@ -106,12 +170,25 @@ function AppWorkspace() {
   const [nameDraft, setNameDraft] = useState("");
   const [pane, setPane] = useState<Pane>("preview");
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const conversationRef = useRef<HTMLDivElement>(null);
   const autoDeployedRef = useRef<string | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchModelAvailability().then(setAvailability).catch(() => {});
   }, []);
+
+  // Close the header's "More" menu on an outside click, same pattern as the
+  // model picker in PromptComposer.
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    function onDown(e: MouseEvent) {
+      if (!moreMenuRef.current?.contains(e.target as Node)) setMoreMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [moreMenuOpen]);
 
   useEffect(() => {
     if (app?.model && planAllowsModel(plan, app.model)) setModel(app.model);
@@ -433,149 +510,125 @@ function AppWorkspace() {
             </Button>
           )}
 
-          {hasFiles && app.githubUrl && (
-            canSyncGithub ? (
-              <Button variant="ghost" size="sm" onClick={() => setShowSync(true)}>
-                <RefreshCw className="h-4 w-4" />
-                <span className="hidden sm:inline">Sync</span>
-              </Button>
-            ) : (
-              <Link href="/billing" title="Upgrade to Plus to pull the latest commit">
-                <Button variant="ghost" size="sm">
-                  <span className="relative inline-flex">
-                    <RefreshCw className="h-4 w-4" />
-                    <Lock
-                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
-                      strokeWidth={3}
-                    />
-                  </span>
-                  <span className="hidden sm:inline">Sync</span>
-                </Button>
-              </Link>
-            )
-          )}
-
-          {hasFiles &&
-            (app.githubUrl ? (
-              <a href={app.githubUrl} target="_blank" rel="noreferrer">
-                <Button variant="ghost" size="sm">
-                  <GithubIcon className="h-4 w-4" />
-                  <span className="hidden sm:inline">Repo</span>
-                  <ExternalLink className="h-3 w-3" />
-                </Button>
-              </a>
-            ) : plan === "free" ? (
-              <Link href="/billing" title="Upgrade to Plus to push to GitHub">
-                <Button variant="ghost" size="sm">
-                  <span className="relative inline-flex">
-                    <GithubIcon className="h-4 w-4" />
-                    <Lock
-                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
-                      strokeWidth={3}
-                    />
-                  </span>
-                  <span className="hidden sm:inline">Push to GitHub</span>
-                </Button>
-              </Link>
-            ) : (
-              <Button variant="ghost" size="sm" onClick={() => setShowGithub(true)}>
-                <GithubIcon className="h-4 w-4" />
-                <span className="hidden sm:inline">Push to GitHub</span>
-              </Button>
-            ))}
-
-          {hasFiles &&
-            (canDuplicate ? (
-              <Button variant="ghost" size="sm" onClick={duplicate} loading={duplicating}>
-                {!duplicating && <Copy className="h-4 w-4" />}
-                <span className="hidden sm:inline">Duplicate</span>
-              </Button>
-            ) : (
-              <Link href="/billing" title="Upgrade to Pro to duplicate this app">
-                <Button variant="ghost" size="sm">
-                  <Lock className="h-4 w-4" />
-                  <span className="hidden sm:inline">Duplicate</span>
-                </Button>
-              </Link>
-            ))}
-
-          {hasFiles && isOwner && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowSecrets(true)}
-              title={
-                missingSecrets.length > 0
-                  ? `Missing ${missingSecrets.join(", ")} — this app's backend won't work without them`
-                  : undefined
-              }
-            >
-              <span className="relative inline-flex">
-                <KeyRound className="h-4 w-4" />
-                {missingSecrets.length > 0 && (
-                  <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-warning" />
-                )}
-              </span>
-              <span className="hidden sm:inline">Secrets</span>
-            </Button>
-          )}
-
           {hasFiles && (
-            !isOwner || canInviteCollaborators ? (
-              <Button variant="ghost" size="sm" onClick={() => setShowCollaborators(true)}>
-                <Users className="h-4 w-4" />
-                <span className="hidden sm:inline">Team</span>
-              </Button>
-            ) : (
-              <Link href="/billing" title="Upgrade to Plus to invite collaborators">
-                <Button variant="ghost" size="sm">
-                  <span className="relative inline-flex">
-                    <Users className="h-4 w-4" />
-                    <Lock
-                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
-                      strokeWidth={3}
-                    />
-                  </span>
-                  <span className="hidden sm:inline">Team</span>
-                </Button>
-              </Link>
-            )
-          )}
-
-          {hasFiles && isOwner && (
-            !canCustomDomain ? (
-              <Link href="/billing" title="Upgrade to Pro to attach a custom domain">
-                <Button variant="ghost" size="sm">
-                  <span className="relative inline-flex">
-                    <Globe className="h-4 w-4" />
-                    <Lock
-                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
-                      strokeWidth={3}
-                    />
-                  </span>
-                  <span className="hidden sm:inline">Domain</span>
-                </Button>
-              </Link>
-            ) : !app.deployedUrl ? (
-              // A domain attaches to a deployed project on Vercel, so there's
-              // nothing to attach it to yet — disabled rather than hidden,
-              // so a Pro+ owner can actually find this instead of wondering
-              // where it went.
+            <div className="relative" ref={moreMenuRef}>
               <Button
                 variant="ghost"
                 size="sm"
-                disabled
-                title="Deploy your app first — a custom domain attaches to the deployed version."
+                onClick={() => setMoreMenuOpen((o) => !o)}
+                title="More actions"
               >
-                <Globe className="h-4 w-4" />
-                <span className="hidden sm:inline">Domain</span>
+                <span className="relative inline-flex">
+                  <MoreHorizontal className="h-4 w-4" />
+                  {isOwner && missingSecrets.length > 0 && (
+                    <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-warning" />
+                  )}
+                </span>
               </Button>
-            ) : (
-              <Button variant="ghost" size="sm" onClick={() => setShowDomain(true)}>
-                <Globe className="h-4 w-4" />
-                <span className="hidden sm:inline">Domain</span>
-              </Button>
-            )
+              {moreMenuOpen && (
+                <div className="absolute right-0 top-full z-20 mt-2 w-60 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-xl animate-in">
+                  {app.githubUrl && (
+                    canSyncGithub ? (
+                      <MenuItem
+                        icon={RefreshCw}
+                        label="Sync from GitHub"
+                        onClick={() => {
+                          setShowSync(true);
+                          setMoreMenuOpen(false);
+                        }}
+                      />
+                    ) : (
+                      <MenuItem icon={RefreshCw} label="Sync from GitHub" href="/billing" locked />
+                    )
+                  )}
+
+                  {app.githubUrl ? (
+                    <MenuItem icon={GithubIcon} label="View repo" href={app.githubUrl} external />
+                  ) : plan === "free" ? (
+                    <MenuItem icon={GithubIcon} label="Push to GitHub" href="/billing" locked />
+                  ) : (
+                    <MenuItem
+                      icon={GithubIcon}
+                      label="Push to GitHub"
+                      onClick={() => {
+                        setShowGithub(true);
+                        setMoreMenuOpen(false);
+                      }}
+                    />
+                  )}
+
+                  {canDuplicate ? (
+                    <MenuItem
+                      icon={Copy}
+                      label="Duplicate"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        duplicate();
+                      }}
+                      disabled={duplicating}
+                    />
+                  ) : (
+                    <MenuItem icon={Copy} label="Duplicate" href="/billing" locked />
+                  )}
+
+                  {isOwner && (
+                    <MenuItem
+                      icon={KeyRound}
+                      label="Secrets"
+                      warn={missingSecrets.length > 0}
+                      disabledTitle={
+                        missingSecrets.length > 0
+                          ? `Missing ${missingSecrets.join(", ")} — this app's backend won't work without them`
+                          : undefined
+                      }
+                      onClick={() => {
+                        setShowSecrets(true);
+                        setMoreMenuOpen(false);
+                      }}
+                    />
+                  )}
+
+                  {!isOwner || canInviteCollaborators ? (
+                    <MenuItem
+                      icon={Users}
+                      label="Team"
+                      onClick={() => {
+                        setShowCollaborators(true);
+                        setMoreMenuOpen(false);
+                      }}
+                    />
+                  ) : (
+                    <MenuItem icon={Users} label="Team" href="/billing" locked />
+                  )}
+
+                  {isOwner && (
+                    !canCustomDomain ? (
+                      <MenuItem icon={Globe} label="Domain" href="/billing" locked />
+                    ) : !app.deployedUrl ? (
+                      // A domain attaches to a deployed project on Vercel, so
+                      // there's nothing to attach it to yet — disabled rather
+                      // than hidden, so a Pro+ owner can still find it instead
+                      // of wondering where it went.
+                      <MenuItem
+                        icon={Globe}
+                        label="Domain"
+                        disabled
+                        disabledTitle="Deploy your app first — a custom domain attaches to the deployed version."
+                      />
+                    ) : (
+                      <MenuItem
+                        icon={Globe}
+                        label="Domain"
+                        onClick={() => {
+                          setShowDomain(true);
+                          setMoreMenuOpen(false);
+                        }}
+                      />
+                    )
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {hasFiles && (
