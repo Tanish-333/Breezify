@@ -63,10 +63,25 @@ export const metadata: Metadata = {
   // Paste the "content" value from Google Search Console's HTML tag
   // verification method into NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION — no
   // code change needed after that, just set the env var and redeploy.
-  verification: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
-    ? { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION }
-    : undefined,
+  verification: googleSiteVerification() ? { google: googleSiteVerification() } : undefined,
 };
+
+/**
+ * Search Console shows the same code in two formats depending which
+ * verification method you pick: the HTML meta tag method gives just the
+ * bare code, but the DNS TXT record method gives
+ * "google-site-verification=<code>" — an easy value to paste into
+ * NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION by mistake, since it's visually the
+ * "the code" too. Next.js's `verification.google` field always renders as
+ * `<meta name="google-site-verification" content="...">`, so pasting the
+ * prefixed form would double it up and silently fail to verify. Stripping
+ * it here means either format works.
+ */
+function googleSiteVerification(): string | undefined {
+  const raw = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION?.trim();
+  if (!raw) return undefined;
+  return raw.replace(/^google-site-verification=/i, "");
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
