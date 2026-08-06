@@ -22,6 +22,7 @@ FRONTEND REQUIREMENTS:
 - Full error handling, input validation, no placeholder logic, no TODOs, no "implement this later" comments.
 - Include package.json, README.md, and .env.example.
 - package.json must include a working \`"build": "vite build"\` script and the actual "vite" and "@vitejs/plugin-react" devDependencies, so the project builds for production, not just \`npm run dev\`.
+- package.json's "dependencies" must list EVERY npm package imported anywhere in the source (react, react-dom, and every other bare import like lucide-react, date-fns, clsx, recharts, etc.), each with a real, current version. This is not optional: the live in-browser preview loads any bare import straight from a CDN regardless of what package.json says, so a missing entry never shows up there — but the real \`npm install\` that runs on deploy only installs what's declared, so an undeclared import that works perfectly in preview fails the production build outright. Before finishing, mentally re-scan every file's imports and cross-check each bare specifier against "dependencies".
 - Must run immediately after \`npm install && npm run dev\`.
 - Prefer a small number of well-organized files over many tiny ones.
 

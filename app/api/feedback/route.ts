@@ -72,20 +72,27 @@ export async function POST(req: NextRequest) {
 
   try {
     await commit([createWrite(`feedback/${feedbackId}`, feedbackData)], idToken);
-    // Best-effort, never blocks the submission itself: feedback/{id} is
-    // unreadable via the client SDK by design (see firestore.rules), so
-    // without this the only way to ever see what was submitted was opening
-    // the Firebase console's Firestore data tab by hand.
-    try {
-      await sendFeedbackNotificationEmail({
+    // Best-effort, and genuinely non-blocking: feedback/{id} is unreadable
+    // via the client SDK by design (see firestore.rules), so this is the
+    // only way to ever see what was submitted short of the Firebase console
+    // — but it must never hold up the response the submitter is waiting on.
+    // This used to `await` the send directly, so a slow or hung outbound
+    // call to Resend (no timeout on that fetch) left the client's "Send
+    // feedback" button spinning indefinitely even though the feedback had
+    // already been saved. A capped race means the worst case is a few
+    // seconds' delay, never a hang, and the feedback is never lost either
+    // way since it's already committed above.
+    await Promise.race([
+      sendFeedbackNotificationEmail({
         uid,
         type: typeof type === "string" ? type : "general",
         subject,
         message,
-      });
-    } catch (err) {
+      }),
+      new Promise((resolve) => setTimeout(resolve, 4000)),
+    ]).catch((err) => {
       console.error(`[feedback] id=${feedbackId} failed to send notification email:`, err);
-    }
+    });
     return NextResponse.json(
       { id: feedbackId, message: "Feedback submitted successfully" },
       { status: 201 }

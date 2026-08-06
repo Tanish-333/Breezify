@@ -181,6 +181,7 @@ export async function deployToVercel(
     if (!check.ok) continue;
     const state = check.body.readyState as string;
     url = check.body.url ?? url;
+    const inspectorUrl = typeof check.body.inspectorUrl === "string" ? check.body.inspectorUrl : null;
     if (state === "READY") {
       const customAlias = await tryCustomAlias(id, slug);
       return { url: `https://${customAlias ?? url}`, id };
@@ -189,11 +190,17 @@ export async function deployToVercel(
       const canceled = state === "CANCELED";
       const logLines = canceled ? [] : await getDeploymentBuildLogs(id);
       const tail = logLines.slice(-40).join("\n");
-      throw new Error(
-        tail
-          ? `The deployment failed to build. Build output:\n\n${tail}`
-          : `The deployment failed to build${canceled ? " (canceled)" : ""}. Download the ZIP to see the full error on Vercel, or check that the app builds locally with \`npm run build\`.`
-      );
+      // The events endpoint above is best-effort and can come back empty
+      // even for a real build failure (a query-shape mismatch, an events
+      // page that hasn't landed yet) — a direct link to this exact
+      // deployment's own logs on Vercel is a real fallback either way,
+      // not just "check Vercel" with nothing to click.
+      const logsLine = inspectorUrl ? `\n\nFull logs: ${inspectorUrl}` : "";
+      const fallbackTail = "Download the ZIP to see the full error on Vercel, or check that the app builds locally with npm run build.";
+      const message = tail
+        ? `The deployment failed to build. Build output:\n\n${tail}${logsLine}`
+        : `The deployment failed to build${canceled ? " (canceled)" : ""}. ${logsLine ? `Full logs: ${inspectorUrl}` : fallbackTail}`;
+      throw new Error(message);
     }
   }
 

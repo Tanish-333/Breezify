@@ -121,6 +121,7 @@ function toProfile(uid: string, data: any): FeatherUser {
     createdAt: data.createdAt?.toMillis?.() ?? Date.now(),
     lastLoginAt: data.lastLoginAt?.toMillis?.() ?? Date.now(),
     authProviders: data.authProviders ?? [],
+    emailNotifications: data.emailNotifications !== false,
   };
 }
 
@@ -160,7 +161,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           try {
             await ensureUserDoc(u);
           } catch {
-            // Profile sync failed (offline, permissions); still let the user in.
+            // A transient failure here (offline, a network blip) used to be
+            // swallowed outright, silently leaving users/{uid} never
+            // created — every server route reading it then had nothing to
+            // find ("User account not found"), the sidebar's credit balance
+            // never rendered, and there was no way to recover short of
+            // reloading. One retry after a beat covers the common
+            // transient case; still lets the user in either way rather
+            // than blocking on it (server routes also self-heal this now,
+            // see lib/ensure-user-doc-server.ts, as a second backstop).
+            await new Promise((r) => setTimeout(r, 1200));
+            try {
+              await ensureUserDoc(u);
+            } catch {
+              // Genuinely offline or blocked; the live profile listener
+              // below will pick the doc up automatically once it exists,
+              // whether that's from a later retry here on the next
+              // sign-in, or a server route self-healing it first.
+            }
           }
           // A superseded event (e.g. signed out again while ensureUserDoc was
           // still in flight) must not open a profile listener after the

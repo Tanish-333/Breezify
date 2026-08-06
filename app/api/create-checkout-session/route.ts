@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { commit, getDoc, updateWrite } from "@/lib/firestore-rest";
+import { commit, updateWrite } from "@/lib/firestore-rest";
+import { getOrCreateUserDoc } from "@/lib/ensure-user-doc-server";
 import { getStripe, isStripeConfigured, priceIdFor } from "@/lib/stripe";
 import { PLAN_RANK, isPlanId, type PlanId } from "@/lib/types";
 
@@ -52,7 +53,20 @@ export async function POST(req: NextRequest) {
     }
 
     const userPath = `users/${uid}`;
-    const userDoc = await getDoc(userPath, idToken);
+    // Self-heals the same race lib/auth-context.tsx's client-side profile
+    // creation can hit (see lib/ensure-user-doc-server.ts): without this, a
+    // signed-in, paying customer whose users/{uid} doc never landed could
+    // check out fine, but the Stripe webhook's isKnownBreezifyUser(uid)
+    // check would find no profile to grant the plan onto — a real charge
+    // with the plan silently never applied, and Stripe support pointing
+    // back at an app that insists no such customer exists.
+    const userDoc = await getOrCreateUserDoc(uid, idToken, email);
+    if (!userDoc) {
+      return NextResponse.json(
+        { error: "We couldn't find or set up your account. Please sign out and back in, then try again." },
+        { status: 400 }
+      );
+    }
     const existingCustomerId =
       typeof userDoc?.fields.stripeCustomerId === "string"
         ? (userDoc.fields.stripeCustomerId as string)

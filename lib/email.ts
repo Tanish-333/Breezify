@@ -43,6 +43,10 @@ export async function sendEmail({
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ from: fromAddress(), to, subject, html }),
+    // Without this, a hung connection to Resend blocks forever — every
+    // caller here treats sending as best-effort, but a fetch with no
+    // timeout can still stall whatever request triggered it indefinitely.
+    signal: AbortSignal.timeout(8000),
   });
   if (!res.ok) {
     const body = await res.text();

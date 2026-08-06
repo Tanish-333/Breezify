@@ -415,6 +415,8 @@ export interface FeatherUser {
   createdAt: number;
   lastLoginAt: number;
   authProviders: string[];
+  /** Whether to email this user for things like a collaborator invite. Absent/undefined means on — see the Settings page's Notifications card. */
+  emailNotifications?: boolean;
 }
 
 export type TransactionType = "generation" | "topup" | "subscription";

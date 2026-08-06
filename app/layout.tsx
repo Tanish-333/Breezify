@@ -21,9 +21,20 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: TITLE,
   description: DESCRIPTION,
+  // Google Search and most non-Chromium browsers/crawlers still don't
+  // resolve an SVG-only favicon — /favicon.ico and a PNG are what actually
+  // show up in search results and browser tabs; the SVG stays first for
+  // browsers that do support it (sharper on high-DPI displays).
   icons: {
-    icon: "/favicon.svg",
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon.png",
   },
+  manifest: "/site.webmanifest",
   openGraph: {
     title: TITLE,
     description: DESCRIPTION,
