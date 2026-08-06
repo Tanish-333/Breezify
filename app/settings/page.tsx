@@ -91,6 +91,18 @@ function Section({
   return <div className={matches ? "" : "hidden"}>{children}</div>;
 }
 
+/** A labeled cluster of Sections — pure visual grouping, doesn't affect search matching (each Section still matches independently). */
+function Group({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-3">
+      <h2 className="px-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {label}
+      </h2>
+      <div className="space-y-3">{children}</div>
+    </div>
+  );
+}
+
 function SettingsContent() {
   const router = useRouter();
   const { user, profile, changePassword, reauthenticateWithPassword, deleteAccount, signOut } =
@@ -255,286 +267,292 @@ function SettingsContent() {
         )}
       </div>
 
-      <Section title="Profile" keywords="account name email verification plan credits balance" query={search}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Profile</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Name</span>
-              <span>{user?.displayName || "Not set"}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Email</span>
-              <span>{user?.email}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Email verified</span>
-              {emailVerified ? (
-                <span className="flex items-center gap-1 text-success">
-                  <CheckCircle2 className="h-3.5 w-3.5" /> Verified
-                </span>
-              ) : (
-                <span className="text-warning">Not verified</span>
-              )}
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Plan</span>
-              <span className="capitalize">{profile?.plan}</span>
-            </div>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Credit balance</span>
-              <span>{profile ? formatCredits(profile.credits) : "Loading"}</span>
-            </div>
-          </CardContent>
-        </Card>
-      </Section>
-
-      <Section title="Connected providers" keywords="sign in login google github apple password oauth" query={search}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Connected providers</CardTitle>
-            <CardDescription>Sign-in methods linked to your account.</CardDescription>
-          </CardHeader>
-          <CardContent className="flex flex-wrap gap-2">
-            {providers.length === 0 && (
-              <span className="text-sm text-muted-foreground">No providers linked.</span>
-            )}
-            {providers.map((p) => (
-              <Badge key={p} className="gap-1.5">
-                <ShieldCheck className="h-3 w-3" />
-                {PROVIDER_LABELS[p] || p}
-              </Badge>
-            ))}
-          </CardContent>
-        </Card>
-      </Section>
-
-      <Section title="Appearance" keywords="theme dark mode light mode display color" query={search}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Appearance</CardTitle>
-            <CardDescription>How Breezify looks on this device.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex items-center justify-between text-sm">
-              <span className="text-muted-foreground">Theme</span>
-              <div className="flex items-center rounded-lg border border-border p-0.5">
-                <button
-                  onClick={() => applyTheme("light")}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                    theme === "light" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Sun className="h-3.5 w-3.5" />
-                  Light
-                </button>
-                <button
-                  onClick={() => applyTheme("dark")}
-                  className={cn(
-                    "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
-                    theme === "dark" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
-                  )}
-                >
-                  <Moon className="h-3.5 w-3.5" />
-                  Dark
-                </button>
+      <Group label="Account">
+        <Section title="Profile" keywords="account name email verification plan credits balance" query={search}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Profile</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Name</span>
+                <span>{user?.displayName || "Not set"}</span>
               </div>
-            </div>
-          </CardContent>
-        </Card>
-      </Section>
-
-      <Section title="Generation defaults" keywords="default model haiku sonnet opus gemini groq ai builder preference" query={search}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Generation defaults</CardTitle>
-            <CardDescription>
-              The model pre-selected when you start a new app. You can still change it per-generation.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="flex flex-wrap gap-2">
-              <button
-                onClick={() => chooseDefaultModel(null)}
-                className={cn(
-                  "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                  defaultModel === null
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Email</span>
+                <span>{user?.email}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Email verified</span>
+                {emailVerified ? (
+                  <span className="flex items-center gap-1 text-success">
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Verified
+                  </span>
+                ) : (
+                  <span className="text-warning">Not verified</span>
                 )}
-              >
-                <Sparkles className="mr-1 inline h-3 w-3" />
-                Fastest available
-              </button>
-              {MODEL_IDS.filter((id) => planAllowsModel(plan, id)).map((id) => (
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Plan</span>
+                <span className="capitalize">{profile?.plan}</span>
+              </div>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Credit balance</span>
+                <span>{profile ? formatCredits(profile.credits) : "Loading"}</span>
+              </div>
+            </CardContent>
+          </Card>
+        </Section>
+
+        <Section title="Connected providers" keywords="sign in login google github apple password oauth" query={search}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Connected providers</CardTitle>
+              <CardDescription>Sign-in methods linked to your account.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-wrap gap-2">
+              {providers.length === 0 && (
+                <span className="text-sm text-muted-foreground">No providers linked.</span>
+              )}
+              {providers.map((p) => (
+                <Badge key={p} className="gap-1.5">
+                  <ShieldCheck className="h-3 w-3" />
+                  {PROVIDER_LABELS[p] || p}
+                </Badge>
+              ))}
+            </CardContent>
+          </Card>
+        </Section>
+
+        {hasPassword && (
+        <Section title="Change password" keywords="security credentials login" query={search}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Change password</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {pwError && (
+                <div className="mb-4 flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{pwError}</span>
+                </div>
+              )}
+              {pwSuccess && (
+                <div className="mb-4 flex items-start gap-2 rounded border border-success/30 bg-success/5 p-3 text-sm text-success">
+                  <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>Password updated.</span>
+                </div>
+              )}
+              <form onSubmit={handlePasswordChange} className="flex items-end gap-3">
+                <div className="flex-1">
+                  <Label htmlFor="new-password">New password</Label>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    minLength={6}
+                    required
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="At least 6 characters"
+                  />
+                </div>
+                <Button type="submit" loading={pwLoading}>
+                  Update
+                </Button>
+              </form>
+
+              {needsReauth && (
+                <form onSubmit={handleReauth} className="mt-4 space-y-3 border-t border-border pt-4">
+                  <p className="text-sm text-muted-foreground">
+                    For your security, confirm your current password to continue.
+                  </p>
+                  {reauthError && (
+                    <div className="flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
+                      <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                      <span>{reauthError}</span>
+                    </div>
+                  )}
+                  <div className="flex items-end gap-3">
+                    <div className="flex-1">
+                      <Label htmlFor="current-password">Current password</Label>
+                      <Input
+                        id="current-password"
+                        type="password"
+                        required
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        placeholder="Your current password"
+                      />
+                    </div>
+                    <Button type="submit" loading={reauthLoading}>
+                      Confirm
+                    </Button>
+                  </div>
+                </form>
+              )}
+            </CardContent>
+          </Card>
+        </Section>
+        )}
+      </Group>
+
+      <Group label="Preferences">
+        <Section title="Appearance" keywords="theme dark mode light mode display color" query={search}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Appearance</CardTitle>
+              <CardDescription>How Breezify looks on this device.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Theme</span>
+                <div className="flex items-center rounded-lg border border-border p-0.5">
+                  <button
+                    onClick={() => applyTheme("light")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                      theme === "light" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <Sun className="h-3.5 w-3.5" />
+                    Light
+                  </button>
+                  <button
+                    onClick={() => applyTheme("dark")}
+                    className={cn(
+                      "flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors",
+                      theme === "dark" ? "bg-foreground text-background" : "text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <Moon className="h-3.5 w-3.5" />
+                    Dark
+                  </button>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </Section>
+
+        <Section title="Generation defaults" keywords="default model haiku sonnet opus gemini groq ai builder preference" query={search}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Generation defaults</CardTitle>
+              <CardDescription>
+                The model pre-selected when you start a new app. You can still change it per-generation.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="flex flex-wrap gap-2">
                 <button
-                  key={id}
-                  onClick={() => chooseDefaultModel(id)}
+                  onClick={() => chooseDefaultModel(null)}
                   className={cn(
                     "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
-                    defaultModel === id
+                    defaultModel === null
                       ? "border-foreground bg-foreground text-background"
                       : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
                   )}
                 >
-                  {MODEL_INFO[id].label}
+                  <Sparkles className="mr-1 inline h-3 w-3" />
+                  Fastest available
                 </button>
-              ))}
-            </div>
-          </CardContent>
-        </Card>
-      </Section>
-
-      <Section title="Notifications" keywords="email collaborator invite alerts" query={search}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Notifications</CardTitle>
-            <CardDescription>Control which emails Breezify sends you.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {notifError && (
-              <div className="mb-3 flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span>{notifError}</span>
+                {MODEL_IDS.filter((id) => planAllowsModel(plan, id)).map((id) => (
+                  <button
+                    key={id}
+                    onClick={() => chooseDefaultModel(id)}
+                    className={cn(
+                      "rounded-full border px-3 py-1.5 text-xs font-medium transition-colors",
+                      defaultModel === id
+                        ? "border-foreground bg-foreground text-background"
+                        : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    {MODEL_INFO[id].label}
+                  </button>
+                ))}
               </div>
-            )}
-            <div className="flex items-center justify-between gap-4 text-sm">
-              <div className="flex items-start gap-2">
-                <Bell className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
-                <div>
-                  <p>Collaborator invites</p>
-                  <p className="text-xs text-muted-foreground">
-                    Email me when someone invites me to work on their app.
-                  </p>
+            </CardContent>
+          </Card>
+        </Section>
+
+        <Section title="Notifications" keywords="email collaborator invite alerts" query={search}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Notifications</CardTitle>
+              <CardDescription>Control which emails Breezify sends you.</CardDescription>
+            </CardHeader>
+            <CardContent>
+              {notifError && (
+                <div className="mb-3 flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
+                  <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                  <span>{notifError}</span>
                 </div>
-              </div>
-              <Switch
-                checked={profile?.emailNotifications ?? true}
-                onChange={toggleEmailNotifications}
-                disabled={notifLoading || !profile}
-                label="Toggle collaborator invite emails"
-              />
-            </div>
-          </CardContent>
-        </Card>
-      </Section>
-
-      {hasPassword && (
-      <Section title="Change password" keywords="security credentials login" query={search}>
-        <Card>
-          <CardHeader>
-            <CardTitle>Change password</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {pwError && (
-              <div className="mb-4 flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
-                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span>{pwError}</span>
-              </div>
-            )}
-            {pwSuccess && (
-              <div className="mb-4 flex items-start gap-2 rounded border border-success/30 bg-success/5 p-3 text-sm text-success">
-                <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
-                <span>Password updated.</span>
-              </div>
-            )}
-            <form onSubmit={handlePasswordChange} className="flex items-end gap-3">
-              <div className="flex-1">
-                <Label htmlFor="new-password">New password</Label>
-                <Input
-                  id="new-password"
-                  type="password"
-                  minLength={6}
-                  required
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="At least 6 characters"
+              )}
+              <div className="flex items-center justify-between gap-4 text-sm">
+                <div className="flex items-start gap-2">
+                  <Bell className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+                  <div>
+                    <p>Collaborator invites</p>
+                    <p className="text-xs text-muted-foreground">
+                      Email me when someone invites me to work on their app.
+                    </p>
+                  </div>
+                </div>
+                <Switch
+                  checked={profile?.emailNotifications ?? true}
+                  onChange={toggleEmailNotifications}
+                  disabled={notifLoading || !profile}
+                  label="Toggle collaborator invite emails"
                 />
               </div>
-              <Button type="submit" loading={pwLoading}>
-                Update
-              </Button>
-            </form>
+            </CardContent>
+          </Card>
+        </Section>
+      </Group>
 
-            {needsReauth && (
-              <form onSubmit={handleReauth} className="mt-4 space-y-3 border-t border-border pt-4">
-                <p className="text-sm text-muted-foreground">
-                  For your security, confirm your current password to continue.
-                </p>
-                {reauthError && (
-                  <div className="flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
-                    <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-                    <span>{reauthError}</span>
-                  </div>
-                )}
-                <div className="flex items-end gap-3">
-                  <div className="flex-1">
-                    <Label htmlFor="current-password">Current password</Label>
-                    <Input
-                      id="current-password"
-                      type="password"
-                      required
-                      value={currentPassword}
-                      onChange={(e) => setCurrentPassword(e.target.value)}
-                      placeholder="Your current password"
-                    />
-                  </div>
-                  <Button type="submit" loading={reauthLoading}>
-                    Confirm
-                  </Button>
-                </div>
-              </form>
+      <Group label="Data & danger zone">
+        <Section title="Your data" keywords="export download privacy gdpr" query={search}>
+        <Card>
+          <CardHeader>
+            <CardTitle>Your data</CardTitle>
+            <CardDescription>
+              Download everything Breezify has stored about your account as a single file.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {exportError && (
+              <div className="mb-4 flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{exportError}</span>
+              </div>
             )}
+            <Button variant="secondary" onClick={handleExport} loading={exportLoading}>
+              <Download className="h-4 w-4" />
+              Download my data
+            </Button>
           </CardContent>
         </Card>
-      </Section>
-      )}
+        </Section>
 
-      <Section title="Your data" keywords="export download privacy gdpr" query={search}>
-      <Card>
-        <CardHeader>
-          <CardTitle>Your data</CardTitle>
-          <CardDescription>
-            Download everything Breezify has stored about your account as a single file.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          {exportError && (
-            <div className="mb-4 flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>{exportError}</span>
-            </div>
-          )}
-          <Button variant="secondary" onClick={handleExport} loading={exportLoading}>
-            <Download className="h-4 w-4" />
-            Download my data
-          </Button>
-        </CardContent>
-      </Card>
-      </Section>
-
-      <Section title="Danger zone" keywords="delete account remove close cancel" query={search}>
-      <Card className="border-error/30">
-        <CardHeader>
-          <CardTitle className="text-error">Danger zone</CardTitle>
-          <CardDescription>Permanently delete your account and all your apps.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {deleteError && (
-            <div className="mb-4 flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
-              <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
-              <span>{deleteError}</span>
-            </div>
-          )}
-          <Button variant="destructive" onClick={() => setShowDeleteConfirm(true)} loading={deleteLoading}>
-            Delete account
-          </Button>
-        </CardContent>
-      </Card>
-      </Section>
+        <Section title="Danger zone" keywords="delete account remove close cancel" query={search}>
+        <Card className="border-error/30">
+          <CardHeader>
+            <CardTitle className="text-error">Danger zone</CardTitle>
+            <CardDescription>Permanently delete your account and all your apps.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {deleteError && (
+              <div className="mb-4 flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+            <Button variant="destructive" onClick={() => setShowDeleteConfirm(true)} loading={deleteLoading}>
+              Delete account
+            </Button>
+          </CardContent>
+        </Card>
+        </Section>
+      </Group>
 
       {showDeleteConfirm && (
         <ConfirmDialog

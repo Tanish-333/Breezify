@@ -783,8 +783,8 @@ function AppWorkspace() {
           )}
         </div>
 
-        <div className="min-h-0 min-w-0 flex-1">
-          {app.status === "generating" ? (
+        <div className="relative min-h-0 min-w-0 flex-1">
+          {app.status === "generating" && !hasFiles ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               <p className="text-sm text-muted-foreground">Generating your app...</p>
@@ -806,26 +806,39 @@ function AppWorkspace() {
               </Button>
             </div>
           ) : hasFiles ? (
-            pane === "preview" ? (
-              <AppPreview
-                files={files}
-                removeBadge={plan !== "free"}
-                onError={setPreviewError}
-                onReload={() => setPreviewError(null)}
-                reloadKey={turns.length}
-              />
-            ) : (
-              <div className="h-full overflow-auto p-4">
-                <CodePreview
+            <>
+              {/* A refine of an already-built app keeps the last working preview
+                  on screen instead of blanking it — losing it made every refine
+                  feel like starting over instead of live-editing. Only a brand
+                  new build (no files yet, handled above) still gets the
+                  full-screen spinner, since there's nothing to show underneath it. */}
+              {app.status === "generating" && (
+                <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-2 border-b border-border bg-background/90 px-3 py-2 text-xs text-muted-foreground backdrop-blur-sm">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Updating your app...
+                </div>
+              )}
+              {pane === "preview" ? (
+                <AppPreview
                   files={files}
-                  appName={app.name}
-                  locked={plan === "free"}
-                  editable={plan !== "free" && !blockedByOtherEditor}
-                  onSave={saveEdit}
-                  versionKey={turns.length}
+                  removeBadge={plan !== "free"}
+                  onError={setPreviewError}
+                  onReload={() => setPreviewError(null)}
+                  reloadKey={turns.length}
                 />
-              </div>
-            )
+              ) : (
+                <div className="h-full overflow-auto p-4">
+                  <CodePreview
+                    files={files}
+                    appName={app.name}
+                    locked={plan === "free"}
+                    editable={plan !== "free" && !blockedByOtherEditor}
+                    onSave={saveEdit}
+                    versionKey={turns.length}
+                  />
+                </div>
+              )}
+            </>
           ) : null}
         </div>
       </div>
