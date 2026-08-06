@@ -109,7 +109,11 @@ export async function POST(req: NextRequest) {
       subscription: {
         status: updated.status,
         cancelAtPeriodEnd: updated.cancel_at_period_end,
-        currentPeriodEnd: updated.current_period_end,
+        // Moved off the subscription object itself to its first item in
+        // recent API versions (a subscription can have items on different
+        // billing cycles now) — see the Subscription/SubscriptionItem type
+        // definitions in the installed stripe package for the current shape.
+        currentPeriodEnd: updated.items.data[0]?.current_period_end,
       },
     });
   } catch (err) {

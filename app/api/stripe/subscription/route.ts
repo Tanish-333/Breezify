@@ -66,7 +66,9 @@ export async function POST(req: NextRequest) {
       subscription: {
         status: active.status,
         cancelAtPeriodEnd: active.cancel_at_period_end,
-        currentPeriodEnd: active.current_period_end,
+        // Moved to the subscription's first item in recent API versions —
+        // see the matching comment in cancel-subscription/route.ts.
+        currentPeriodEnd: active.items.data[0]?.current_period_end,
       },
       customerId,
       downgradeLockedUntil: downgradeLock.until,

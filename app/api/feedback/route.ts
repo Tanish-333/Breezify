@@ -2,9 +2,37 @@ import { NextRequest, NextResponse } from "next/server";
 import { commit, createWrite } from "@/lib/firestore-rest";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { sendFeedbackNotificationEmail } from "@/lib/email";
+import { adminDb, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
 import { randomUUID } from "crypto";
 
 export const runtime = "nodejs";
+
+// Not disclosed anywhere in the UI (no "X of 5 used today" counter) —
+// only surfaced as an error on the submission that actually goes over it.
+const FEEDBACK_DAILY_LIMIT = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * How many feedback docs this uid has submitted in the last 24h.
+ * feedback/{id} has `allow read: if false` in firestore.rules (deliberately
+ * private, admin-only — see the route's own comment below), so this can
+ * only be checked via the Admin SDK, not the caller's own idToken. Queried
+ * by uid alone (a single-field equality filter needs no composite index)
+ * and filtered to the last 24h in memory, same pattern as
+ * lib/use-transactions.ts's useTransactions — feedback volume per person is
+ * inherently small, so this never scans much.
+ */
+async function recentFeedbackCount(uid: string): Promise<number> {
+  const cutoff = Date.now() - DAY_MS;
+  const snap = await adminDb().collection("feedback").where("uid", "==", uid).get();
+  let count = 0;
+  for (const doc of snap.docs) {
+    const createdAt = doc.get("createdAt");
+    const ms = createdAt && typeof createdAt.toMillis === "function" ? createdAt.toMillis() : 0;
+    if (ms >= cutoff) count++;
+  }
+  return count;
+}
 
 export async function POST(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? "";
@@ -58,6 +86,22 @@ export async function POST(req: NextRequest) {
       },
       { status: 400 }
     );
+  }
+
+  if (isFirebaseAdminConfigured()) {
+    try {
+      const recent = await recentFeedbackCount(uid);
+      if (recent >= FEEDBACK_DAILY_LIMIT) {
+        return NextResponse.json(
+          { error: `You've sent more than ${FEEDBACK_DAILY_LIMIT} messages today. Please try again tomorrow.` },
+          { status: 429 }
+        );
+      }
+    } catch (err) {
+      // Best-effort: a failure to check the limit must never block a
+      // legitimate submission from someone well under it.
+      console.error(`[feedback] uid=${uid} failed to check the daily limit:`, err);
+    }
   }
 
   const feedbackId = randomUUID();

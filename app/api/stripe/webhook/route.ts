@@ -309,8 +309,12 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
     // Fires on every successful recurring renewal; refills credits for the new period.
     case "invoice.paid": {
       const invoice = event.data.object as Stripe.Invoice;
-      const subscriptionId =
-        typeof invoice.subscription === "string" ? invoice.subscription : invoice.subscription?.id;
+      // Recent API versions moved this off a top-level invoice.subscription
+      // field (removed entirely) to invoice.parent.subscription_details —
+      // see the InvoiceLineItem/Invoice type definitions in the installed
+      // stripe package for the current shape.
+      const subRef = invoice.parent?.subscription_details?.subscription;
+      const subscriptionId = typeof subRef === "string" ? subRef : subRef?.id;
       const customerId = typeof invoice.customer === "string" ? invoice.customer : invoice.customer?.id ?? null;
       const uid = await findUid(stripe, customerId, subscriptionId);
       // findUid() only ever returns a uid for a customer that exists in
@@ -320,7 +324,11 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       // several of this developer's apps), not a real problem to log.
       if (!uid) break;
 
-      let priceId = invoice.lines.data[0]?.price?.id;
+      // Also moved: a line item's price used to be a directly-expanded
+      // `price` object; it's now nested under `pricing.price_details.price`
+      // (typically a plain id string, not expanded, in a webhook payload).
+      const priceRef = invoice.lines.data[0]?.pricing?.price_details?.price;
+      let priceId = typeof priceRef === "string" ? priceRef : priceRef?.id;
       // The line item doesn't always carry a resolvable price (e.g. certain
       // proration/invoice shapes) even though the subscription itself does;
       // fall back to asking the subscription directly, the same place
