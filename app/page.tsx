@@ -237,7 +237,7 @@ export default function LandingPage() {
       </section>
 
       <footer className="border-t border-border py-10">
-        <div className="container flex flex-col items-center justify-between gap-4 text-sm text-muted-foreground md:flex-row">
+        <Reveal className="container flex flex-col items-center justify-between gap-4 text-sm text-muted-foreground md:flex-row">
           <span>© {new Date().getFullYear()} Breezify. All rights reserved.</span>
           <div className="flex flex-wrap items-center justify-center gap-6">
             <Link href="/terms" className="hover:text-foreground transition-colors">
@@ -253,7 +253,7 @@ export default function LandingPage() {
               Sign up
             </Link>
           </div>
-        </div>
+        </Reveal>
       </footer>
     </div>
   );
