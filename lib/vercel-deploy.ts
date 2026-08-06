@@ -3,6 +3,8 @@
 // personal or team API token from https://vercel.com/account/tokens);
 // VERCEL_TEAM_ID is only needed when that token belongs to a team account.
 
+import { getDeployDomain } from "@/lib/deploy-domain";
+
 const VERCEL_API = "https://api.vercel.com";
 
 export function isDeployConfigured() {
@@ -53,7 +55,7 @@ export interface DeployResult {
  * than failing outright.
  */
 async function tryCustomAlias(deploymentId: string, slug: string): Promise<string | null> {
-  const domain = process.env.DEPLOY_DOMAIN;
+  const domain = getDeployDomain();
   if (!domain) return null;
   const alias = `${slug}.${domain}`;
   try {

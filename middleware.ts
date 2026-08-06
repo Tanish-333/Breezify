@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getDeployDomain } from "@/lib/deploy-domain";
 
 /**
  * Routes free-tier deployed apps to app/apps/[subdomain]/route.ts by
@@ -19,7 +20,7 @@ import { NextRequest, NextResponse } from "next/server";
 const RESERVED_SUBDOMAINS = new Set(["www", "app", "api", "admin", "mail", "ftp"]);
 
 export function middleware(req: NextRequest) {
-  const deployDomain = process.env.DEPLOY_DOMAIN?.toLowerCase();
+  const deployDomain = getDeployDomain();
   if (!deployDomain) return NextResponse.next();
 
   const host = (req.headers.get("host") || "").split(":")[0].toLowerCase();

@@ -14,6 +14,7 @@ import {
   updateWrite,
 } from "@/lib/firestore-rest";
 import { removeProjectDomain, projectSlugFromDeployedUrl } from "@/lib/vercel-deploy";
+import { getDeployDomain } from "@/lib/deploy-domain";
 import {
   isActiveDeployment,
   MAX_ACTIVE_DEPLOYED_APPS,
@@ -124,7 +125,7 @@ export async function deployFreeTierApp(params: {
 }): Promise<{ url: string }> {
   const { appId, idToken, name, alreadyLive, expiryDays } = params;
   const slug = subdomainSlug(appId, name);
-  const domain = process.env.DEPLOY_DOMAIN;
+  const domain = getDeployDomain();
   const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
   // The real subdomain once DEPLOY_DOMAIN is set and middleware.ts is
   // routing it (see that file); a same-origin path before then, so this is
