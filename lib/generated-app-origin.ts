@@ -14,6 +14,7 @@
  */
 import { adminDb, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
 import { getDeployDomain } from "@/lib/deploy-domain";
+import { projectSlugFromDeployedUrl } from "@/lib/vercel-deploy";
 
 export async function isOriginForApp(appId: string, origin: string): Promise<boolean> {
   if (!isFirebaseAdminConfigured()) return false;
@@ -44,7 +45,13 @@ export async function isOriginForApp(appId: string, origin: string): Promise<boo
     return true;
   }
 
-  // Paid-tier: its own real Vercel project (deployedUrl).
+  // Paid-tier: its own real Vercel project (deployedUrl). Also accept the
+  // project's stable "<slug>.vercel.app" alias even when it doesn't match
+  // the exact deployedUrl on file — deployedUrl can lag behind a redeploy
+  // (see lib/vercel-deploy.ts's tryCleanAlias doc comment) for an app
+  // deployed before that got hardened, and a visitor on the real, stable
+  // production alias shouldn't be rejected just because Firestore has a
+  // stale per-deployment URL cached.
   const deployedUrl = data.deployedUrl as string | undefined;
   if (deployedUrl) {
     try {
@@ -52,6 +59,8 @@ export async function isOriginForApp(appId: string, origin: string): Promise<boo
     } catch {
       // Malformed stored URL — fall through to deny.
     }
+    const slug = projectSlugFromDeployedUrl(deployedUrl);
+    if (slug && host === `${slug}.vercel.app`) return true;
   }
 
   return false;

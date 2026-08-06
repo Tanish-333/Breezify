@@ -46,6 +46,67 @@ export interface DeployResult {
 }
 
 /**
+ * Turns off Vercel's own "Vercel Authentication" (SSO) and password
+ * protection on a project. New projects created under a Vercel *team*
+ * token silently inherit that team's default deployment-protection
+ * setting — when the team has it on (a common default), every visitor to
+ * a generated app who isn't logged into that Vercel team gets Vercel's own
+ * login wall instead of the app, on Production deployments too, not just
+ * Previews. These are meant-to-be-public generated apps, so protection is
+ * always wrong here; best-effort and non-fatal, same as tryCustomAlias —
+ * a deploy must still succeed even if this call fails.
+ */
+async function disableDeploymentProtection(slug: string): Promise<void> {
+  try {
+    const res = await vercelFetch(`/v9/projects/${encodeURIComponent(slug)}${scopeQuery()}`, {
+      method: "PATCH",
+      body: JSON.stringify({ ssoProtection: null, passwordProtection: null }),
+    });
+    if (!res.ok) {
+      console.warn(
+        `[vercel-deploy] Couldn't clear deployment protection on ${slug}:`,
+        res.body?.error?.message || res.body?.message
+      );
+    }
+  } catch (err) {
+    console.warn(`[vercel-deploy] Couldn't clear deployment protection on ${slug}:`, err);
+  }
+}
+
+/**
+ * Explicitly assigns `{slug}.vercel.app` to a finished deployment instead
+ * of hoping Vercel's poll response already lists it under `alias` — that
+ * auto-assignment isn't guaranteed to have landed by the moment READY is
+ * observed, and when it hasn't, the caller falls back to the longer
+ * per-deployment URL (`habit-tracker-a1b2c3-....vercel.app`), which changes
+ * on every redeploy. Storing that as the app's permanent deployedUrl means
+ * a visitor on the real, stable `{slug}.vercel.app` — the URL Vercel's own
+ * dashboard shows as "the" production URL — gets a different origin than
+ * what's on file, which is exactly the mismatch app/api/oauth/google/start
+ * rejects. Best-effort: falls back to whatever the caller already has.
+ */
+async function tryCleanAlias(deploymentId: string, slug: string): Promise<string | null> {
+  const alias = `${slug}.vercel.app`;
+  try {
+    const res = await vercelFetch(`/v2/deployments/${deploymentId}/aliases${scopeQuery()}`, {
+      method: "POST",
+      body: JSON.stringify({ alias }),
+    });
+    if (!res.ok) {
+      console.warn(
+        `[vercel-deploy] Couldn't alias to ${alias}:`,
+        res.body?.error?.message || res.body?.message
+      );
+      return null;
+    }
+    return alias;
+  } catch (err) {
+    console.warn(`[vercel-deploy] Couldn't alias to ${alias}:`, err);
+    return null;
+  }
+}
+
+/**
  * Aliases a finished deployment to `{slug}.DEPLOY_DOMAIN`, e.g.
  * my-app.breezify.app instead of a *.vercel.app URL. Only attempted when
  * DEPLOY_DOMAIN is set, and the domain must already be added and verified
@@ -185,19 +246,22 @@ export async function deployToVercel(
     url = check.body.url ?? url;
     const inspectorUrl = typeof check.body.inspectorUrl === "string" ? check.body.inspectorUrl : null;
     if (state === "READY") {
-      // A production deployment (target: "production", set above) gets
-      // Vercel's own clean project alias — "<slug>.vercel.app" — assigned
-      // automatically alongside its per-deployment URL. `check.body.url`
-      // above is always that longer per-deployment one though (e.g.
+      // A production deployment (target: "production", set above) usually
+      // gets Vercel's own clean project alias — "<slug>.vercel.app" —
+      // assigned automatically alongside its per-deployment URL, but that
+      // isn't guaranteed to have landed yet at this exact poll (tryCleanAlias
+      // above forces it either way). `check.body.url` is always the longer
+      // per-deployment one (e.g.
       // "habit-tracker-a1b2c3-<account>-projects.vercel.app"), which
       // publicly embeds the Vercel account/team name in every generated
       // app's URL. `alias` (plural, a separate field from `url`) lists
       // every hostname actually assigned to this deployment; prefer the
-      // clean one when Vercel did assign it, rather than always exposing
-      // the account name.
+      // clean one, rather than exposing the account name or a URL that'll
+      // change on the next redeploy.
       const aliases: string[] = Array.isArray(check.body.alias) ? check.body.alias : [];
-      const cleanAlias = aliases.find((a) => a === `${slug}.vercel.app`);
+      const cleanAlias = aliases.find((a) => a === `${slug}.vercel.app`) ?? (await tryCleanAlias(id, slug));
       const customAlias = await tryCustomAlias(id, slug);
+      await disableDeploymentProtection(slug);
       return { url: `https://${customAlias ?? cleanAlias ?? url}`, id };
     }
     if (state === "ERROR" || state === "CANCELED") {
