@@ -27,9 +27,14 @@ export async function OPTIONS() {
  */
 async function handler(req: NextRequest) {
   try {
-    const { appId } = await req.json();
+    const { appId, path } = await req.json();
     if (typeof appId === "string" && appId.length > 0 && appId.length < 200) {
-      const { blocked, reason } = await checkAndRecordView(appId);
+      const { blocked, reason } = await checkAndRecordView(appId, {
+        path,
+        referer: req.headers.get("referer"),
+        userAgent: req.headers.get("user-agent"),
+        headers: req.headers,
+      });
       return withCors(NextResponse.json({ blocked, reason }));
     }
   } catch {

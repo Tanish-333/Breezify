@@ -7,6 +7,7 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  limitToLast,
   onSnapshot,
   orderBy,
   query,
@@ -17,7 +18,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { logClientError } from "@/lib/client-error-log";
-import type { AppSecret, AppTurn, FeatherApp } from "@/lib/types";
+import type { AppSecret, AppTurn, DailyAnalytics, FeatherApp } from "@/lib/types";
 
 /**
  * A Firestore listener error (a missing composite index, a rules rejection,
@@ -353,6 +354,58 @@ export function useAppSecrets(appId: string | undefined) {
   }, [appId]);
 
   return { secrets, loading };
+}
+
+const ANALYTICS_WINDOW_DAYS = 30;
+
+function toDailyAnalytics(id: string, data: any): DailyAnalytics {
+  return {
+    date: id,
+    total: data.total ?? 0,
+    countries: data.countries ?? {},
+    referrers: data.referrers ?? {},
+    devices: data.devices ?? {},
+    paths: data.paths ?? {},
+  };
+}
+
+/**
+ * The last 30 days of one app's visit rollup (see lib/traffic-guard.ts's
+ * recordView) — day-doc ids are "YYYY-MM-DD", which sorts correctly as a
+ * plain string, so orderBy(documentId()) needs no separate date field.
+ * Empty (not an error) whenever FIREBASE_SERVICE_ACCOUNT isn't configured
+ * on this deployment, since that's the only path that ever writes these.
+ */
+export function useAppAnalytics(appId: string | undefined) {
+  const [days, setDays] = useState<DailyAnalytics[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!appId) {
+      setDays([]);
+      setLoading(false);
+      return;
+    }
+    const q = query(
+      collection(db, "apps", appId, "analytics"),
+      orderBy("__name__"),
+      limitToLast(ANALYTICS_WINDOW_DAYS)
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setDays(snap.docs.map((d) => toDailyAnalytics(d.id, d.data())));
+        setLoading(false);
+      },
+      (err) => {
+        logListenerError("useAppAnalytics", err);
+        setLoading(false);
+      }
+    );
+    return () => unsub();
+  }, [appId]);
+
+  return { days, loading };
 }
 
 export async function addAppSecret(

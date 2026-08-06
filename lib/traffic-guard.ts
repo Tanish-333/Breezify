@@ -24,10 +24,12 @@
  * via the public `visits` increment, but the monthly cap is never enforced.
  */
 
+import { FieldValue } from "firebase-admin/firestore";
 import { unstable_cache } from "next/cache";
 import { adminDb, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
 import { commit, incrementWrite } from "@/lib/firestore-rest";
 import { isDeployExpired, MONTHLY_PAGE_VIEW_LIMIT, type PlanId } from "@/lib/types";
+import { countryFromHeaders, deviceFromUserAgent, pathBucket, referrerBucket, todayKey } from "@/lib/request-analytics";
 
 const WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
 const CACHE_REVALIDATE_SECONDS = 60;
@@ -79,16 +81,29 @@ const getCachedTrafficStatus = (appId: string) =>
     revalidate: CACHE_REVALIDATE_SECONDS,
   })(appId);
 
+export interface ViewContext {
+  path?: unknown;
+  referer: string | null;
+  userAgent: string | null;
+  headers: Headers;
+}
+
 /**
  * Records one page view. When the Admin SDK is configured, this rolls the
  * monthly window inside a transaction — resetting it once WINDOW_MS has
  * passed since monthlyViewsWindowStart — so concurrent visitors can't race
- * past a reset and all get counted as "the first view of a new window."
+ * past a reset and all get counted as "the first view of a new window." The
+ * same transaction also bumps today's apps/{appId}/analytics/{day} rollup
+ * (country/referrer/device/path breakdowns for the Analytics page) — one
+ * extra write, no extra read, since FieldValue.increment doesn't need the
+ * doc read first.
  * Falls back to the public, rules-scoped `visits` increment (see
  * app/api/track) when Admin isn't configured: the lifetime count still
- * moves, the monthly cap just can't be evaluated.
+ * moves, but the monthly cap and the richer breakdowns can't be recorded at
+ * all — there's no way for an unauthenticated caller to write either
+ * without the Admin SDK's rules-bypassing access.
  */
-async function recordView(appId: string): Promise<void> {
+async function recordView(appId: string, ctx?: ViewContext): Promise<void> {
   if (!isFirebaseAdminConfigured()) {
     await commit([incrementWrite(`apps/${appId}`, "visits", 1)]).catch(() => {});
     return;
@@ -96,6 +111,7 @@ async function recordView(appId: string): Promise<void> {
 
   const db = adminDb();
   const ref = db.collection("apps").doc(appId);
+  const analyticsRef = ref.collection("analytics").doc(todayKey());
   await db
     .runTransaction(async (tx) => {
       const snap = await tx.get(ref);
@@ -107,6 +123,24 @@ async function recordView(appId: string): Promise<void> {
         monthlyViews: windowExpired ? 1 : ((data.monthlyViews as number) ?? 0) + 1,
         ...(windowExpired ? { monthlyViewsWindowStart: new Date() } : {}),
       });
+
+      if (ctx) {
+        const country = countryFromHeaders(ctx.headers);
+        const device = deviceFromUserAgent(ctx.userAgent);
+        const referrer = referrerBucket(ctx.referer);
+        const path = pathBucket(ctx.path);
+        tx.set(
+          analyticsRef,
+          {
+            total: FieldValue.increment(1),
+            countries: { [country]: FieldValue.increment(1) },
+            devices: { [device]: FieldValue.increment(1) },
+            referrers: { [referrer]: FieldValue.increment(1) },
+            paths: { [path]: FieldValue.increment(1) },
+          },
+          { merge: true }
+        );
+      }
     })
     .catch(() => {
       // A beacon failure must never surface to the visitor — see app/api/track.
@@ -114,11 +148,11 @@ async function recordView(appId: string): Promise<void> {
 }
 
 /** Records this view and reports whether the app should now redirect the visitor to /limit-reached, and why. */
-export async function checkAndRecordView(appId: string): Promise<TrafficStatus> {
+export async function checkAndRecordView(appId: string, ctx?: ViewContext): Promise<TrafficStatus> {
   const status = await getCachedTrafficStatus(appId);
   // Still record the view even when already blocked — it's the same real
   // visit either way, and keeps the count accurate for once the owner
   // upgrades, renews, or the window rolls over.
-  await recordView(appId);
+  await recordView(appId, ctx);
   return status;
 }

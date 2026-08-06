@@ -488,6 +488,16 @@ export interface AppSecret {
   createdAt: number;
 }
 
+/** One day's rollup at apps/{appId}/analytics/{day} — see lib/traffic-guard.ts's recordView(). Doc id is the day, "YYYY-MM-DD". */
+export interface DailyAnalytics {
+  date: string;
+  total: number;
+  countries: Record<string, number>;
+  referrers: Record<string, number>;
+  devices: Record<string, number>;
+  paths: Record<string, number>;
+}
+
 export interface FeatherUser {
   uid: string;
   email: string | null;

@@ -108,6 +108,22 @@ service cloud.firestore {
         allow write: if false;
       }
 
+      // analytics/{day}: daily visit rollups (total/country/referrer/device/
+      // path breakdowns) for the Analytics page. Only ever written by
+      // lib/traffic-guard.ts's recordView() via the Admin SDK — an anonymous
+      // visitor's beacon has no ID token to write with, and the breakdowns
+      // themselves (country, referrer) aren't safe to let a client compute
+      // and submit unverified anyway. Same owner-only read as events/{eventId}.
+      match /analytics/{day} {
+        allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
+        allow create, update: if false;
+        // Only real client-side write these ever need: lib/deploy-actions.ts's
+        // deleteApp() cleaning these up alongside secrets/versions/collaborators
+        // when the owner deletes the whole app (Firestore doesn't cascade-delete
+        // subcollections on its own).
+        allow delete: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
+      }
+
       // versions/{turnId}: a file snapshot taken after each turn, so a turn
       // can be reverted to later. One per turn, immutable once written.
       // Ownership lives directly on the document (userId, stamped by every

@@ -202,7 +202,7 @@ function chunk<T>(items: T[], size: number): T[][] {
 
 /**
  * Deletes an app entirely: its Vercel project domain (best-effort), its
- * secrets/versions/collaborators subcollections (Firestore never
+ * secrets/versions/collaborators/analytics subcollections (Firestore never
  * cascade-deletes these), and finally the app doc itself. Always frees a
  * slot, the same as undeployApp, but with no way back.
  */
@@ -214,15 +214,17 @@ export async function deleteApp(params: { appId: string; uid: string; idToken: s
 
   await tryDetachDomain(appDoc.fields);
 
-  const [secrets, versions, collaborators] = await Promise.all([
+  const [secrets, versions, collaborators, analytics] = await Promise.all([
     listCollection(`apps/${appId}/secrets`, idToken),
     listCollection(`apps/${appId}/versions`, idToken),
     listCollection(`apps/${appId}/collaborators`, idToken),
+    listCollection(`apps/${appId}/analytics`, idToken),
   ]);
   const subPaths = [
     ...secrets.map((d) => `apps/${appId}/secrets/${d.id}`),
     ...versions.map((d) => `apps/${appId}/versions/${d.id}`),
     ...collaborators.map((d) => `apps/${appId}/collaborators/${d.id}`),
+    ...analytics.map((d) => `apps/${appId}/analytics/${d.id}`),
   ];
 
   for (const group of chunk(subPaths, COMMIT_WRITE_LIMIT)) {

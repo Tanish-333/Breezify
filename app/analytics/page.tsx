@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { AppAnalyticsPanel } from "@/components/app-analytics-panel";
 import { useAuth } from "@/lib/auth-context";
 import { useUserApps } from "@/lib/use-apps";
 import { formatDate } from "@/lib/utils";
@@ -16,7 +17,7 @@ import {
   PLAN_RANK,
   type PlanId,
 } from "@/lib/types";
-import { BarChart3, Eye, Globe, Loader2, Lock } from "lucide-react";
+import { BarChart3, ChevronDown, Eye, Globe, Loader2, Lock } from "lucide-react";
 
 function UpgradeGate() {
   return (
@@ -73,6 +74,7 @@ function AnalyticsContent() {
   const { apps, loading } = useUserApps(user?.uid);
   const plan: PlanId = profile?.plan ?? "free";
   const allowed = PLAN_RANK[plan] >= PLAN_RANK[ANALYTICS_MIN_PLAN];
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const liveApps = useMemo(
     () => apps.filter((a) => effectiveDeployStatus(a) === "live"),
@@ -135,17 +137,31 @@ function AnalyticsContent() {
               {ranked.map((app) => {
                 const status = effectiveDeployStatus(app);
                 const cap = MONTHLY_PAGE_VIEW_LIMIT[plan];
+                const isOpen = expanded === app.id;
                 return (
                   <Card key={app.id}>
-                    <CardContent className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
-                      <div className="min-w-0">
-                        <Link href={`/build/${app.id}`} className="text-sm font-medium hover:underline">
-                          {app.name}
-                        </Link>
-                        <p className="mt-0.5 text-xs text-muted-foreground">
-                          {status === "live" ? "Live" : "Not deployed"} · created{" "}
-                          {formatDate(app.createdAt)}
-                        </p>
+                    <button
+                      type="button"
+                      onClick={() => setExpanded(isOpen ? null : app.id)}
+                      className="flex w-full flex-col gap-3 p-4 text-left sm:flex-row sm:items-center sm:justify-between"
+                    >
+                      <div className="flex min-w-0 items-center gap-2">
+                        <ChevronDown
+                          className={`h-3.5 w-3.5 shrink-0 text-muted-foreground transition-transform ${isOpen ? "rotate-180" : ""}`}
+                        />
+                        <div className="min-w-0">
+                          <Link
+                            href={`/build/${app.id}`}
+                            onClick={(e) => e.stopPropagation()}
+                            className="text-sm font-medium hover:underline"
+                          >
+                            {app.name}
+                          </Link>
+                          <p className="mt-0.5 text-xs text-muted-foreground">
+                            {status === "live" ? "Live" : "Not deployed"} · created{" "}
+                            {formatDate(app.createdAt)}
+                          </p>
+                        </div>
                       </div>
                       <div className="flex shrink-0 items-center gap-6 text-right">
                         <div>
@@ -166,7 +182,12 @@ function AnalyticsContent() {
                           <p className="text-[11px] text-muted-foreground">this month</p>
                         </div>
                       </div>
-                    </CardContent>
+                    </button>
+                    {isOpen && (
+                      <CardContent className="border-t border-border pt-5">
+                        <AppAnalyticsPanel appId={app.id} />
+                      </CardContent>
+                    )}
                   </Card>
                 );
               })}

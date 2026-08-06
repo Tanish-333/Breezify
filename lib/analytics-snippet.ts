@@ -26,7 +26,7 @@ export function analyticsSnippet(appId: string) {
     trackUrl
   )},{method:"POST",keepalive:true,headers:{"Content-Type":"application/json"},body:JSON.stringify({appId:${JSON.stringify(
     appId
-  )}})}).then(function(r){return r.json();}).then(function(d){if(d&&d.blocked){window.location.replace(${JSON.stringify(
+  )},path:location.pathname})}).then(function(r){return r.json();}).then(function(d){if(d&&d.blocked){window.location.replace(${JSON.stringify(
     limitBase
   )}+"&reason="+encodeURIComponent(d.reason||"traffic"));}}).catch(function(){});}catch(e){}})();</script>`;
 }
