@@ -24,33 +24,67 @@ render as unavailable and everything else keeps working, and vice versa.
 
 ## Multi-tenant deployment and free-tier limits
 
-Every generated app deploys as its own real Vercel project (`lib/vercel-deploy.ts`,
-`app/api/deploy`) — not a shared Next.js app with a wildcard-subdomain
-middleware in front of it. Once `DEPLOY_DOMAIN=breezify.app` is set (see
-`.env.example`), each deploy is aliased to `{slug}.breezify.app` automatically,
-with a real SSL cert and real serverless backend functions (a simple Express
-backend gets auto-wrapped for Vercel — see `lib/express-adapter.ts`), not just
-static HTML. Free users' subdomains never collide because the slug always
-embeds a slice of the app's own id.
+Breezify hosts deployed apps two different ways depending on plan, because
+Vercel Hobby caps an account at **200 projects total, shared across every
+user's every app** — and every generated app deploying as its own real
+Vercel project (the simplest approach) means that number, not anything in
+Breezify's own code, is what actually limits how many total users a Hobby
+account can support.
+
+- **Free plan: zero Vercel projects per app.** `app/api/deploy` routes free
+  deploys through `deployFreeTierApp()` in `lib/deploy-actions.ts`, which
+  just writes a `subdomain` slug to the app doc — no Vercel API call at
+  all. `middleware.ts` rewrites `{slug}.DEPLOY_DOMAIN` requests to
+  `app/apps/[subdomain]/route.ts`, which looks the app up (`lib/tenant-app.ts`,
+  cached) and renders its files with the exact same `buildPreview()`
+  (`lib/preview.ts`) the dashboard's own live preview already uses — Babel
+  standalone transpiling in the visitor's browser, no server build step.
+  An unbounded number of free-tier apps this way costs a constant *one*
+  Vercel project (this app itself), not one each. The tradeoff: no real
+  backend (an `api/` folder still renders with a banner, same as the
+  dashboard preview, but nothing answers its requests) and no per-app custom
+  domain — that's what upgrading actually buys.
+- **Plus/Pro/Max: a real Vercel project per app**, exactly as before —
+  `lib/vercel-deploy.ts`, aliased to `{slug}.breezify.app` once `DEPLOY_DOMAIN`
+  is set, with a real SSL cert, real serverless backend functions (a simple
+  Express backend gets auto-wrapped — see `lib/express-adapter.ts`), and
+  real per-app custom domains (`app/api/domains`).
+
+Both paths compute the same slug (`subdomainSlug()` in `lib/deploy-actions.ts`,
+shared by both), which always embeds a slice of the app's own id — so no two
+apps can ever collide on a subdomain, on either path, by construction, and an
+app's URL stays the same across an upgrade from one hosting path to the
+other.
+
+**Vercel setup this needs, beyond the apex domain:** once `breezify.app` is
+bought, add both `breezify.app` **and the wildcard `*.breezify.app`** as
+domains on the main Breezify Vercel project (not just the apex) — the
+wildcard is what makes every free-tier subdomain resolve to this project by
+default. A paid app's own real per-project alias still takes priority for
+its own specific subdomain once deployed (Vercel resolves the more specific
+alias first), so this doesn't conflict with paid hosting.
 
 Free-plan business rules, all in `lib/types.ts` and enforced server-side (not
 just hidden in the UI):
 
-- **`MAX_ACTIVE_DEPLOYED_APPS`** — at most 3 live apps at once on Free (25
-  Plus, 100 Pro, unlimited Max). Enforced in `lib/deploy-actions.ts`
+- **`MAX_ACTIVE_DEPLOYED_APPS`** — at most 3 live apps at once on Free (7
+  Plus, 15 Pro, 35 Max — capped on every plan, since a paid app still spends
+  a real Vercel project). Enforced in `lib/deploy-actions.ts`
   (`deployNewApp`) before a deploy is allowed to claim a new slot; a redeploy
   of an already-live app never counts against the cap. Delete an app or
   undeploy it (dashboard app card, or `app/api/apps/[appId]/undeploy`) to
   free a slot immediately without losing its code — the app stays intact and
   can be redeployed any time.
 - **`MONTHLY_PAGE_VIEW_LIMIT`** — 5,000 views/month on Free (100,000 Plus,
-  unlimited Pro/Max), enforced by `lib/traffic-guard.ts`. Every deployed
-  app's HTML carries a tiny beacon (`lib/analytics-snippet.ts`) that pings
-  `/api/track` once per page load; once an app is over its cap, visitors are
-  redirected client-side to `/limit-reached` instead of the app. The
-  "is this app blocked" check is wrapped in `unstable_cache` with a 60s
-  revalidate window so a busy app doesn't mean a database read on every
-  single page load.
+  unlimited Pro/Max), enforced by `lib/traffic-guard.ts`. On the free-tier
+  hosting path this is checked directly, server-side, on every request in
+  `app/apps/[subdomain]/route.ts` (no client round-trip at all). Paid-plan
+  apps live on a different origin (their own Vercel project), so they carry
+  a tiny beacon instead (`lib/analytics-snippet.ts`) that pings `/api/track`
+  once per page load. Either way, once an app is over its cap, visitors are
+  redirected to `/limit-reached`, and the "is this app blocked" check is
+  wrapped in `unstable_cache` with a 60s revalidate window so a busy app
+  doesn't mean a database read on every single page load.
 - **`DEPLOY_EXPIRY_DAYS`** — Free-plan deploys auto-expire 30 days after
   going live (Plus/Pro/Max never expire) and redirect visitors to
   `/limit-reached` until renewed. Renewal (`app/api/apps/[appId]/renew`,
@@ -59,15 +93,21 @@ just hidden in the UI):
   already expired — not any earlier, so it's a genuine "about to lapse"
   renewal rather than a way to keep pushing the clock out indefinitely.
 
-**Needs `FIREBASE_SERVICE_ACCOUNT` in production.** The traffic-cap and expiry
-checks run against an anonymous visitor's beacon hit, which carries no
-Firebase ID token at all — Firestore security rules can't expose an app
-owner's plan or a rolling view-count window to an unauthenticated reader, so
-`lib/traffic-guard.ts` uses the Admin SDK for that one read+transaction. Without
-`FIREBASE_SERVICE_ACCOUNT` configured, this fails **open**: page views still
-count via the public `visits` field, but the monthly cap and expiry are never
-actually enforced. The 3-app cap and delete/undeploy don't need it — those run
-under the calling user's own ID token like everything else in this app.
+**Needs `FIREBASE_SERVICE_ACCOUNT` in production — required, not optional,
+for free-tier hosting specifically.** `app/apps/[subdomain]/route.ts` looks
+an app up by its `subdomain` field from an anonymous visitor's request,
+which carries no Firebase ID token at all; Firestore rules can't expose that
+lookup (or the traffic-cap/expiry check that comes with it) to an
+unauthenticated reader, so both go through the Admin SDK
+(`lib/tenant-app.ts`, `lib/traffic-guard.ts`). Without it configured, every
+free-tier subdomain serves a 503 instead of the app. Paid-plan deploys
+(real Vercel projects) and the 3-app cap don't need it — those run under the
+calling user's own ID token like everything else in this app.
+
+**This is still commercial use of Vercel Hobby, which its terms of service
+don't cover** — see the free/Hobby-tier limits discussion this section is
+built around. Fine for early testing with a handful of users; move to Vercel
+Pro before any real public launch.
 
 ## Setup
 
@@ -109,9 +149,12 @@ Breezify needs exactly one real secret: `ANTHROPIC_API_KEY`. Firebase requires n
 - Per-app secrets: a key/value store (`apps/{id}/secrets`) for anything the generated app calls out with, visible only to the app's owner.
 - Real persistence for generated apps via `/api/app-data`: a generic per-app data API backed by Firestore (`app_data/{appId}/{collection}`), scoped by ownership through `firestore.rules` rather than admin credentials. The generation prompt teaches the model this contract so it can opt in when an app needs to persist or share data across visitors, instead of being limited to localStorage.
 - Deployed-app visit analytics, visible on every plan.
-- Free-tier deployment limits: max 3 live apps at once, a 5,000 view/month
-  traffic cap with a redirect once exceeded, and a 30-day auto-expiry with a
-  renewal window — see "Multi-tenant deployment and free-tier limits" above.
+- Free-tier apps host on a zero-Vercel-project shared subdomain path
+  (`middleware.ts`, `app/apps/[subdomain]`) instead of their own Vercel
+  project, plus the free-tier limits themselves: max 3 live apps at once, a
+  5,000 view/month traffic cap with a redirect once exceeded, and a 30-day
+  auto-expiry with a renewal window — see "Multi-tenant deployment and
+  free-tier limits" above.
 - Rename apps, download the whole app as a ZIP, copy individual files
 - Split workspace per app: change history on the left with per-turn Details/Files tabs and model-suggested follow-ups, live preview or code on the right
 - Live in-browser preview. Generated sources are transpiled with Babel standalone in a sandboxed iframe, so React apps run without a build step; apps needing a server show a clear fallback instead.

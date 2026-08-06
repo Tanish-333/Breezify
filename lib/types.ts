@@ -454,6 +454,7 @@ export interface FeatherApp {
   /** When this deploy auto-expires (ms) — see DEPLOY_EXPIRY_DAYS. Unset on plans with no expiry. */
   deployExpiresAt?: number;
   githubUrl?: string;
+  /** Set only on free-plan apps, by deployFreeTierApp() in lib/deploy-actions.ts — the slug app/apps/[subdomain]/route.ts looks this app up by. Paid plans deploy to their own real Vercel project instead (see deployedUrl) and never set this. */
   subdomain?: string;
   customDomain?: string;
   customDomainVerified?: boolean;

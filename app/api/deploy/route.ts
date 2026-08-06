@@ -8,7 +8,7 @@ import { deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
 import { unsupportedReason } from "@/lib/app-support";
 import { tryWrapExpressForVercel } from "@/lib/express-adapter";
 import { missingEnvVars } from "@/lib/backend-env";
-import { deployNewApp, DeployLimitError } from "@/lib/deploy-actions";
+import { deployNewApp, deployFreeTierApp, subdomainSlug, DeployLimitError } from "@/lib/deploy-actions";
 import {
   DEPLOY_DAILY_LIMIT,
   DEPLOY_EXPIRY_DAYS,
@@ -24,25 +24,8 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const runtime = "nodejs";
 export const maxDuration = 180;
 
-function slugify(appId: string, name: string) {
-  const base =
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "")
-      .slice(0, 40) || "breezify-app";
-  return `${base}-${appId.slice(0, 6)}`;
-}
-
 export async function POST(req: NextRequest) {
   try {
-    if (!isDeployConfigured()) {
-      return NextResponse.json(
-        { error: "Deploys aren't configured on this deployment yet. Set VERCEL_TOKEN." },
-        { status: 400 }
-      );
-    }
-
     const authHeader = req.headers.get("authorization") ?? "";
     const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
     if (!idToken) {
@@ -83,23 +66,6 @@ export async function POST(req: NextRequest) {
     let rawFiles = generated?.files ?? {};
     if (Object.keys(rawFiles).length === 0) {
       return NextResponse.json({ error: "This app has no files to deploy." }, { status: 400 });
-    }
-
-    // A simple, single-server-call Express backend can actually run on
-    // Vercel once app.listen() is stripped and the app is exported as a
-    // serverless function instead — see lib/express-adapter.ts. Anything
-    // more complex (its own frontend to route around, WebSockets, multiple
-    // servers) is left alone and falls through to the rejection below.
-    const wrapped = tryWrapExpressForVercel(rawFiles);
-    if (wrapped) rawFiles = wrapped.files;
-
-    // api/ serverless functions and this app's own Secrets are real at
-    // deploy time (see below); only a traditional always-on server process
-    // is still unsupported, since Vercel functions are request/response
-    // only. See lib/app-support.ts.
-    const unsupported = unsupportedReason(rawFiles, "deploy");
-    if (unsupported) {
-      return NextResponse.json({ error: unsupported }, { status: 400 });
     }
 
     let userPlan: PlanId = "free";
@@ -153,21 +119,17 @@ export async function POST(req: NextRequest) {
     }
 
     const name = (appDoc.fields.name as string) || "breezify-app";
-    const slug = slugify(appId, name);
-    // The tracking beacon isn't a Pro+ perk: it's also how the free tier's
-    // MONTHLY_PAGE_VIEW_LIMIT gets enforced (see lib/traffic-guard.ts), so
-    // every plan gets it now, not just the ones that get to see the count.
-    const files = withAnalytics(withWatermark(rawFiles, userPlan === "free"), appId);
 
-    // Claim the slot up front, atomically, before the slow (up to 110s)
-    // Vercel call rather than after: reading the count, waiting on the
-    // deploy, then writing count+1 back left a window where several
-    // concurrent requests could all read the same stale count and all slip
-    // under the limit. This doesn't fully eliminate the race (two requests
-    // in the same instant can still both read before either writes) but
-    // shrinks the window from "up to 110 seconds" to "a few milliseconds".
-    // A failed deploy still counted here still spent real Vercel build
-    // time, so it's correct for it to still count against the cap.
+    // Claim the daily-limit slot up front, atomically, before the deploy
+    // itself (which can take up to 110s on the Vercel path) rather than
+    // after: reading the count, waiting on the deploy, then writing count+1
+    // back left a window where several concurrent requests could all read
+    // the same stale count and all slip under the limit. This doesn't
+    // fully eliminate the race (two requests in the same instant can still
+    // both read before either writes) but shrinks the window from "up to
+    // 110 seconds" to "a few milliseconds". A failed deploy still counted
+    // here still spent real build time (or a real subdomain slot on the
+    // free path), so it's correct for it to still count against the cap.
     if (windowActive) {
       await commit([incrementWrite(`users/${uid}`, "deployCount", 1)], idToken);
     } else {
@@ -182,6 +144,62 @@ export async function POST(req: NextRequest) {
         idToken
       );
     }
+
+    // Free plan skips Vercel (and the real backend/custom-domain support
+    // that comes with it) entirely — see deployFreeTierApp()'s own long
+    // comment in lib/deploy-actions.ts for why: every generated app deployed
+    // as its own Vercel project is what actually limits how many total
+    // users Breezify can support on a Hobby-tier Vercel account, long
+    // before any of this app's own per-user caps do.
+    if (userPlan === "free") {
+      // The dashboard's own live preview tolerates an api/ folder (renders
+      // the rest of the app with a banner rather than blocking outright) —
+      // free-tier hosting behaves exactly like that preview (client-side
+      // only, no server behind it at all), so it uses the same tolerant
+      // check, not the stricter "deploy" one paid plans use below.
+      const unsupported = unsupportedReason(rawFiles, "preview");
+      if (unsupported) {
+        return NextResponse.json({ error: unsupported }, { status: 400 });
+      }
+      const result = await deployFreeTierApp({
+        appId,
+        idToken,
+        name,
+        alreadyLive,
+        expiryDays: DEPLOY_EXPIRY_DAYS[userPlan],
+      });
+      return NextResponse.json({ url: result.url });
+    }
+
+    if (!isDeployConfigured()) {
+      return NextResponse.json(
+        { error: "Deploys aren't configured on this deployment yet. Set VERCEL_TOKEN." },
+        { status: 400 }
+      );
+    }
+
+    // A simple, single-server-call Express backend can actually run on
+    // Vercel once app.listen() is stripped and the app is exported as a
+    // serverless function instead — see lib/express-adapter.ts. Anything
+    // more complex (its own frontend to route around, WebSockets, multiple
+    // servers) is left alone and falls through to the rejection below.
+    const wrapped = tryWrapExpressForVercel(rawFiles);
+    if (wrapped) rawFiles = wrapped.files;
+
+    // api/ serverless functions and this app's own Secrets are real at
+    // deploy time (see below); only a traditional always-on server process
+    // is still unsupported, since Vercel functions are request/response
+    // only. See lib/app-support.ts.
+    const unsupported = unsupportedReason(rawFiles, "deploy");
+    if (unsupported) {
+      return NextResponse.json({ error: unsupported }, { status: 400 });
+    }
+
+    const slug = subdomainSlug(appId, name);
+    // The tracking beacon isn't a Pro+ perk: it's also how the free tier's
+    // MONTHLY_PAGE_VIEW_LIMIT gets enforced (see lib/traffic-guard.ts), so
+    // every plan gets it now, not just the ones that get to see the count.
+    const files = withAnalytics(withWatermark(rawFiles, false), appId);
 
     // This app's own configured Secrets (see components/app-secrets-dialog.tsx)
     // become env vars for its api/ serverless functions only — never for the
@@ -244,6 +262,8 @@ export async function POST(req: NextRequest) {
       // NOT reset deployExpiresAt, or the free-tier expiry (see
       // DEPLOY_EXPIRY_DAYS) could be dodged forever just by redeploying
       // before it lapses instead of going through the real renew flow.
+      // (Always null for paid plans today, but kept generic rather than
+      // hardcoded in case a future plan ever gets a real expiry too.)
       const expiryDays = DEPLOY_EXPIRY_DAYS[userPlan];
       const deployExpiresAt =
         !alreadyLive && expiryDays !== null ? new Date(Date.now() + expiryDays * DAY_MS) : undefined;
