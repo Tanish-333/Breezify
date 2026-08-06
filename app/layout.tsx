@@ -60,6 +60,12 @@ export const metadata: Metadata = {
     title: TITLE,
     description: DESCRIPTION,
   },
+  // Paste the "content" value from Google Search Console's HTML tag
+  // verification method into NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION — no
+  // code change needed after that, just set the env var and redeploy.
+  verification: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION
+    ? { google: process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION }
+    : undefined,
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

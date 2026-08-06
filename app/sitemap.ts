@@ -2,10 +2,24 @@ import type { MetadataRoute } from "next";
 
 const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
 
+// A fixed date rather than `new Date()` — the latter reports every route as
+// "just changed" on every crawl, which is misleading to crawlers and can
+// waste crawl budget rather than help it.
+const LAST_MODIFIED = new Date("2026-08-06");
+
+const ROUTES: { path: string; priority: number; changeFrequency: MetadataRoute.Sitemap[number]["changeFrequency"] }[] = [
+  { path: "", priority: 1, changeFrequency: "weekly" },
+  { path: "/login", priority: 0.3, changeFrequency: "yearly" },
+  { path: "/signup", priority: 0.5, changeFrequency: "yearly" },
+  { path: "/terms", priority: 0.2, changeFrequency: "yearly" },
+  { path: "/privacy", priority: 0.2, changeFrequency: "yearly" },
+];
+
 export default function sitemap(): MetadataRoute.Sitemap {
-  const routes = ["", "/login", "/signup", "/terms", "/privacy"];
-  return routes.map((route) => ({
-    url: `${SITE_URL}${route}`,
-    lastModified: new Date(),
+  return ROUTES.map(({ path, priority, changeFrequency }) => ({
+    url: `${SITE_URL}${path}`,
+    lastModified: LAST_MODIFIED,
+    changeFrequency,
+    priority,
   }));
 }
