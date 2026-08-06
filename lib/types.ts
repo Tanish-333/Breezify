@@ -290,12 +290,18 @@ export const DEPLOY_DAILY_LIMIT: Record<PlanId, number> = {
  * isActiveDeployment()) at once — see lib/deploy-actions.ts. A user is
  * always free to undeploy (lib/deploy-actions.ts undeployApp) or delete an
  * app to immediately free a slot and deploy a new one. null = no cap.
+ *
+ * Deliberately capped on every plan, even Max: each live app is a real,
+ * separate Vercel project (see lib/vercel-deploy.ts), not a row in a
+ * shared table — an "unlimited" top tier would mean one account could grow
+ * an unbounded number of live Vercel projects, which is a real
+ * infra/ops cost, not just a product limit.
  */
 export const MAX_ACTIVE_DEPLOYED_APPS: Record<PlanId, number | null> = {
   free: 3,
-  plus: 25,
-  pro: 100,
-  max: null,
+  plus: 7,
+  pro: 15,
+  max: 35,
 };
 
 /**
