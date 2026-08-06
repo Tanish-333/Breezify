@@ -1,6 +1,10 @@
 import {
   ANALYTICS_MIN_PLAN,
+  CUSTOM_DOMAIN_MIN_PLAN,
+  DEPLOY_EXPIRY_DAYS,
   DUPLICATE_MIN_PLAN,
+  MAX_ACTIVE_DEPLOYED_APPS,
+  MONTHLY_PAGE_VIEW_LIMIT,
   PLANS,
   PLAN_IDS,
   PLAN_RANK,
@@ -23,6 +27,18 @@ const MODELS: Record<PlanId, string> = {
   pro: "+ Opus 5, Gemini Pro, Llama 3.3 70B (Groq)",
   max: "+ GPT-OSS 120B (Groq)",
 };
+
+function formatViewLimit(limit: number | null): string {
+  return limit === null ? "Unlimited" : `${limit.toLocaleString()} views`;
+}
+
+function formatAppCap(cap: number | null): string {
+  return cap === null ? "Unlimited" : `${cap} at once`;
+}
+
+function formatExpiry(days: number | null): string {
+  return days === null ? "Never" : `${days} days, renewable`;
+}
 
 const SUPPORT: Record<PlanId, string> = {
   free: "Community",
@@ -61,6 +77,46 @@ const ROWS: Row[] = [
   {
     label: "One-click deploy to a live URL",
     values: { free: true, plus: true, pro: true, max: true },
+  },
+  {
+    label: "Live app subdomains at once",
+    values: {
+      free: formatAppCap(MAX_ACTIVE_DEPLOYED_APPS.free),
+      plus: formatAppCap(MAX_ACTIVE_DEPLOYED_APPS.plus),
+      pro: formatAppCap(MAX_ACTIVE_DEPLOYED_APPS.pro),
+      max: formatAppCap(MAX_ACTIVE_DEPLOYED_APPS.max),
+    },
+  },
+  {
+    label: "Real backend support (serverless functions)",
+    values: { free: false, plus: true, pro: true, max: true },
+  },
+  {
+    label: "Custom domain on a deployed app",
+    values: {
+      free: PLAN_RANK.free >= PLAN_RANK[CUSTOM_DOMAIN_MIN_PLAN],
+      plus: PLAN_RANK.plus >= PLAN_RANK[CUSTOM_DOMAIN_MIN_PLAN],
+      pro: PLAN_RANK.pro >= PLAN_RANK[CUSTOM_DOMAIN_MIN_PLAN],
+      max: PLAN_RANK.max >= PLAN_RANK[CUSTOM_DOMAIN_MIN_PLAN],
+    },
+  },
+  {
+    label: "Traffic per app, monthly",
+    values: {
+      free: formatViewLimit(MONTHLY_PAGE_VIEW_LIMIT.free),
+      plus: formatViewLimit(MONTHLY_PAGE_VIEW_LIMIT.plus),
+      pro: formatViewLimit(MONTHLY_PAGE_VIEW_LIMIT.pro),
+      max: formatViewLimit(MONTHLY_PAGE_VIEW_LIMIT.max),
+    },
+  },
+  {
+    label: "Subdomain expiry",
+    values: {
+      free: formatExpiry(DEPLOY_EXPIRY_DAYS.free),
+      plus: formatExpiry(DEPLOY_EXPIRY_DAYS.plus),
+      pro: formatExpiry(DEPLOY_EXPIRY_DAYS.pro),
+      max: formatExpiry(DEPLOY_EXPIRY_DAYS.max),
+    },
   },
   {
     label: "View & copy generated code",

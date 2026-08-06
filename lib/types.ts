@@ -166,6 +166,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     features: [
       "5.00 credits, one time",
       "Haiku 4.5",
+      "3 live app subdomains (frontend-only, no backend)",
       "Live preview only",
       "Community support",
     ],
@@ -180,6 +181,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     features: [
       "40.00 credits every month",
       "Adds Sonnet 4.5, Gemini 3.6 Flash, and Llama 3.1 8B (Groq)",
+      "7 live app subdomains, with real backend support",
       "View, copy & export code, badge-free",
       "Email support",
     ],
@@ -195,6 +197,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     features: [
       "100.00 credits every month",
       "Adds Opus 5, Gemini 3.1 Pro, and Llama 3.3 70B (Groq)",
+      "15 live app subdomains, plus custom domains",
       "Duplicate any app to experiment freely",
       "Visit analytics on deployed apps",
       "Priority support",
@@ -210,6 +213,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     features: [
       "200.00 credits every month",
       "Every model",
+      "35 live app subdomains, plus custom domains",
       "Larger token budget per generation",
       "Duplicate any app to experiment freely",
       "Dedicated support",
