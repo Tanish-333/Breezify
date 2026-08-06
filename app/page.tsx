@@ -91,8 +91,15 @@ export default function LandingPage() {
     <div>
       <SiteHeader />
 
-      <section className="dot-grid relative border-b border-border">
-        <div className="container relative flex flex-col items-center gap-8 py-24 text-center md:py-32">
+      <section className="dot-grid spotlight relative overflow-hidden border-b border-border">
+        <div className="container relative z-10 flex flex-col items-center gap-8 py-24 text-center md:py-32">
+          <span className="animate-in inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-success opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
+            </span>
+            Now building with Claude, Gemini &amp; Llama
+          </span>
           <h1 className="max-w-3xl text-balance text-4xl font-semibold tracking-tight md:text-6xl animate-in">
             Describe your app.
             <br />
@@ -107,7 +114,7 @@ export default function LandingPage() {
             $5.00 free credit on signup · No credit card required
           </p>
         </div>
-        <div className="container relative pb-24">
+        <div className="container relative z-10 pb-24">
           <BuilderMockup />
         </div>
       </section>

@@ -38,7 +38,7 @@ export function PromptHero() {
     <div className="w-full max-w-2xl animate-in">
       <div
         className={cn(
-          "flex flex-col gap-3 rounded-xl border border-border bg-muted/40 p-3 shadow-2xl shadow-black/40 backdrop-blur transition-colors focus-within:border-muted-foreground"
+          "glow-ring flex flex-col gap-3 rounded-xl border border-border bg-muted/40 p-3 backdrop-blur transition-all duration-200 ease-smooth focus-within:border-foreground/30 focus-within:shadow-elevated"
         )}
       >
         <textarea
@@ -63,7 +63,7 @@ export function PromptHero() {
           <button
             onClick={handleSubmit}
             disabled={prompt.trim().length < 5 || overLimit || submitting}
-            className="flex h-9 w-9 items-center justify-center rounded-lg bg-foreground text-background transition-opacity hover:opacity-85 disabled:opacity-30"
+            className="flex h-9 w-9 items-center justify-center rounded-lg bg-foreground text-background shadow-soft transition-all duration-200 ease-smooth hover:opacity-90 hover:shadow-elevated active:scale-90 disabled:opacity-30 disabled:active:scale-100"
             aria-label="Generate app"
           >
             {submitting ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
@@ -86,7 +86,7 @@ export function PromptHero() {
           <button
             key={s}
             onClick={() => setPrompt(s)}
-            className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-muted-foreground hover:text-foreground"
+            className="rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-all duration-200 ease-smooth hover:-translate-y-0.5 hover:border-muted-foreground hover:text-foreground hover:shadow-soft"
           >
             {s}
           </button>

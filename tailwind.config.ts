@@ -37,6 +37,19 @@ const config: Config = {
         sm: "4px",
         DEFAULT: "6px",
         lg: "10px",
+        xl: "14px",
+        "2xl": "20px",
+      },
+      boxShadow: {
+        // A restrained, layered elevation scale — real shadows rather than
+        // the flat border-only look everything used before, but still soft
+        // and low-contrast enough to fit a mostly-monochrome UI.
+        soft: "0 1px 2px hsl(var(--foreground) / 0.04), 0 8px 24px -12px hsl(var(--foreground) / 0.12)",
+        elevated: "0 4px 12px hsl(var(--foreground) / 0.06), 0 16px 40px -16px hsl(var(--foreground) / 0.18)",
+        glow: "0 0 0 1px hsl(var(--border)), 0 20px 60px -20px hsl(var(--foreground) / 0.25)",
+      },
+      transitionTimingFunction: {
+        smooth: "cubic-bezier(0.16, 1, 0.3, 1)",
       },
       keyframes: {
         "fade-in": {
@@ -49,7 +62,7 @@ const config: Config = {
         },
       },
       animation: {
-        "fade-in": "fade-in 0.4s ease-out",
+        "fade-in": "fade-in 0.4s cubic-bezier(0.16, 1, 0.3, 1)",
         shimmer: "shimmer 2s linear infinite",
       },
     },
