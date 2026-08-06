@@ -59,13 +59,24 @@ async function findUid(
  * either way, but stripeCustomerId would never get set by anything else.
  */
 async function setPlan(uid: string, plan: PlanId, customerId?: string) {
-  await adminDb()
-    .collection("users")
-    .doc(uid)
-    .set(
-      { plan, credits: PLANS[plan].credits, ...(customerId ? { stripeCustomerId: customerId } : {}) },
-      { merge: true }
-    );
+  const ref = adminDb().collection("users").doc(uid);
+  const updates: Record<string, unknown> = {
+    plan,
+    credits: PLANS[plan].credits,
+    ...(customerId ? { stripeCustomerId: customerId } : {}),
+  };
+  // Stamped only on the transition INTO max from something else — a
+  // renewal (invoice.paid firing every month while already on Max)
+  // must never reset this, or the 30-day downgrade lock (see
+  // MAX_DOWNGRADE_LOCK_MS in app/api/stripe/portal/route.ts) would never
+  // actually expire for someone who stays on Max.
+  if (plan === "max") {
+    const snap = await ref.get();
+    if (snap.data()?.plan !== "max") {
+      updates.maxUpgradedAt = new Date().toISOString();
+    }
+  }
+  await ref.set(updates, { merge: true });
 }
 
 /**
