@@ -407,6 +407,22 @@ export async function getDomainOrderStatus(orderId: string): Promise<DomainOrder
  * later instead of assuming it failed — see each caller's own resume/retry
  * logic for how it acts on that.
  */
+/**
+ * Thrown when the poll window runs out while the order is still pending at
+ * Vercel — as opposed to Vercel actually reporting `status: "failed"`. A
+ * caller deciding whether to refund a charge tied to this order needs to
+ * tell the two apart: a genuine failure means the purchase definitely
+ * didn't happen (safe, correct to refund), but a timeout means it's still
+ * unresolved — it may well complete moments later, so refunding here would
+ * risk giving the money back for a domain that still ends up registered.
+ */
+export class DomainOrderTimeoutError extends Error {
+  constructor(orderId: string) {
+    super(`Domain order ${orderId} is still pending after the poll window; will retry later.`);
+    this.name = "DomainOrderTimeoutError";
+  }
+}
+
 export async function pollDomainOrder(orderId: string, deadlineMs = 45_000): Promise<void> {
   const deadline = Date.now() + deadlineMs;
   while (Date.now() < deadline) {
@@ -417,5 +433,5 @@ export async function pollDomainOrder(orderId: string, deadlineMs = 45_000): Pro
     }
     await new Promise((r) => setTimeout(r, 3000));
   }
-  throw new Error(`Domain order ${orderId} is still pending after the poll window; will retry later.`);
+  throw new DomainOrderTimeoutError(orderId);
 }

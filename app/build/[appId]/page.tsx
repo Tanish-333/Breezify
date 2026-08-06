@@ -572,11 +572,13 @@ function AppWorkspace() {
             {turns.map((turn, i) => (
               <TurnCard
                 key={turn.id}
+                appId={app.id}
                 turn={turn}
                 files={files}
                 isLatest={i === turns.length - 1}
                 onRevert={() => revert(turn.id)}
                 reverting={reverting === turn.id}
+                revertLocked={reverting !== null}
               />
             ))}
 
@@ -761,6 +763,7 @@ function AppWorkspace() {
                   locked={plan === "free"}
                   editable={plan !== "free" && !blockedByOtherEditor}
                   onSave={saveEdit}
+                  versionKey={turns.length}
                 />
               </div>
             )

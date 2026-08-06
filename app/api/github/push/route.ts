@@ -136,6 +136,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: msg }, { status: 400 });
     }
     const defaultBranch = (created.body.default_branch as string) || "main";
+    const repoUrlForCleanup = created.body.html_url as string;
+    // Every failure from here on happens AFTER the real repo already exists
+    // on GitHub (step 1 above), so retrying with the same name just hits
+    // "You already have a repository named X" with no indication why, or
+    // what to do about it — the repo this created is otherwise invisible to
+    // Breezify (githubUrl is only persisted on full success, further down).
+    // Appended to every failure past this point so the person actually
+    // knows an empty repo now exists and where to find it.
+    const orphanedRepoNote = ` A repository was already created at ${repoUrlForCleanup} — delete it on GitHub or push under a different name.`;
 
     // 2. Upload each file as a blob.
     const entries = Object.entries(files);
@@ -156,7 +165,7 @@ export async function POST(req: NextRequest) {
       });
       if (!blob.ok) {
         return NextResponse.json(
-          { error: `Failed to upload ${clean}: ${blob.body?.message ?? blob.status}` },
+          { error: `Failed to upload ${clean}: ${blob.body?.message ?? blob.status}.${orphanedRepoNote}` },
           { status: 502 }
         );
       }
@@ -172,7 +181,7 @@ export async function POST(req: NextRequest) {
     });
     if (!tree.ok) {
       return NextResponse.json(
-        { error: tree.body?.message || "Failed to build the commit tree." },
+        { error: `${tree.body?.message || "Failed to build the commit tree."}${orphanedRepoNote}` },
         { status: 502 }
       );
     }
@@ -187,7 +196,7 @@ export async function POST(req: NextRequest) {
     });
     if (!commitRes.ok) {
       return NextResponse.json(
-        { error: commitRes.body?.message || "Failed to create the commit." },
+        { error: `${commitRes.body?.message || "Failed to create the commit."}${orphanedRepoNote}` },
         { status: 502 }
       );
     }
@@ -198,20 +207,18 @@ export async function POST(req: NextRequest) {
     });
     if (!ref.ok) {
       return NextResponse.json(
-        { error: ref.body?.message || "Failed to publish the branch." },
+        { error: `${ref.body?.message || "Failed to publish the branch."}${orphanedRepoNote}` },
         { status: 502 }
       );
     }
 
-    const repoUrl = created.body.html_url as string;
-
     // Persist only the public repo URL.
     await commit(
-      [updateWrite(`apps/${appId}`, { githubUrl: repoUrl }, ["githubUrl"])],
+      [updateWrite(`apps/${appId}`, { githubUrl: repoUrlForCleanup }, ["githubUrl"])],
       idToken
     );
 
-    return NextResponse.json({ url: repoUrl, files: blobs.length });
+    return NextResponse.json({ url: repoUrlForCleanup, files: blobs.length });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to push to GitHub.";
     return NextResponse.json({ error: message }, { status: 500 });

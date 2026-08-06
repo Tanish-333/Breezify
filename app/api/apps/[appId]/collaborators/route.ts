@@ -91,10 +91,27 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
       );
     }
 
+    if (!isFirebaseAdminConfigured()) {
+      return NextResponse.json(
+        { error: "Inviting collaborators isn't configured on this deployment yet." },
+        { status: 400 }
+      );
+    }
     let invitedUid: string;
     try {
       invitedUid = (await adminAuth().getUserByEmail(trimmedEmail)).uid;
-    } catch {
+    } catch (err) {
+      // adminAuth().getUserByEmail() throws its own "user-not-found" error
+      // for a genuine miss, distinguishable from a real Firebase Admin API
+      // failure (network, permissions) — the isFirebaseAdminConfigured()
+      // check above already rules out the "no service account at all" case,
+      // this narrows the remaining ambiguity so a transient Admin API error
+      // isn't misreported as "that email has no account" to the inviter.
+      const code = (err as { code?: string } | undefined)?.code;
+      if (code && code !== "auth/user-not-found") {
+        console.error(`[collaborators] getUserByEmail failed for a reason other than not-found:`, err);
+        return NextResponse.json({ error: "Couldn't look up that email right now. Please try again." }, { status: 500 });
+      }
       return NextResponse.json({ error: "No Breezify account found with that email." }, { status: 404 });
     }
     if (invitedUid === uid) {

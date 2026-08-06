@@ -221,3 +221,47 @@ export async function queryCollection(
       fields: fromFirestoreFields(r.document!.fields ?? {}),
     }));
 }
+
+const DOCUMENTS_PREFIX = `projects/${PROJECT_ID}/databases/(default)/documents/`;
+
+/**
+ * Same as queryCollection, but across every subcollection named
+ * `collectionId` regardless of parent (Firestore's "collection group"
+ * query) — e.g. every apps/{appId}/collaborators/{uid} doc for a given uid,
+ * spanning apps this caller doesn't own. Returns the full relative path
+ * (not just the doc id) since the caller usually needs it to build a write
+ * against a parent it doesn't already know.
+ */
+export async function queryCollectionGroup(
+  collectionId: string,
+  field: string,
+  value: string,
+  idToken: string
+): Promise<{ path: string; fields: Record<string, unknown> }[]> {
+  const res = await firestoreFetch(`${BASE}:runQuery`, idToken, {
+    method: "POST",
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId, allDescendants: true }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: field },
+            op: "EQUAL",
+            value: toFirestoreValue(value),
+          },
+        },
+      },
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Firestore collection-group query failed (${res.status}): ${body}`);
+  }
+  const rows = (await res.json()) as { document?: { name: string; fields?: Record<string, any> } }[];
+  return rows
+    .filter((r) => r.document)
+    .map((r) => ({
+      path: r.document!.name.slice(DOCUMENTS_PREFIX.length),
+      fields: fromFirestoreFields(r.document!.fields ?? {}),
+    }));
+}

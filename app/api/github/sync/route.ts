@@ -10,6 +10,11 @@ import { IMPORT_MIN_PLAN, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
 export const runtime = "nodejs";
 export const maxDuration = 120;
 
+// Same reasoning and value as app/api/generate/route.ts's own lock: past
+// this, a claim is presumed crashed (the function was killed, or its final
+// status write failed) rather than genuinely still running.
+const GENERATING_LOCK_STALE_MS = 6 * 60 * 1000;
+
 const GH = "https://api.github.com";
 
 // Same bounds as app/api/github/import, this pulls the same kind of tree.
@@ -118,116 +123,192 @@ export async function POST(req: NextRequest) {
     }
     const { owner, repo } = parsed;
 
-    // Checked up front, same as /api/github/push: a 401/403 further down
-    // (e.g. reading the tree) is otherwise indistinguishable from "wrong
-    // repo" and never tells the dialog to clear a dead token.
-    const who = await gh("/user", githubToken);
-    if (!who.ok) {
+    // Claim the same "generating" lock a refine uses (see
+    // app/api/generate/route.ts) before doing any of the slow GitHub work
+    // below (up to 120s: a tree fetch plus up to 250 sequential blob
+    // fetches). Without this, a sync racing a concurrent refine (or a
+    // second sync) both read the same base `turns`/state, and whichever's
+    // final commit lands last silently overwrites the other's — a refine
+    // someone was watching complete could vanish the moment an unrelated
+    // sync finishes moments later, with no error or conflict surfaced to
+    // either person.
+    const previousStatus = appDoc.fields.status as string | undefined;
+    const lockStartedAtMs =
+      typeof appDoc.fields.generatingStartedAt === "string" ? Date.parse(appDoc.fields.generatingStartedAt) : NaN;
+    const lockIsStale = Number.isNaN(lockStartedAtMs) || Date.now() - lockStartedAtMs > GENERATING_LOCK_STALE_MS;
+    if (previousStatus === "generating" && !lockIsStale) {
       return NextResponse.json(
-        { error: "That GitHub token isn't valid, or it's missing the repo scope." },
-        { status: 400 }
+        { error: "Someone else is already editing this app right now. Wait for them to finish, then try again." },
+        { status: 409 }
       );
     }
-
-    const repoInfo = await gh(`/repos/${owner}/${repo}`, githubToken);
-    if (!repoInfo.ok) {
-      return NextResponse.json(
-        { error: repoInfo.status === 404 ? "Repository not found or not accessible." : "Couldn't read that repository." },
-        { status: 400 }
+    try {
+      await commit(
+        [
+          updateWrite(
+            `apps/${appId}`,
+            { status: "generating", generatingBy: uid, generatingByEmail: null, generatingStartedAt: new Date() },
+            ["status", "generatingBy", "generatingByEmail", "generatingStartedAt"]
+          ),
+        ],
+        idToken
       );
+    } catch (err) {
+      console.error(`[github/sync] Failed to claim apps/${appId} for sync:`, err);
+      return NextResponse.json({ error: "Couldn't start this sync. Please try again." }, { status: 500 });
     }
-    const targetBranch = repoInfo.body.default_branch || "main";
 
-    const treeRes = await gh(`/repos/${owner}/${repo}/git/trees/${targetBranch}?recursive=1`, githubToken);
-    if (!treeRes.ok) {
-      return NextResponse.json({ error: "Couldn't read that branch's file tree." }, { status: 400 });
-    }
-    if (treeRes.body.truncated) {
-      return NextResponse.json(
-        { error: "This repository is too large to sync in one go." },
-        { status: 400 }
+    // Everything from here through the final commit below runs with the
+    // lock claimed above already held — any throw is caught by the
+    // outer/local catch just below, which releases it before responding, so
+    // every early exit (validation failure, a GitHub call failing) still
+    // frees the app rather than leaving it stuck showing "generating"
+    // forever.
+    try {
+      // Checked up front, same as /api/github/push: a 401/403 further down
+      // (e.g. reading the tree) is otherwise indistinguishable from "wrong
+      // repo" and never tells the dialog to clear a dead token.
+      const who = await gh("/user", githubToken);
+      if (!who.ok) {
+        throw new Error("That GitHub token isn't valid, or it's missing the repo scope.");
+      }
+
+      const repoInfo = await gh(`/repos/${owner}/${repo}`, githubToken);
+      if (!repoInfo.ok) {
+        throw new Error(repoInfo.status === 404 ? "Repository not found or not accessible." : "Couldn't read that repository.");
+      }
+      const targetBranch = repoInfo.body.default_branch || "main";
+
+      const treeRes = await gh(`/repos/${owner}/${repo}/git/trees/${targetBranch}?recursive=1`, githubToken);
+      if (!treeRes.ok) {
+        throw new Error("Couldn't read that branch's file tree.");
+      }
+      if (treeRes.body.truncated) {
+        throw new Error("This repository is too large to sync in one go.");
+      }
+
+      const entries = (treeRes.body.tree as { path: string; type: string; sha: string; size?: number }[]).filter(
+        (e) =>
+          e.type === "blob" &&
+          !SKIP_PATH_RE.test(e.path) &&
+          !SKIP_FILE_RE.test(e.path) &&
+          !BINARY_EXT_RE.test(e.path) &&
+          (e.size ?? 0) <= MAX_FILE_BYTES
       );
-    }
 
-    const entries = (treeRes.body.tree as { path: string; type: string; sha: string; size?: number }[]).filter(
-      (e) =>
-        e.type === "blob" &&
-        !SKIP_PATH_RE.test(e.path) &&
-        !SKIP_FILE_RE.test(e.path) &&
-        !BINARY_EXT_RE.test(e.path) &&
-        (e.size ?? 0) <= MAX_FILE_BYTES
-    );
+      const files: Record<string, string> = {};
+      let totalBytes = 0;
+      let skipped = entries.length > MAX_FILES ? entries.length - MAX_FILES : 0;
+      // Tracked separately from `skipped`: a blob fetch that failed (network
+      // blip, transient 5xx, GitHub's rate limit hit partway through up to
+      // 250 sequential un-throttled requests) is a real failure, not a file
+      // that was filtered out for being binary/oversized. Lumping them into
+      // one counter made a summary like "pulled 12 files (188 skipped:
+      // binary or too large)" actively misleading — most of the repo could
+      // have failed to fetch for a transient reason, not content filtering,
+      // and for a sync this can mean silently replacing an app's real files
+      // with a near-empty result while reporting a benign-looking cause.
+      let fetchFailed = 0;
 
-    const files: Record<string, string> = {};
-    let totalBytes = 0;
-    let skipped = entries.length > MAX_FILES ? entries.length - MAX_FILES : 0;
+      for (const entry of entries.slice(0, MAX_FILES)) {
+        if (totalBytes >= MAX_TOTAL_BYTES) {
+          skipped++;
+          continue;
+        }
+        const blob = await gh(`/repos/${owner}/${repo}/git/blobs/${entry.sha}`, githubToken);
+        if (!blob.ok) {
+          fetchFailed++;
+          continue;
+        }
+        if (blob.body.encoding !== "base64") {
+          skipped++;
+          continue;
+        }
+        let content: string;
+        try {
+          content = Buffer.from(blob.body.content as string, "base64").toString("utf8");
+        } catch {
+          skipped++;
+          continue;
+        }
+        if (content.includes("�")) {
+          skipped++;
+          continue;
+        }
+        totalBytes += content.length;
+        files[entry.path] = content;
+      }
 
-    for (const entry of entries.slice(0, MAX_FILES)) {
-      if (totalBytes >= MAX_TOTAL_BYTES) {
-        skipped++;
-        continue;
+      if (Object.keys(files).length === 0) {
+        throw new Error("No importable text files found in this repository.");
       }
-      const blob = await gh(`/repos/${owner}/${repo}/git/blobs/${entry.sha}`, githubToken);
-      if (!blob.ok || blob.body.encoding !== "base64") {
-        skipped++;
-        continue;
-      }
-      let content: string;
-      try {
-        content = Buffer.from(blob.body.content as string, "base64").toString("utf8");
-      } catch {
-        skipped++;
-        continue;
-      }
-      if (content.includes("�")) {
-        skipped++;
-        continue;
-      }
-      totalBytes += content.length;
-      files[entry.path] = content;
-    }
 
-    if (Object.keys(files).length === 0) {
-      return NextResponse.json(
-        { error: "No importable text files found in this repository." },
-        { status: 400 }
+      const wrapped = tryWrapExpressForVercel(files);
+      const storedFiles = wrapped ? wrapped.files : files;
+
+      const unsupported = unsupportedReason(storedFiles, "deploy");
+      if (unsupported) {
+        throw new Error(unsupported);
+      }
+
+      const existingTurns = Array.isArray(appDoc.fields.turns) ? (appDoc.fields.turns as unknown[]) : [];
+      const turnId = randomUUID();
+      const createdAt = new Date();
+      const notes = [
+        skipped ? `${skipped} file${skipped > 1 ? "s" : ""} skipped: binary or too large` : null,
+        fetchFailed ? `${fetchFailed} file${fetchFailed > 1 ? "s" : ""} failed to fetch from GitHub and were left out — retry the sync to pick them up` : null,
+      ].filter(Boolean);
+      const turn = {
+        id: turnId,
+        kind: "sync",
+        instruction: `Synced the latest commit from github.com/${owner}/${repo}`,
+        summary: `Pulled ${Object.keys(files).length} files from github.com/${owner}/${repo}${notes.length ? ` (${notes.join("; ")})` : ""}.${wrapped ? ` ${wrapped.note}` : ""}`,
+        model: appDoc.fields.model ?? "haiku",
+        fileCount: Object.keys(storedFiles).length,
+        createdAt,
+      };
+
+      await commit(
+        [
+          updateWrite(
+            `apps/${appId}`,
+            {
+              generatedCode: { files: storedFiles },
+              turns: [...existingTurns, turn],
+              status: "ready",
+              generatingBy: null,
+              generatingByEmail: null,
+              generatingStartedAt: null,
+            },
+            ["generatedCode", "turns", "status", "generatingBy", "generatingByEmail", "generatingStartedAt"]
+          ),
+          createWrite(`apps/${appId}/versions/${turnId}`, { userId: uid, files: storedFiles, createdAt }),
+        ],
+        idToken
       );
+
+      return NextResponse.json({ fileCount: Object.keys(files).length, skipped, fetchFailed });
+    } catch (err) {
+      await commit(
+        [
+          updateWrite(
+            `apps/${appId}`,
+            {
+              status: previousStatus && previousStatus !== "generating" ? previousStatus : "ready",
+              generatingBy: null,
+              generatingByEmail: null,
+              generatingStartedAt: null,
+            },
+            ["status", "generatingBy", "generatingByEmail", "generatingStartedAt"]
+          ),
+        ],
+        idToken
+      ).catch(() => {
+        // Ignore — the error response below is what the user sees either way.
+      });
+      const message = err instanceof Error ? err.message : "Failed to sync from GitHub.";
+      return NextResponse.json({ error: message }, { status: 400 });
     }
-
-    const wrapped = tryWrapExpressForVercel(files);
-    const storedFiles = wrapped ? wrapped.files : files;
-
-    const unsupported = unsupportedReason(storedFiles, "deploy");
-    if (unsupported) {
-      return NextResponse.json({ error: unsupported }, { status: 400 });
-    }
-
-    const existingTurns = Array.isArray(appDoc.fields.turns) ? (appDoc.fields.turns as unknown[]) : [];
-    const turnId = randomUUID();
-    const createdAt = new Date();
-    const turn = {
-      id: turnId,
-      kind: "sync",
-      instruction: `Synced the latest commit from github.com/${owner}/${repo}`,
-      summary: `Pulled ${Object.keys(files).length} files from github.com/${owner}/${repo}${skipped ? ` (${skipped} files skipped: binary or too large)` : ""}.${wrapped ? ` ${wrapped.note}` : ""}`,
-      model: appDoc.fields.model ?? "haiku",
-      fileCount: Object.keys(storedFiles).length,
-      createdAt,
-    };
-
-    await commit(
-      [
-        updateWrite(
-          `apps/${appId}`,
-          { generatedCode: { files: storedFiles }, turns: [...existingTurns, turn] },
-          ["generatedCode", "turns"]
-        ),
-        createWrite(`apps/${appId}/versions/${turnId}`, { userId: uid, files: storedFiles, createdAt }),
-      ],
-      idToken
-    );
-
-    return NextResponse.json({ fileCount: Object.keys(files).length, skipped });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to sync from GitHub.";
     return NextResponse.json({ error: message }, { status: 500 });

@@ -37,7 +37,7 @@ import {
   githubProvider,
   githubRepoProvider,
 } from "@/lib/firebase";
-import { setGithubToken } from "@/lib/github-connect";
+import { clearGithubToken, setGithubToken } from "@/lib/github-connect";
 import type { FeatherUser } from "@/lib/types";
 
 /**
@@ -322,10 +322,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = await res.json().catch(() => ({}));
       throw new Error(data.error || "Failed to delete account.");
     }
+    clearGithubToken();
     await firebaseSignOut(auth);
   }
 
   async function signOut() {
+    // A connected GitHub token lives in plain localStorage (see
+    // lib/github-connect.ts), with no binding to which Breezify account
+    // connected it. Without clearing it here, signing out and someone else
+    // signing into a DIFFERENT Breezify account on the same browser would
+    // silently inherit the previous person's GitHub access — every push/
+    // import/sync dialog just checks hasGithubToken() and shows "connected."
+    clearGithubToken();
     await firebaseSignOut(auth);
   }
 
