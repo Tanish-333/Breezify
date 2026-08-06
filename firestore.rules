@@ -131,7 +131,7 @@ service cloud.firestore {
         allow create: if isOwner(request.resource.data.userId);
         // Content itself stays immutable (no update, ever — that's what
         // makes a version trustworthy to revert to). Delete is owner-only,
-        // needed for deleteApp() (lib/use-apps.ts) to clean these up when
+        // needed for deleteApp() (lib/deploy-actions.ts) to clean these up when
         // the whole app goes: it batch-deletes every version alongside the
         // parent apps/{appId} doc, and Firestore batches are all-or-nothing
         // — with this at `if false`, that batch was rejected outright for

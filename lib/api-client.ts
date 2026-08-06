@@ -118,3 +118,43 @@ export async function duplicateAppRequest(appId: string): Promise<string> {
   if (!res.ok) throw new Error(data.error || "Couldn't duplicate this app.");
   return data.appId as string;
 }
+
+/** Deletes an app entirely — see app/api/apps/[appId] (DELETE). Immediately frees its active-subdomain slot, if any. */
+export async function deleteAppRequest(appId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You must be signed in.");
+  const idToken = await user.getIdToken();
+  const res = await fetch(`/api/apps/${encodeURIComponent(appId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Couldn't delete this app.");
+}
+
+/** Takes an app offline without deleting it, freeing its active-subdomain slot — see app/api/apps/[appId]/undeploy. */
+export async function undeployAppRequest(appId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You must be signed in.");
+  const idToken = await user.getIdToken();
+  const res = await fetch(`/api/apps/${encodeURIComponent(appId)}/undeploy`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Couldn't undeploy this app.");
+}
+
+/** Renews a free-tier app's expiry clock — only accepted inside its renewal window, see app/api/apps/[appId]/renew. */
+export async function renewAppRequest(appId: string): Promise<number> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You must be signed in.");
+  const idToken = await user.getIdToken();
+  const res = await fetch(`/api/apps/${encodeURIComponent(appId)}/renew`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Couldn't renew this app.");
+  return data.deployExpiresAt as number;
+}

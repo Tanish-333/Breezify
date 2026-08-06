@@ -285,6 +285,67 @@ export const DEPLOY_DAILY_LIMIT: Record<PlanId, number> = {
   max: 200,
 };
 
+/**
+ * How many of a user's apps may be LIVE (holding a real subdomain, see
+ * isActiveDeployment()) at once — see lib/deploy-actions.ts. A user is
+ * always free to undeploy (lib/deploy-actions.ts undeployApp) or delete an
+ * app to immediately free a slot and deploy a new one. null = no cap.
+ */
+export const MAX_ACTIVE_DEPLOYED_APPS: Record<PlanId, number | null> = {
+  free: 3,
+  plus: 25,
+  pro: 100,
+  max: null,
+};
+
+/**
+ * Page views allowed per deployed app in a rolling ~30-day window before
+ * visitors get redirected to /limit-reached instead of the app — see
+ * lib/traffic-guard.ts. null = no cap.
+ */
+export const MONTHLY_PAGE_VIEW_LIMIT: Record<PlanId, number | null> = {
+  free: 5_000,
+  plus: 100_000,
+  pro: null,
+  max: null,
+};
+
+/**
+ * Days a deployed subdomain stays live before it auto-expires and starts
+ * redirecting visitors to /limit-reached (see lib/traffic-guard.ts) until
+ * the owner renews it (see app/api/apps/[appId]/renew). null = never
+ * expires. Only the free plan expires at all — a real incentive to upgrade,
+ * not just a soft nudge, matching MAX_ACTIVE_DEPLOYED_APPS and
+ * MONTHLY_PAGE_VIEW_LIMIT above.
+ */
+export const DEPLOY_EXPIRY_DAYS: Record<PlanId, number | null> = {
+  free: 30,
+  plus: null,
+  pro: null,
+  max: null,
+};
+
+/**
+ * A deployed app can only be renewed once it's within this many days of its
+ * deployExpiresAt — or any time after it's already expired. Renewing any
+ * earlier than that is rejected (see app/api/apps/[appId]/renew): the point
+ * is a genuine "it's about to lapse" renewal, not a way to keep pushing the
+ * clock out indefinitely right after every deploy.
+ */
+export const RENEWAL_WINDOW_DAYS = 2;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** True once `expiresAt` (deployExpiresAt) has passed. Apps with no expiry (expiresAt undefined) never expire. */
+export function isDeployExpired(expiresAt: number | undefined, now: number = Date.now()): boolean {
+  return typeof expiresAt === "number" && now >= expiresAt;
+}
+
+/** True once `expiresAt` is within RENEWAL_WINDOW_DAYS of now, or already past — see RENEWAL_WINDOW_DAYS. */
+export function canRenewDeploy(expiresAt: number | undefined, now: number = Date.now()): boolean {
+  return typeof expiresAt === "number" && now >= expiresAt - RENEWAL_WINDOW_DAYS * DAY_MS;
+}
+
 export function planAllowsModel(plan: PlanId, model: ModelId): boolean {
   return PLAN_RANK[plan] >= PLAN_RANK[MODEL_INFO[model].minPlan];
 }
@@ -336,6 +397,11 @@ export function effectiveDeployStatus(app: {
   return null;
 }
 
+/** True when `app` currently holds one of its owner's slots under MAX_ACTIVE_DEPLOYED_APPS. */
+export function isActiveDeployment(app: { status: AppStatus; deployStatus?: DeployStatus }): boolean {
+  return effectiveDeployStatus(app) === "live";
+}
+
 export interface AppTurn {
   id: string;
   /**
@@ -379,6 +445,8 @@ export interface FeatherApp {
   suggestions?: string[];
   turns?: AppTurn[];
   deployedUrl?: string;
+  /** When this deploy auto-expires (ms) — see DEPLOY_EXPIRY_DAYS. Unset on plans with no expiry. */
+  deployExpiresAt?: number;
   githubUrl?: string;
   subdomain?: string;
   customDomain?: string;
@@ -393,8 +461,12 @@ export interface FeatherApp {
   errorMessage?: string;
   createdAt: number;
   deployedAt?: number;
-  /** Page-load count on the deployed app. */
+  /** Lifetime page-load count on the deployed app. */
   visits?: number;
+  /** Rolling-window page-view count checked against MONTHLY_PAGE_VIEW_LIMIT — see lib/traffic-guard.ts. Only ever written server-side. */
+  monthlyViews?: number;
+  /** Start (ms) of the current monthlyViews window; the window rolls over ~30 days after this. */
+  monthlyViewsWindowStart?: number;
 }
 
 /** A key/value pair scoped to one app, e.g. an API key the generated app calls out with. */

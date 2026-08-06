@@ -45,7 +45,7 @@ export interface DeployResult {
 
 /**
  * Aliases a finished deployment to `{slug}.DEPLOY_DOMAIN`, e.g.
- * my-app.feather123.app instead of a *.vercel.app URL. Only attempted when
+ * my-app.breezify.app instead of a *.vercel.app URL. Only attempted when
  * DEPLOY_DOMAIN is set, and the domain must already be added and verified
  * on the Vercel project/team for this to succeed. Best-effort: any failure
  * (domain not configured yet, not verified, network error) is swallowed and

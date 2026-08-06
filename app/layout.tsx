@@ -22,8 +22,22 @@ export const metadata: Metadata = {
   title: TITLE,
   description: DESCRIPTION,
   icons: {
-    icon: "/favicon.svg",
+    // SVG first (crisp at any size in browsers that support it), .ico as
+    // the universal fallback — a lot of tooling outside the browser itself
+    // (link-preview crawlers, Vercel's own dashboard, bookmark managers)
+    // only ever requests /favicon.ico by convention and ignores <link>
+    // icon tags entirely, so without a real one at that exact path they'd
+    // keep showing whatever they last cached before the Breezify rebrand.
+    icon: [
+      { url: "/favicon.svg", type: "image/svg+xml" },
+      { url: "/favicon.ico", sizes: "any" },
+      { url: "/icon-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    apple: "/apple-touch-icon.png",
+    shortcut: "/favicon.ico",
   },
+  manifest: "/site.webmanifest",
   openGraph: {
     title: TITLE,
     description: DESCRIPTION,

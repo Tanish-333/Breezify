@@ -7,7 +7,6 @@ import {
   deleteDoc,
   doc,
   getDoc,
-  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -15,7 +14,6 @@ import {
   setDoc,
   updateDoc,
   where,
-  writeBatch,
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { logClientError } from "@/lib/client-error-log";
@@ -70,6 +68,7 @@ function toApp(id: string, data: any): FeatherApp {
       ? data.turns.map((t: any) => ({ ...t, createdAt: toMillis(t.createdAt) ?? Date.now() }))
       : [],
     deployedUrl: data.deployedUrl,
+    deployExpiresAt: toMillis(data.deployExpiresAt),
     githubUrl: data.githubUrl,
     subdomain: data.subdomain,
     customDomain: data.customDomain,
@@ -210,41 +209,14 @@ export function useCollaboratingApps(uid: string | undefined) {
   return { apps, loading };
 }
 
-// Firestore's client SDK batches also cap at 500 writes.
-const BATCH_WRITE_LIMIT = 450;
-
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
-}
-
-/**
- * secrets, versions, and collaborators don't cascade-delete with their
- * parent app doc (Firestore never does this automatically), and secrets'
- * and collaborators' own rules check ownership via a get() on the parent
- * app doc — so deleting the app first would leave any leftover secrets
- * (real third-party API keys) not just orphaned, but permanently unreadable
- * and undeletable afterward. Clear the subcollections first.
- */
-export async function deleteApp(appId: string) {
-  const [secretsSnap, versionsSnap, collaboratorsSnap] = await Promise.all([
-    getDocs(collection(db, "apps", appId, "secrets")),
-    getDocs(collection(db, "apps", appId, "versions")),
-    getDocs(collection(db, "apps", appId, "collaborators")),
-  ]);
-  const subcollectionRefs = [...secretsSnap.docs, ...versionsSnap.docs, ...collaboratorsSnap.docs].map(
-    (d) => d.ref
-  );
-
-  for (const group of chunk(subcollectionRefs, BATCH_WRITE_LIMIT)) {
-    const batch = writeBatch(db);
-    for (const ref of group) batch.delete(ref);
-    await batch.commit();
-  }
-
-  await deleteDoc(doc(db, "apps", appId));
-}
+// Deleting an app used to be a plain client-side Firestore batch delete
+// here, same reasoning as the removed client-side duplicateApp() below: it
+// never detached a custom domain from the app's Vercel project, leaving it
+// orphaned there even though Breezify itself had forgotten about it. Moved
+// to deleteAppRequest() in lib/api-client.ts, which hits
+// app/api/apps/[appId] (DELETE) — see lib/deploy-actions.ts' deleteApp(),
+// which does the domain detach before removing the secrets/versions/
+// collaborators subcollections and the app doc itself.
 
 // Duplicating an app used to be a plain client-side Firestore write here,
 // gated only by the "Duplicate" button's own Pro+ check — firestore.rules'

@@ -24,14 +24,16 @@ import { useApp, useAppSecrets, revertToVersion, saveManualEdit } from "@/lib/us
 import { usePresence } from "@/lib/use-presence";
 import { missingEnvVars } from "@/lib/backend-env";
 import { useAuth } from "@/lib/auth-context";
-import { fetchModelAvailability, generateAppRequest, duplicateAppRequest } from "@/lib/api-client";
+import { fetchModelAvailability, generateAppRequest, duplicateAppRequest, renewAppRequest } from "@/lib/api-client";
 import {
+  canRenewDeploy,
   COLLABORATOR_MIN_PLAN,
   CUSTOM_DOMAIN_MIN_PLAN,
   displayStatus,
   DUPLICATE_MIN_PLAN,
   effectiveDeployStatus,
   IMPORT_MIN_PLAN,
+  isDeployExpired,
   MODEL_INFO,
   PLAN_RANK,
   planAllowsModel,
@@ -45,6 +47,7 @@ import {
   ArrowLeft,
   BarChart3,
   Check,
+  Clock,
   Code2,
   Copy,
   Eye,
@@ -95,6 +98,8 @@ function AppWorkspace() {
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState("");
   const [deployNote, setDeployNote] = useState("");
+  const [renewing, setRenewing] = useState(false);
+  const [renewError, setRenewError] = useState("");
   const [duplicating, setDuplicating] = useState(false);
   const [reverting, setReverting] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
@@ -165,6 +170,13 @@ function AppWorkspace() {
   // someone even tries to deploy.
   const missingSecrets = isOwner ? missingEnvVars(files, appSecrets.map((s) => s.key)) : [];
 
+  // Free-tier subdomain expiry (DEPLOY_EXPIRY_DAYS) — unset entirely on
+  // plans that never expire, see app/api/deploy/route.ts.
+  const deployExpired = isDeployExpired(app.deployExpiresAt);
+  const deployRenewable = canRenewDeploy(app.deployExpiresAt);
+  const daysUntilExpiry =
+    app.deployExpiresAt ? Math.ceil((app.deployExpiresAt - Date.now()) / (24 * 60 * 60 * 1000)) : null;
+
   async function refine(text: string) {
     setError("");
     setProgress({ chars: 0, files: [] });
@@ -231,6 +243,20 @@ function AppWorkspace() {
       setDeployError(err instanceof Error ? err.message : "Deploy failed.");
     } finally {
       setDeploying(false);
+    }
+  }
+
+  async function renewApp() {
+    setRenewError("");
+    setRenewing(true);
+    try {
+      await renewAppRequest(app!.id);
+      // Firestore's onSnapshot in useApp() picks up the new deployExpiresAt
+      // as soon as the server writes it.
+    } catch (err) {
+      setRenewError(err instanceof Error ? err.message : "Couldn't renew this app.");
+    } finally {
+      setRenewing(false);
     }
   }
 
@@ -336,6 +362,32 @@ function AppWorkspace() {
               <BarChart3 className="h-3 w-3" />
               {app.visits ?? 0}
             </span>
+          )}
+          {isOwner && app.deployExpiresAt && (
+            <span
+              title={
+                deployExpired
+                  ? "This app's link has expired — renew it to bring it back"
+                  : "This free-plan app auto-expires unless renewed"
+              }
+              className={cn(
+                "flex items-center gap-1 rounded-full border px-2 py-1 text-xs",
+                deployExpired
+                  ? "border-error/30 text-error"
+                  : deployRenewable
+                    ? "border-amber-500/30 text-amber-600 dark:text-amber-400"
+                    : "border-border text-muted-foreground"
+              )}
+            >
+              <Clock className="h-3 w-3" />
+              {deployExpired ? "Expired" : `Expires in ${daysUntilExpiry}d`}
+            </span>
+          )}
+          {isOwner && deployRenewable && (
+            <Button size="sm" variant="secondary" onClick={renewApp} loading={renewing}>
+              {!renewing && <RefreshCw className="h-4 w-4" />}
+              <span className="hidden sm:inline">Renew</span>
+            </Button>
           )}
           {hasFiles && app.deployedUrl && (
             <a href={app.deployedUrl} target="_blank" rel="noreferrer">
@@ -586,6 +638,13 @@ function AppWorkspace() {
               <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <span>{deployNote}</span>
+              </div>
+            )}
+
+            {renewError && (
+              <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{renewError}</span>
               </div>
             )}
 

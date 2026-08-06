@@ -8,7 +8,16 @@ import { deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
 import { unsupportedReason } from "@/lib/app-support";
 import { tryWrapExpressForVercel } from "@/lib/express-adapter";
 import { missingEnvVars } from "@/lib/backend-env";
-import { ANALYTICS_MIN_PLAN, DEPLOY_DAILY_LIMIT, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
+import { deployNewApp, DeployLimitError } from "@/lib/deploy-actions";
+import {
+  DEPLOY_DAILY_LIMIT,
+  DEPLOY_EXPIRY_DAYS,
+  PLANS,
+  isActiveDeployment,
+  type AppStatus,
+  type DeployStatus,
+  type PlanId,
+} from "@/lib/types";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -21,7 +30,7 @@ function slugify(appId: string, name: string) {
       .toLowerCase()
       .replace(/[^a-z0-9]+/g, "-")
       .replace(/^-+|-+$/g, "")
-      .slice(0, 40) || "feather-app";
+      .slice(0, 40) || "breezify-app";
   return `${base}-${appId.slice(0, 6)}`;
 }
 
@@ -116,6 +125,22 @@ export async function POST(req: NextRequest) {
       // Default to "free" (show the badge) rather than block the deploy.
     }
 
+    // Free-tier active-subdomain cap (MAX_ACTIVE_DEPLOYED_APPS): only ever
+    // blocks a deploy that would claim a NEW slot, never a redeploy of an
+    // app that's already live — see lib/deploy-actions.ts.
+    const alreadyLive = isActiveDeployment({
+      status: appDoc.fields.status as AppStatus,
+      deployStatus: appDoc.fields.deployStatus as DeployStatus | undefined,
+    });
+    try {
+      await deployNewApp({ uid, idToken, plan: userPlan, alreadyLive });
+    } catch (err) {
+      if (err instanceof DeployLimitError) {
+        return NextResponse.json({ error: err.message }, { status: 403 });
+      }
+      throw err;
+    }
+
     const dailyLimit = DEPLOY_DAILY_LIMIT[userPlan];
     if (deployCount >= dailyLimit) {
       const resetInHours = Math.max(1, Math.ceil((windowStart.getTime() + DAY_MS - Date.now()) / (60 * 60 * 1000)));
@@ -127,10 +152,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const name = (appDoc.fields.name as string) || "feather-app";
+    const name = (appDoc.fields.name as string) || "breezify-app";
     const slug = slugify(appId, name);
-    const analyticsEnabled = PLAN_RANK[userPlan] >= PLAN_RANK[ANALYTICS_MIN_PLAN];
-    const files = withAnalytics(withWatermark(rawFiles, userPlan === "free"), appId, analyticsEnabled);
+    // The tracking beacon isn't a Pro+ perk: it's also how the free tier's
+    // MONTHLY_PAGE_VIEW_LIMIT gets enforced (see lib/traffic-guard.ts), so
+    // every plan gets it now, not just the ones that get to see the count.
+    const files = withAnalytics(withWatermark(rawFiles, userPlan === "free"), appId);
 
     // Claim the slot up front, atomically, before the slow (up to 110s)
     // Vercel call rather than after: reading the count, waiting on the
@@ -211,12 +238,26 @@ export async function POST(req: NextRequest) {
 
     try {
       const result = await deployToVercel(slug, files, undefined, secretsEnv);
+      // Only starts (or restarts) the expiry clock on a deploy that's
+      // claiming a slot fresh (alreadyLive: false — see the cap check
+      // above): an ordinary redeploy of an app that's already live must
+      // NOT reset deployExpiresAt, or the free-tier expiry (see
+      // DEPLOY_EXPIRY_DAYS) could be dodged forever just by redeploying
+      // before it lapses instead of going through the real renew flow.
+      const expiryDays = DEPLOY_EXPIRY_DAYS[userPlan];
+      const deployExpiresAt =
+        !alreadyLive && expiryDays !== null ? new Date(Date.now() + expiryDays * DAY_MS) : undefined;
       await commit(
         [
           updateWrite(
             `apps/${appId}`,
-            { deployStatus: "live", deployedUrl: result.url, deployedAt: new Date() },
-            ["deployStatus", "deployedUrl", "deployedAt"]
+            {
+              deployStatus: "live",
+              deployedUrl: result.url,
+              deployedAt: new Date(),
+              ...(deployExpiresAt ? { deployExpiresAt } : {}),
+            },
+            ["deployStatus", "deployedUrl", "deployedAt", ...(deployExpiresAt ? ["deployExpiresAt"] : [])]
           ),
         ],
         idToken

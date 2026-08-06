@@ -15,8 +15,14 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { StatusBadge, DeployBadge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth-context";
-import { useUserApps, useCollaboratingApps, deleteApp } from "@/lib/use-apps";
-import { fetchModelAvailability, generateAppRequest, type ClarifyQuestion } from "@/lib/api-client";
+import { useUserApps, useCollaboratingApps } from "@/lib/use-apps";
+import {
+  fetchModelAvailability,
+  generateAppRequest,
+  deleteAppRequest,
+  undeployAppRequest,
+  type ClarifyQuestion,
+} from "@/lib/api-client";
 import { takePendingPrompt } from "@/lib/pending-prompt";
 import { formatDate } from "@/lib/utils";
 import {
@@ -29,7 +35,7 @@ import {
   type ModelId,
   type PlanId,
 } from "@/lib/types";
-import { AlertCircle, FolderOpen, Loader2, Lock, Search, Trash2, Users } from "lucide-react";
+import { AlertCircle, FolderOpen, Loader2, Lock, PowerOff, Search, Trash2, Users } from "lucide-react";
 import { Input } from "@/components/ui/input";
 
 function DashboardContent() {
@@ -45,11 +51,11 @@ function DashboardContent() {
   const plan: PlanId = profile?.plan ?? "free";
   const canImport = PLAN_RANK[plan] >= PLAN_RANK[IMPORT_MIN_PLAN];
   const [showImport, setShowImport] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<{ id: string; name: string; githubUrl?: string } | null>(
-    null
-  );
-  const [deleting, setDeleting] = useState(false);
-  const [deleteError, setDeleteError] = useState("");
+  const [confirmTarget, setConfirmTarget] = useState<
+    { id: string; name: string; githubUrl?: string; kind: "delete" | "undeploy" } | null
+  >(null);
+  const [confirming, setConfirming] = useState(false);
+  const [confirmError, setConfirmError] = useState("");
 
   const [prompt, setPrompt] = useState("");
   const [model, setModel] = useState<ModelId>("haiku");
@@ -324,16 +330,30 @@ function DashboardContent() {
                       {MODEL_INFO[app.model]?.label ?? app.model} · {formatDate(app.createdAt)}
                     </span>
                     {app.userId === user?.uid && (
-                      <button
-                        onClick={() => {
-                          setDeleteError("");
-                          setDeleteTarget({ id: app.id, name: app.name, githubUrl: app.githubUrl });
-                        }}
-                        title="Delete"
-                        className="shrink-0 rounded p-1 opacity-0 transition-opacity hover:bg-muted hover:text-foreground group-hover:opacity-100"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
+                      <div className="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-hover:opacity-100">
+                        {effectiveDeployStatus(app) === "live" && (
+                          <button
+                            onClick={() => {
+                              setConfirmError("");
+                              setConfirmTarget({ id: app.id, name: app.name, kind: "undeploy" });
+                            }}
+                            title="Undeploy (frees up a subdomain slot, keeps the app)"
+                            className="rounded p-1 hover:bg-muted hover:text-foreground"
+                          >
+                            <PowerOff className="h-3.5 w-3.5" />
+                          </button>
+                        )}
+                        <button
+                          onClick={() => {
+                            setConfirmError("");
+                            setConfirmTarget({ id: app.id, name: app.name, githubUrl: app.githubUrl, kind: "delete" });
+                          }}
+                          title="Delete"
+                          className="rounded p-1 hover:bg-muted hover:text-foreground"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                     )}
                   </div>
                 </CardContent>
@@ -359,33 +379,48 @@ function DashboardContent() {
 
       {showImport && <GithubImportDialog onClose={() => setShowImport(false)} />}
 
-      {deleteTarget && (
+      {confirmTarget && (
         <ConfirmDialog
-          title={`Delete "${deleteTarget.name}"?`}
-          description={
-            // Deleting only ever removes Breezify's own copy — it never
-            // touches a linked GitHub repo (that's a separate thing you own
-            // once pushed, not Breezify's to delete). Without one, there's
-            // no copy anywhere else once this is gone.
-            deleteTarget.githubUrl
-              ? "This can't be undone. Its GitHub repo stays untouched, but this app's history, deploy, and any custom domain on Breezify will be gone."
-              : "This can't be undone, and it was never pushed to GitHub or downloaded — there's no copy of this code anywhere else."
+          title={
+            confirmTarget.kind === "delete"
+              ? `Delete "${confirmTarget.name}"?`
+              : `Undeploy "${confirmTarget.name}"?`
           }
-          loading={deleting}
-          error={deleteError}
+          description={
+            confirmTarget.kind === "delete"
+              ? // Deleting only ever removes Breezify's own copy — it never
+                // touches a linked GitHub repo (that's a separate thing you own
+                // once pushed, not Breezify's to delete). Without one, there's
+                // no copy anywhere else once this is gone.
+                confirmTarget.githubUrl
+                ? "This can't be undone. Its GitHub repo stays untouched, but this app's history, deploy, and any custom domain on Breezify will be gone."
+                : "This can't be undone, and it was never pushed to GitHub or downloaded — there's no copy of this code anywhere else."
+              : "Takes the app offline and frees up a subdomain slot for another app. The app itself, its code, and its history stay put — redeploy it any time."
+          }
+          confirmLabel={confirmTarget.kind === "delete" ? "Delete" : "Undeploy"}
+          loading={confirming}
+          error={confirmError}
           onClose={() => {
-            if (!deleting) setDeleteTarget(null);
+            if (!confirming) setConfirmTarget(null);
           }}
           onConfirm={async () => {
-            setDeleting(true);
-            setDeleteError("");
+            setConfirming(true);
+            setConfirmError("");
             try {
-              await deleteApp(deleteTarget.id);
-              setDeleteTarget(null);
-            } catch {
-              setDeleteError("Couldn't delete this app. Please try again.");
+              if (confirmTarget.kind === "delete") {
+                await deleteAppRequest(confirmTarget.id);
+              } else {
+                await undeployAppRequest(confirmTarget.id);
+              }
+              setConfirmTarget(null);
+            } catch (err) {
+              setConfirmError(
+                err instanceof Error
+                  ? err.message
+                  : `Couldn't ${confirmTarget.kind} this app. Please try again.`
+              );
             } finally {
-              setDeleting(false);
+              setConfirming(false);
             }
           }}
         />
