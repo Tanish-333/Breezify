@@ -15,10 +15,11 @@ import {
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { logClientError } from "@/lib/client-error-log";
-import type { AppSecret, AppTurn, DailyAnalytics, FeatherApp } from "@/lib/types";
+import type { AppSecret, AppTurn, CollaboratorRole, DailyAnalytics, FeatherApp } from "@/lib/types";
 
 /**
  * A Firestore listener error (a missing composite index, a rules rejection,
@@ -208,6 +209,79 @@ export function useCollaboratingApps(uid: string | undefined) {
   }, [uid]);
 
   return { apps, loading };
+}
+
+/**
+ * The signed-in user's own role on one app: "editor"/"viewer" if they're an
+ * invited collaborator, null if they're the owner (irrelevant — isOwner
+ * covers that separately) or have no relationship to this app at all. Used
+ * to gate the build page's write actions (composer, deploy, etc.) for a
+ * viewer — the same policy firestore.rules' isAppEditor and
+ * lib/app-collaborators.ts's hasEditAccess already enforce server-side;
+ * this is just what lets the UI hide/disable those controls instead of
+ * showing them and failing on click.
+ */
+export function useMyCollaboratorRole(appId: string | undefined, uid: string | undefined) {
+  const [role, setRole] = useState<CollaboratorRole | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!appId || !uid) {
+      setRole(null);
+      setLoading(false);
+      return;
+    }
+    const unsub = onSnapshot(
+      doc(db, "apps", appId, "collaborators", uid),
+      (snap) => {
+        if (!snap.exists()) {
+          setRole(null);
+        } else {
+          // Role-less doc predates this feature — same back-compat default
+          // used everywhere else this is checked.
+          const raw = snap.data().role;
+          setRole(raw === "viewer" ? "viewer" : "editor");
+        }
+        setLoading(false);
+      },
+      (err) => {
+        logListenerError("useMyCollaboratorRole", err);
+        setLoading(false);
+      }
+    );
+    return () => unsub();
+  }, [appId, uid]);
+
+  return { role, loading };
+}
+
+/**
+ * Hands ownership of an app to one of its current editors/viewers. The
+ * outgoing owner becomes a regular "editor" collaborator instead of losing
+ * access outright — a transfer is a handoff, not a removal. All three
+ * writes (the app doc's userId, dropping the new owner's now-redundant
+ * collaborator doc, adding the old owner's) land in one batch so nobody
+ * ever observes a half-applied transfer; firestore.rules' matching
+ * apps/{appId} and collaborators/{uid} rules only allow this exact
+ * three-write shape from the current owner.
+ */
+export async function transferOwnership(
+  appId: string,
+  currentOwnerUid: string,
+  currentOwnerEmail: string,
+  newOwnerUid: string
+): Promise<void> {
+  const batch = writeBatch(db);
+  batch.update(doc(db, "apps", appId), { userId: newOwnerUid });
+  batch.delete(doc(db, "apps", appId, "collaborators", newOwnerUid));
+  batch.set(doc(db, "apps", appId, "collaborators", currentOwnerUid), {
+    uid: currentOwnerUid,
+    email: currentOwnerEmail,
+    role: "editor",
+    addedBy: newOwnerUid,
+    addedAt: serverTimestamp(),
+  });
+  await batch.commit();
 }
 
 // Deleting an app used to be a plain client-side Firestore batch delete

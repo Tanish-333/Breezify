@@ -1,9 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { adminAuth, adminDb, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
-import { commit, createWrite, deleteWrite, getDoc, listCollection } from "@/lib/firestore-rest";
+import { commit, createWrite, deleteWrite, getDoc, listCollection, updateWrite } from "@/lib/firestore-rest";
 import { sendCollaboratorInviteEmail } from "@/lib/email";
-import { COLLABORATOR_MIN_PLAN, MAX_COLLABORATORS, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
+import {
+  COLLABORATOR_MIN_PLAN,
+  isCollaboratorRole,
+  MAX_COLLABORATORS,
+  PLAN_RANK,
+  PLANS,
+  type PlanId,
+} from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -38,13 +45,31 @@ export async function GET(req: NextRequest, { params }: { params: { appId: strin
     // so a caller unrelated to this app is rejected right here.
     const doc = await getDoc(`apps/${params.appId}`, idToken);
     if (!doc) return NextResponse.json({ error: "App not found." }, { status: 404 });
+    const ownerUid = doc.fields.userId as string;
+
+    // Best-effort — the roster is still useful without it (just an unlabeled
+    // owner row client-side), and this is display-only, never used for any
+    // access decision.
+    let ownerEmail: string | undefined;
+    if (isFirebaseAdminConfigured()) {
+      try {
+        ownerEmail = (await adminAuth().getUser(ownerUid)).email ?? undefined;
+      } catch {
+        // Ignore — see above.
+      }
+    }
 
     const rows = await listCollection(`apps/${params.appId}/collaborators`, idToken);
     return NextResponse.json({
-      ownerUid: doc.fields.userId,
+      ownerUid,
+      ownerEmail,
       collaborators: rows.map((r) => ({
         uid: r.id,
         email: r.fields.email as string,
+        // A role-less doc predates this feature — same back-compat default
+        // as lib/app-collaborators.ts's hasEditAccess and firestore.rules'
+        // isAppEditor: treat it as "editor", not as broken/unknown.
+        role: isCollaboratorRole(r.fields.role) ? r.fields.role : "editor",
         addedAt: r.fields.addedAt,
       })),
     });
@@ -61,10 +86,17 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
     if (auth.error) return auth.error;
     const { uid, idToken } = auth;
 
-    const { email } = await req.json();
+    const { email, role: rawRole } = await req.json();
     const trimmedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
     if (!trimmedEmail) {
       return NextResponse.json({ error: "Enter an email address." }, { status: 400 });
+    }
+    // Defaults to "editor" — the only behavior that existed before roles,
+    // and the more likely intent when you're specifically inviting someone
+    // to help build, vs. just show off progress (that's what "Viewer" is for).
+    const role = rawRole === undefined ? "editor" : rawRole;
+    if (!isCollaboratorRole(role)) {
+      return NextResponse.json({ error: "Invalid role." }, { status: 400 });
     }
 
     const doc = await getDoc(`apps/${params.appId}`, idToken);
@@ -131,6 +163,7 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
           // useCollaboratingApps() filters on this field instead.
           uid: invitedUid,
           email: trimmedEmail,
+          role,
           addedBy: uid,
           addedAt: new Date(),
         }),
@@ -172,7 +205,7 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
       }
     }
 
-    return NextResponse.json({ uid: invitedUid, email: trimmedEmail });
+    return NextResponse.json({ uid: invitedUid, email: trimmedEmail, role });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Couldn't add that collaborator.";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -201,6 +234,38 @@ export async function DELETE(req: NextRequest, { params }: { params: { appId: st
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Couldn't remove that collaborator.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+/** Owner-only: changes an existing collaborator's role (editor <-> viewer). */
+export async function PATCH(req: NextRequest, { params }: { params: { appId: string } }) {
+  try {
+    const auth = await authenticate(req);
+    if (auth.error) return auth.error;
+    const { uid, idToken } = auth;
+
+    const { uid: targetUid, role } = await req.json();
+    if (!targetUid || typeof targetUid !== "string") {
+      return NextResponse.json({ error: "Missing collaborator." }, { status: 400 });
+    }
+    if (!isCollaboratorRole(role)) {
+      return NextResponse.json({ error: "Invalid role." }, { status: 400 });
+    }
+
+    const doc = await getDoc(`apps/${params.appId}`, idToken);
+    if (!doc) return NextResponse.json({ error: "App not found." }, { status: 404 });
+    if (doc.fields.userId !== uid) {
+      return NextResponse.json({ error: "Only this app's owner can change a collaborator's role." }, { status: 403 });
+    }
+
+    await commit(
+      [updateWrite(`apps/${params.appId}/collaborators/${targetUid}`, { role }, ["role"])],
+      idToken
+    );
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Couldn't change that collaborator's role.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

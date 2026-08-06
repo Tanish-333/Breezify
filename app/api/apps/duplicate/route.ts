@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, createWrite, getDoc, listCollection } from "@/lib/firestore-rest";
-import { hasAppAccess } from "@/lib/app-collaborators";
+import { hasEditAccess } from "@/lib/app-collaborators";
 import { DUPLICATE_MIN_PLAN, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -55,8 +55,8 @@ export async function POST(req: NextRequest) {
     // so a caller unrelated to this app is rejected right here regardless.
     const doc = await getDoc(`apps/${appId}`, idToken);
     if (!doc) return NextResponse.json({ error: "App not found." }, { status: 404 });
-    if (!(await hasAppAccess(appId, doc.fields.userId as string, uid, idToken))) {
-      return NextResponse.json({ error: "You don't have access to this app." }, { status: 403 });
+    if (!(await hasEditAccess(appId, doc.fields.userId as string, uid, idToken))) {
+      return NextResponse.json({ error: "You have view-only access to this app — ask the owner to make you an editor to do this." }, { status: 403 });
     }
 
     const newAppId = crypto.randomUUID();

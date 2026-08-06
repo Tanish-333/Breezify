@@ -2,7 +2,7 @@ import { randomUUID } from "crypto";
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, createWrite, getDoc, updateWrite } from "@/lib/firestore-rest";
-import { hasAppAccess } from "@/lib/app-collaborators";
+import { hasEditAccess } from "@/lib/app-collaborators";
 import { unsupportedReason } from "@/lib/app-support";
 import { tryWrapExpressForVercel } from "@/lib/express-adapter";
 import { IMPORT_MIN_PLAN, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
@@ -110,8 +110,8 @@ export async function POST(req: NextRequest) {
     if (!appDoc) {
       return NextResponse.json({ error: "App not found." }, { status: 404 });
     }
-    if (!(await hasAppAccess(appId, appDoc.fields.userId as string, uid, idToken))) {
-      return NextResponse.json({ error: "You don't have access to this app." }, { status: 403 });
+    if (!(await hasEditAccess(appId, appDoc.fields.userId as string, uid, idToken))) {
+      return NextResponse.json({ error: "You have view-only access to this app — ask the owner to make you an editor to do this." }, { status: 403 });
     }
     const githubUrl = appDoc.fields.githubUrl as string | undefined;
     if (!githubUrl) {

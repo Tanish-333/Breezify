@@ -3,7 +3,7 @@ import { NextRequest } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, createWrite, getDoc, incrementWrite, updateWrite } from "@/lib/firestore-rest";
 import { getOrCreateUserDoc } from "@/lib/ensure-user-doc-server";
-import { hasAppAccess } from "@/lib/app-collaborators";
+import { hasEditAccess } from "@/lib/app-collaborators";
 import { generateApp, isModelAvailable, refineApp } from "@/lib/generation";
 import { checkClarity } from "@/lib/generation/clarify";
 import {
@@ -183,8 +183,8 @@ export async function POST(req: NextRequest) {
     }
     if (!doc) return errorStream("App not found.");
     const ownerUid = doc.fields.userId as string;
-    if (!(await hasAppAccess(refineAppId, ownerUid, uid, idToken))) {
-      return errorStream("You don't have access to this app.");
+    if (!(await hasEditAccess(refineAppId, ownerUid, uid, idToken))) {
+      return errorStream("You have view-only access to this app — ask the owner to make you an editor to do this.");
     }
     const files =
       (doc.fields.generatedCode as { files?: Record<string, string> } | undefined)?.files ?? {};

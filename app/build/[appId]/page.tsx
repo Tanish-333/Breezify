@@ -20,7 +20,7 @@ import { TurnCard } from "@/components/turn-card";
 import { StatusBadge, DeployBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useApp, useAppSecrets, revertToVersion, saveManualEdit } from "@/lib/use-apps";
+import { useApp, useAppSecrets, useMyCollaboratorRole, revertToVersion, saveManualEdit } from "@/lib/use-apps";
 import { usePresence } from "@/lib/use-presence";
 import { missingEnvVars } from "@/lib/backend-env";
 import { useAuth } from "@/lib/auth-context";
@@ -146,6 +146,14 @@ function AppWorkspace() {
   const canInviteCollaborators = PLAN_RANK[plan] >= PLAN_RANK[COLLABORATOR_MIN_PLAN];
   const otherViewers = usePresence(app?.id, user?.uid, user?.email);
   const { secrets: appSecrets } = useAppSecrets(isOwner ? app?.id : undefined);
+  // A collaborator invited as "viewer" gets read-only access — this mirrors
+  // firestore.rules' isAppEditor and lib/app-collaborators.ts's
+  // hasEditAccess, which are what actually enforce it; this is just what
+  // keeps the UI from showing controls that would fail on click. Missing
+  // role (still loading, or the owner who has no collaborator doc at all)
+  // defaults to allowed, same back-compat-safe default used everywhere else.
+  const { role: myRole } = useMyCollaboratorRole(app?.id, user?.uid);
+  const canEdit = isOwner || myRole !== "viewer";
 
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<ModelId>("haiku");
@@ -424,16 +432,18 @@ function AppWorkspace() {
           ) : (
             <>
               <h1 className="truncate font-medium">{app.name}</h1>
-              <button
-                onClick={() => {
-                  setNameDraft(app!.name);
-                  setRenaming(true);
-                }}
-                title="Rename"
-                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Pencil className="h-3 w-3" />
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => {
+                    setNameDraft(app!.name);
+                    setRenaming(true);
+                  }}
+                  title="Rename"
+                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
             </>
           )}
           <StatusBadge status={displayStatus(app.status)} />
@@ -499,7 +509,7 @@ function AppWorkspace() {
             </a>
           )}
 
-          {hasFiles && (
+          {hasFiles && canEdit && (
             <Button
               size="sm"
               onClick={deployApp}
@@ -527,7 +537,7 @@ function AppWorkspace() {
               </Button>
               {moreMenuOpen && (
                 <div className="absolute right-0 top-full z-20 mt-2 w-60 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-xl animate-in">
-                  {app.githubUrl && (
+                  {app.githubUrl && canEdit && (
                     canSyncGithub ? (
                       <MenuItem
                         icon={RefreshCw}
@@ -544,7 +554,7 @@ function AppWorkspace() {
 
                   {app.githubUrl ? (
                     <MenuItem icon={GithubIcon} label="View repo" href={app.githubUrl} external />
-                  ) : plan === "free" ? (
+                  ) : !canEdit ? null : plan === "free" ? (
                     <MenuItem icon={GithubIcon} label="Push to GitHub" href="/billing" locked />
                   ) : (
                     <MenuItem
@@ -557,7 +567,7 @@ function AppWorkspace() {
                     />
                   )}
 
-                  {canDuplicate ? (
+                  {!canEdit ? null : canDuplicate ? (
                     <MenuItem
                       icon={Copy}
                       label="Duplicate"
@@ -681,7 +691,7 @@ function AppWorkspace() {
                 turn={turn}
                 files={files}
                 isLatest={i === turns.length - 1}
-                onRevert={() => revert(turn.id)}
+                onRevert={canEdit ? () => revert(turn.id) : undefined}
                 reverting={reverting === turn.id}
                 revertLocked={reverting !== null}
               />
@@ -748,25 +758,28 @@ function AppWorkspace() {
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p>
-                    The live preview hit a runtime error. Fixing it runs a refine like any other —
-                    {" "}{cost.toFixed(2)} credits with {MODEL_INFO[model].label}.
+                    {canEdit
+                      ? `The live preview hit a runtime error. Fixing it runs a refine like any other — ${cost.toFixed(2)} credits with ${MODEL_INFO[model].label}.`
+                      : "The live preview hit a runtime error."}
                   </p>
                   <pre className="mt-1.5 max-h-24 overflow-y-auto whitespace-pre-wrap break-words rounded bg-error/10 p-2 font-mono text-xs">
                     {previewError}
                   </pre>
                 </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="shrink-0"
-                  loading={refining}
-                  disabled={refining || insufficient || blockedByOtherEditor}
-                  onClick={() =>
-                    refine(`Fix this runtime error from the live preview:\n\n${previewError}`)
-                  }
-                >
-                  Fix this error · {cost.toFixed(2)}
-                </Button>
+                {canEdit && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="shrink-0"
+                    loading={refining}
+                    disabled={refining || insufficient || blockedByOtherEditor}
+                    onClick={() =>
+                      refine(`Fix this runtime error from the live preview:\n\n${previewError}`)
+                    }
+                  >
+                    Fix this error · {cost.toFixed(2)}
+                  </Button>
+                )}
               </div>
             )}
 
@@ -798,7 +811,7 @@ function AppWorkspace() {
             )}
           </div>
 
-          {hasFiles && (
+          {hasFiles && canEdit && (
             <div className="shrink-0 border-t border-border p-3">
               {!refining && suggestions.length > 0 && (
                 <div className="mb-2.5 flex flex-wrap gap-1.5">
@@ -832,6 +845,14 @@ function AppWorkspace() {
                       : "Describe a change to make..."
                 }
               />
+            </div>
+          )}
+          {hasFiles && !canEdit && (
+            <div className="shrink-0 border-t border-border p-3">
+              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2.5 text-center text-xs text-muted-foreground">
+                <Eye className="mr-1.5 inline h-3.5 w-3.5" />
+                You have view-only access to this app.
+              </p>
             </div>
           )}
         </div>
@@ -885,7 +906,7 @@ function AppWorkspace() {
                     files={files}
                     appName={app.name}
                     locked={plan === "free"}
-                    editable={plan !== "free" && !blockedByOtherEditor}
+                    editable={plan !== "free" && !blockedByOtherEditor && canEdit}
                     onSave={saveEdit}
                     versionKey={turns.length}
                   />

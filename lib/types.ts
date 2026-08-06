@@ -259,6 +259,13 @@ export function markedUpDomainPrice(wholesalePrice: number): number {
   return Math.round(wholesalePrice * DOMAIN_PRICE_MARKUP * 100) / 100;
 }
 
+/** An invited collaborator's permission level — the owner isn't tracked here, that's apps/{appId}.userId. */
+export type CollaboratorRole = "editor" | "viewer";
+export const COLLABORATOR_ROLES: CollaboratorRole[] = ["editor", "viewer"];
+export function isCollaboratorRole(v: unknown): v is CollaboratorRole {
+  return v === "editor" || v === "viewer";
+}
+
 /** Lowest plan that can invite collaborators onto an app. */
 export const COLLABORATOR_MIN_PLAN: PlanId = "plus";
 
