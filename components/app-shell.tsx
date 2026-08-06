@@ -49,9 +49,9 @@ function NavLink({
       href={href}
       title={collapsed ? label : undefined}
       className={cn(
-        "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
+        "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-all duration-200 ease-smooth",
         active
-          ? "bg-muted font-medium text-foreground"
+          ? "bg-muted font-medium text-foreground shadow-soft"
           : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
         collapsed && "justify-center px-0"
       )}
@@ -227,7 +227,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               href="/billing"
               className={cn(
-                "mb-2 flex items-center justify-between rounded-md border px-2.5 py-2.5 text-xs transition-colors",
+                "mb-2 flex items-center justify-between rounded-md border px-2.5 py-2.5 text-xs transition-all duration-200 ease-smooth hover:shadow-soft",
                 lowCredits
                   ? "border-warning/40 text-warning hover:bg-warning/10"
                   : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
@@ -249,6 +249,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Logo />
           </Link>
           <div className="flex items-center gap-1">
+            {profile && (
+              <Link
+                href="/billing"
+                className={cn(
+                  "mr-1 flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium tabular-nums transition-colors",
+                  lowCredits
+                    ? "border-warning/40 text-warning hover:bg-warning/10"
+                    : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
+                )}
+                title={`${PLANS[profile.plan]?.name ?? "Free"} plan`}
+              >
+                {profile.credits.toFixed(2)}
+              </Link>
+            )}
             <ThemeToggle />
             <button
               onClick={() => setPaletteOpen(true)}

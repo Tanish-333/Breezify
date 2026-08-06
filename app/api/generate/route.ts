@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { NextRequest } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, createWrite, getDoc, incrementWrite, updateWrite } from "@/lib/firestore-rest";
+import { getOrCreateUserDoc } from "@/lib/ensure-user-doc-server";
 import { hasAppAccess } from "@/lib/app-collaborators";
 import { generateApp, isModelAvailable, refineApp } from "@/lib/generation";
 import { checkClarity } from "@/lib/generation/clarify";
@@ -128,12 +129,12 @@ export async function POST(req: NextRequest) {
   const userPath = `users/${uid}`;
   let userDoc;
   try {
-    userDoc = await getDoc(userPath, idToken);
+    userDoc = await getOrCreateUserDoc(uid, idToken, email, req.headers);
   } catch (err) {
     console.error(`[generate] Failed to load ${userPath}:`, err);
     return errorStream("Couldn't load your account. Please try again.");
   }
-  if (!userDoc) return errorStream("User account not found.");
+  if (!userDoc) return errorStream("We couldn't find or set up your account. Please sign out and back in, then try again.");
 
   const plan = (userDoc.fields.plan as PlanId) ?? "free";
 

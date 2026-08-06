@@ -1,21 +1,13 @@
 import { NextRequest, NextResponse } from "next/server";
 import { checkAndRecordView } from "@/lib/traffic-guard";
 import { rateLimit } from "@/lib/rate-limit";
+import { corsPreflight, withCors } from "@/lib/cors";
 
 export const runtime = "nodejs";
 
-// Every deployed app lives on its own origin (a *.breezify.app subdomain or
-// a fully custom domain — see lib/vercel-deploy.ts), never the main app's
-// origin, so this is a genuine cross-origin request. Its POST body carries
-// nothing sensitive (just an appId) and the response carries nothing but a
-// boolean, so a wide-open CORS policy is fine — but it does need to
-// actually be present, or the browser drops both the preflight and the
-// response silently and this beacon never fires at all.
-const CORS_HEADERS = {
-  "Access-Control-Allow-Origin": "*",
-  "Access-Control-Allow-Methods": "POST, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type",
-};
+export async function OPTIONS() {
+  return corsPreflight();
+}
 
 /**
  * Public, unauthenticated visit-counter + traffic-cap beacon for deployed
@@ -23,34 +15,31 @@ const CORS_HEADERS = {
  * here — the caller is a visitor's browser, not a signed-in Breezify user —
  * so safety comes entirely from firestore.rules scoping the public fallback
  * write (see lib/traffic-guard.ts) rather than from anything checked here.
- * A bad or missing appId just reports "not blocked" and does nothing else,
- * same as any other beacon swallowing a malformed hit.
+ *
+ * The beacon always runs on the deployed app's own separate origin (a
+ * *.breezify.app subdomain, or a fully custom domain), never this one, and
+ * sends `Content-Type: application/json` — which makes it a
+ * CORS-preflighted request. Without the OPTIONS handler and withCors()
+ * below, every browser silently blocked the preflight, meaning this beacon
+ * never once completed on any deployed app: visit counts stayed at 0
+ * regardless of real traffic, and the traffic-cap/expiry redirect could
+ * never fire either, with nothing in the UI to explain why.
  */
 async function handler(req: NextRequest) {
   try {
     const { appId } = await req.json();
     if (typeof appId === "string" && appId.length > 0 && appId.length < 200) {
       const { blocked, reason } = await checkAndRecordView(appId);
-      return NextResponse.json({ blocked, reason }, { headers: CORS_HEADERS });
+      return withCors(NextResponse.json({ blocked, reason }));
     }
   } catch {
     // Malformed body from a non-standard caller; nothing to do.
   }
-  return NextResponse.json({ blocked: false }, { headers: CORS_HEADERS });
+  return withCors(NextResponse.json({ blocked: false }));
 }
 
 // Generous: real deployed apps can get real bursts of traffic, and many
 // visitors can share one IP behind a NAT/corporate proxy. This is here to
 // stop a scripted flood from inflating one app's visit count or running up
 // Firestore write costs, not to throttle normal usage.
-const limited = rateLimit(300, 60_000)(handler);
-
-export async function POST(req: NextRequest) {
-  const res = await limited(req);
-  for (const [key, value] of Object.entries(CORS_HEADERS)) res.headers.set(key, value);
-  return res;
-}
-
-export function OPTIONS() {
-  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
-}
+export const POST = rateLimit(300, 60_000)(handler);

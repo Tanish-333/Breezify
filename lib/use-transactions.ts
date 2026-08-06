@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { collection, getAggregateFromServer, onSnapshot, query, sum, where } from "firebase/firestore";
+import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import type { FeatherTransaction, ModelId, TransactionType } from "@/lib/types";
 
@@ -67,8 +67,19 @@ export function useTransactions(uid: string | undefined, max = 50) {
 
 /**
  * Total credits spent across every generation, not just the most recent
- * `max` transactions `useTransactions` loads for display. Uses a server-side
- * sum aggregate rather than fetching every transaction document.
+ * `max` transactions `useTransactions` loads for display.
+ *
+ * This used to run a server-side sum() aggregate query instead of a plain
+ * listener, to avoid pulling every transaction doc down just to add up one
+ * number. In practice that was the one thing on the whole Billing page that
+ * kept coming back broken ("Unavailable") — aggregate queries are a newer,
+ * less battle-tested Firestore code path than a plain where()-filtered
+ * onSnapshot listener, and this app already leans on exactly that plain
+ * pattern successfully everywhere else (including the transaction list
+ * right next to this stat on the same page). Trading a bit of read volume
+ * for reliability: this now sums client-side from the same kind of live
+ * listener already proven to work, rather than a second, different code
+ * path that keeps failing in ways this app has no visibility into.
  */
 export function useLifetimeCreditsUsed(uid: string | undefined) {
   const [total, setTotal] = useState<number | null>(null);
@@ -80,34 +91,33 @@ export function useLifetimeCreditsUsed(uid: string | undefined) {
       setStatus("loading");
       return;
     }
-    let cancelled = false;
     setStatus("loading");
     const q = query(
       collection(db, "transactions"),
       where("userId", "==", uid),
       where("type", "==", "generation")
     );
-    getAggregateFromServer(q, { creditsUsed: sum("creditsUsed") })
-      .then((snap) => {
-        if (cancelled) return;
-        // Firestore's sum() returns 0 (not undefined) over an empty match
-        // set, so a genuine zero and "still loading" are never ambiguous
-        // once status flips to "ready".
-        setTotal(snap.data().creditsUsed ?? 0);
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        let sum = 0;
+        for (const d of snap.docs) {
+          const used = d.data().creditsUsed;
+          if (typeof used === "number") sum += used;
+        }
+        setTotal(sum);
         setStatus("ready");
-      })
-      .catch((err) => {
-        if (cancelled) return;
-        // Surfaced so a real failure (e.g. a rules/index problem) shows up
-        // in the console instead of looking identical to "still loading"
-        // forever with no way to tell the two apart.
-        console.error("[use-transactions] lifetime credits aggregate failed:", err);
+      },
+      (err) => {
+        // Surfaced so a real failure (e.g. a rules problem) shows up in the
+        // console instead of looking identical to "still loading" forever
+        // with no way to tell the two apart.
+        console.error("[use-transactions] lifetime credits listener failed:", err);
         setTotal(null);
         setStatus("error");
-      });
-    return () => {
-      cancelled = true;
-    };
+      }
+    );
+    return unsub;
   }, [uid]);
 
   return { total, status };

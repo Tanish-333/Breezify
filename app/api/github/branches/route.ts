@@ -77,15 +77,16 @@ export async function POST(req: NextRequest) {
 
     const res = await gh(`/repos/${owner}/${repo}/branches?per_page=100`, githubToken);
     if (!res.ok) {
-      return NextResponse.json(
-        {
-          error:
-            res.status === 401 || res.status === 403
-              ? "That GitHub token isn't valid, or it's missing the repo scope."
-              : "Couldn't read that repository's branches.",
-        },
-        { status: 400 }
-      );
+      // A 403 is very often GitHub's rate limit, not an invalid token — see
+      // app/api/github/repos/route.ts for why conflating the two matters
+      // (the client force-clears a good token on any "token" wording).
+      const message =
+        res.status === 401
+          ? "That GitHub token isn't valid, or it's missing the repo scope."
+          : res.status === 403
+            ? "GitHub is rate-limiting this request. Wait a minute and try again."
+            : "Couldn't read that repository's branches.";
+      return NextResponse.json({ error: message }, { status: res.status === 401 ? 400 : 502 });
     }
 
     const branches = (res.body as any[]).map((b) => b.name as string);

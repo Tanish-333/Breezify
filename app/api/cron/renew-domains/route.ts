@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { adminDb, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import {
+  DomainOrderTimeoutError,
   getDomainPrice,
   isDeployConfigured,
   pollDomainOrder,
@@ -101,14 +102,31 @@ async function renewDomains() {
     const userSnap = await db.collection("users").doc(data.userId).get();
     const customerId = userSnap.get("stripeCustomerId") as string | undefined;
 
-    if (!customerId || !orderId) {
+    // A standalone off-session PaymentIntent (unlike an Invoice/Subscription)
+    // never auto-resolves the customer's default payment method — it must
+    // be passed explicitly, or Stripe rejects confirmation outright. Without
+    // this, every single renewal attempt failed even with a perfectly valid
+    // saved card on file, silently turning auto-renew into "never actually
+    // renews anything."
+    let paymentMethodId: string | undefined;
+    if (customerId) {
+      try {
+        const customer = await stripe.customers.retrieve(customerId);
+        const dpm = !("deleted" in customer) ? customer.invoice_settings?.default_payment_method : undefined;
+        paymentMethodId = typeof dpm === "string" ? dpm : dpm?.id;
+      } catch (err) {
+        console.error(`[cron/renew-domains] appId=${docSnap.id} domain=${domain} failed to look up payment method:`, err);
+      }
+    }
+
+    if (!customerId || !orderId || !paymentMethodId) {
       await docSnap.ref.update({ domainAutoRenew: false });
       await notifyOwner(
         data.userId,
         domain,
-        customerId
-          ? "We couldn't find the original order to renew your domain from."
-          : "We couldn't find a saved payment method to renew your domain automatically."
+        !customerId || !paymentMethodId
+          ? "We couldn't find a saved payment method to renew your domain automatically."
+          : "We couldn't find the original order to renew your domain from."
       );
       failed++;
       continue;
@@ -127,6 +145,7 @@ async function renewDomains() {
         amount: Math.round(chargePrice * 100),
         currency: "usd",
         customer: customerId,
+        payment_method: paymentMethodId,
         off_session: true,
         confirm: true,
         description: `Domain renewal: ${domain}`,
@@ -141,12 +160,26 @@ async function renewDomains() {
         const vercelOrderId = await purchaseDomainOnVercel(domain, years, purchasePrice, contact, true);
         await pollDomainOrder(vercelOrderId);
       } catch (registrarErr) {
-        // Charged but the registrar side didn't go through — refund rather
-        // than leave the customer paying for a renewal that didn't happen.
-        // This exact call (buying again on a domain Breezify already owns)
-        // is the one part of this flow with no live environment here to
-        // verify against ahead of time; this refund path is exactly why
-        // it's safe to find out for real rather than assume.
+        // A genuine registrar failure means the renewal definitely didn't
+        // happen — refund rather than leave the customer paying for
+        // nothing. A mere TIMEOUT is different: the order may still
+        // complete at Vercel moments later, so refunding here risks
+        // giving the money back for a domain that ends up renewed anyway.
+        // Neither this app nor this cron currently re-checks a pending
+        // order after the fact, so a timeout is logged loudly for manual
+        // follow-up rather than silently treated as a clean failure —
+        // see the DomainOrderTimeoutError doc comment.
+        if (registrarErr instanceof DomainOrderTimeoutError) {
+          console.error(
+            `[cron/renew-domains] appId=${docSnap.id} domain=${domain} renewal order still pending after poll window — NOT refunded (may still complete), needs manual verification. paymentIntent=${paymentIntentId}`,
+            registrarErr
+          );
+          // Leave domainAutoRenew on and skip the "didn't go through" email
+          // — this specific case isn't a confirmed failure, and the retry
+          // cooloff already prevents hammering this domain again today.
+          failed++;
+          continue;
+        }
         try {
           await stripe.refunds.create({ payment_intent: paymentIntentId });
         } catch (refundErr) {

@@ -18,6 +18,7 @@ import {
   type GenerateResult,
 } from "@/lib/api-client";
 import { setPendingPrompt, takePendingPrompt } from "@/lib/pending-prompt";
+import { getDefaultModel } from "@/lib/preferences";
 import {
   MODEL_INFO,
   PLANS,
@@ -57,6 +58,11 @@ function BuildContent() {
     const pending = takePendingPrompt();
     if (pending) setPrompt(pending);
     fetchModelAvailability().then(setAvailability).catch(() => {});
+    // A preference set on the Settings page (see lib/preferences.ts); only
+    // applied if the user's plan actually still covers it.
+    const preferred = getDefaultModel();
+    if (preferred && planAllowsModel(plan, preferred)) setModel(preferred);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // If the user's plan doesn't cover the selected model, fall back to Haiku,
@@ -212,6 +218,7 @@ function BuildContent() {
             plan={plan}
             availability={availability}
             onLockedNavigate={() => prompt.trim() && setPendingPrompt(prompt)}
+            disabled={loading}
           />
         </div>
 

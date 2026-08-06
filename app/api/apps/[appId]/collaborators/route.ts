@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { adminAuth } from "@/lib/firebase-admin";
+import { adminAuth, adminDb, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
 import { commit, createWrite, deleteWrite, getDoc, listCollection } from "@/lib/firestore-rest";
 import { sendCollaboratorInviteEmail } from "@/lib/email";
 import { COLLABORATOR_MIN_PLAN, MAX_COLLABORATORS, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
@@ -91,10 +91,27 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
       );
     }
 
+    if (!isFirebaseAdminConfigured()) {
+      return NextResponse.json(
+        { error: "Inviting collaborators isn't configured on this deployment yet." },
+        { status: 400 }
+      );
+    }
     let invitedUid: string;
     try {
       invitedUid = (await adminAuth().getUserByEmail(trimmedEmail)).uid;
-    } catch {
+    } catch (err) {
+      // adminAuth().getUserByEmail() throws its own "user-not-found" error
+      // for a genuine miss, distinguishable from a real Firebase Admin API
+      // failure (network, permissions) — the isFirebaseAdminConfigured()
+      // check above already rules out the "no service account at all" case,
+      // this narrows the remaining ambiguity so a transient Admin API error
+      // isn't misreported as "that email has no account" to the inviter.
+      const code = (err as { code?: string } | undefined)?.code;
+      if (code && code !== "auth/user-not-found") {
+        console.error(`[collaborators] getUserByEmail failed for a reason other than not-found:`, err);
+        return NextResponse.json({ error: "Couldn't look up that email right now. Please try again." }, { status: 500 });
+      }
       return NextResponse.json({ error: "No Breezify account found with that email." }, { status: 404 });
     }
     if (invitedUid === uid) {
@@ -126,15 +143,33 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
     // case), and even a real send failure shouldn't undo an invite that
     // already succeeded — the person still shows up on the roster and in
     // their own "shared with me" list either way.
-    try {
-      await sendCollaboratorInviteEmail({
-        to: trimmedEmail,
-        appName: (doc.fields.name as string) || "an app",
-        appId: params.appId,
-        appUrl: appUrl(req),
-      });
-    } catch (err) {
-      console.error(`[collaborators] appId=${params.appId} failed to send invite email to ${trimmedEmail}:`, err);
+    //
+    // Respects the invitee's own "email me when invited to collaborate"
+    // preference (Settings page, see lib/preferences default true) — read
+    // via the Admin SDK since the inviter's idToken has no access to
+    // another user's profile, and defaults to sending if the check itself
+    // fails, matching the always-send behavior before this preference
+    // existed.
+    let wantsEmail = true;
+    if (isFirebaseAdminConfigured()) {
+      try {
+        const invitedProfile = await adminDb().collection("users").doc(invitedUid).get();
+        wantsEmail = invitedProfile.data()?.emailNotifications !== false;
+      } catch {
+        // Default to sending — see above.
+      }
+    }
+    if (wantsEmail) {
+      try {
+        await sendCollaboratorInviteEmail({
+          to: trimmedEmail,
+          appName: (doc.fields.name as string) || "an app",
+          appId: params.appId,
+          appUrl: appUrl(req),
+        });
+      } catch (err) {
+        console.error(`[collaborators] appId=${params.appId} failed to send invite email to ${trimmedEmail}:`, err);
+      }
     }
 
     return NextResponse.json({ uid: invitedUid, email: trimmedEmail });

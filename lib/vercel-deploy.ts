@@ -181,19 +181,38 @@ export async function deployToVercel(
     if (!check.ok) continue;
     const state = check.body.readyState as string;
     url = check.body.url ?? url;
+    const inspectorUrl = typeof check.body.inspectorUrl === "string" ? check.body.inspectorUrl : null;
     if (state === "READY") {
+      // A production deployment (target: "production", set above) gets
+      // Vercel's own clean project alias — "<slug>.vercel.app" — assigned
+      // automatically alongside its per-deployment URL. `check.body.url`
+      // above is always that longer per-deployment one though (e.g.
+      // "habit-tracker-a1b2c3-<account>-projects.vercel.app"), which
+      // publicly embeds the Vercel account/team name in every generated
+      // app's URL. `alias` (plural, a separate field from `url`) lists
+      // every hostname actually assigned to this deployment; prefer the
+      // clean one when Vercel did assign it, rather than always exposing
+      // the account name.
+      const aliases: string[] = Array.isArray(check.body.alias) ? check.body.alias : [];
+      const cleanAlias = aliases.find((a) => a === `${slug}.vercel.app`);
       const customAlias = await tryCustomAlias(id, slug);
-      return { url: `https://${customAlias ?? url}`, id };
+      return { url: `https://${customAlias ?? cleanAlias ?? url}`, id };
     }
     if (state === "ERROR" || state === "CANCELED") {
       const canceled = state === "CANCELED";
       const logLines = canceled ? [] : await getDeploymentBuildLogs(id);
       const tail = logLines.slice(-40).join("\n");
-      throw new Error(
-        tail
-          ? `The deployment failed to build. Build output:\n\n${tail}`
-          : `The deployment failed to build${canceled ? " (canceled)" : ""}. Download the ZIP to see the full error on Vercel, or check that the app builds locally with \`npm run build\`.`
-      );
+      // The events endpoint above is best-effort and can come back empty
+      // even for a real build failure (a query-shape mismatch, an events
+      // page that hasn't landed yet) — a direct link to this exact
+      // deployment's own logs on Vercel is a real fallback either way,
+      // not just "check Vercel" with nothing to click.
+      const logsLine = inspectorUrl ? `\n\nFull logs: ${inspectorUrl}` : "";
+      const fallbackTail = "Download the ZIP to see the full error on Vercel, or check that the app builds locally with npm run build.";
+      const message = tail
+        ? `The deployment failed to build. Build output:\n\n${tail}${logsLine}`
+        : `The deployment failed to build${canceled ? " (canceled)" : ""}. ${logsLine ? `Full logs: ${inspectorUrl}` : fallbackTail}`;
+      throw new Error(message);
     }
   }
 
@@ -388,6 +407,22 @@ export async function getDomainOrderStatus(orderId: string): Promise<DomainOrder
  * later instead of assuming it failed — see each caller's own resume/retry
  * logic for how it acts on that.
  */
+/**
+ * Thrown when the poll window runs out while the order is still pending at
+ * Vercel — as opposed to Vercel actually reporting `status: "failed"`. A
+ * caller deciding whether to refund a charge tied to this order needs to
+ * tell the two apart: a genuine failure means the purchase definitely
+ * didn't happen (safe, correct to refund), but a timeout means it's still
+ * unresolved — it may well complete moments later, so refunding here would
+ * risk giving the money back for a domain that still ends up registered.
+ */
+export class DomainOrderTimeoutError extends Error {
+  constructor(orderId: string) {
+    super(`Domain order ${orderId} is still pending after the poll window; will retry later.`);
+    this.name = "DomainOrderTimeoutError";
+  }
+}
+
 export async function pollDomainOrder(orderId: string, deadlineMs = 45_000): Promise<void> {
   const deadline = Date.now() + deadlineMs;
   while (Date.now() < deadline) {
@@ -398,5 +433,5 @@ export async function pollDomainOrder(orderId: string, deadlineMs = 45_000): Pro
     }
     await new Promise((r) => setTimeout(r, 3000));
   }
-  throw new Error(`Domain order ${orderId} is still pending after the poll window; will retry later.`);
+  throw new DomainOrderTimeoutError(orderId);
 }

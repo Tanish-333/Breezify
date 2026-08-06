@@ -161,6 +161,7 @@ export function CodePreview({
   locked = false,
   editable = false,
   onSave,
+  versionKey,
 }: {
   files: Record<string, string>;
   appName?: string;
@@ -170,6 +171,8 @@ export function CodePreview({
   /** Lets the active file be hand-edited directly, saved as a new "edit" turn. Same plan gate as viewing (see `locked`) — pass alongside `onSave`. */
   editable?: boolean;
   onSave?: (files: Record<string, string>) => Promise<void>;
+  /** Something that changes only on a genuine new generation/refine/revert (e.g. turn count) — see the effect below for why this can't just be `files` itself. */
+  versionKey?: string | number;
 }) {
   const paths = useMemo(() => Object.keys(files).sort(), [files]);
   const [active, setActive] = useState(paths[0] ?? "");
@@ -186,10 +189,21 @@ export function CodePreview({
   // old file set no longer applies cleanly to the new one, and silently
   // keeping it around risks saving a hand edit over AI-written changes the
   // user hasn't even seen yet.
+  //
+  // Keyed on `versionKey`, not `files` itself: the parent recomputes `files`
+  // fresh (a brand-new object reference) on every Firestore snapshot of the
+  // app doc, including ones that have nothing to do with its code — the
+  // public visit counter incrementing, a deploy status flipping, a
+  // collaborator's refine lock toggling. Depending on `files`' identity
+  // meant any of those could silently wipe an in-progress hand edit with no
+  // warning, mid-keystroke, for a reason the user never saw. `versionKey`
+  // (the caller passes something like turn count) only changes when the
+  // code genuinely did.
   useEffect(() => {
     setPendingEdits({});
     setSaveError("");
-  }, [files]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [versionKey]);
 
   // The first file can arrive after mount while streaming.
   const activePath = active && files[active] !== undefined ? active : paths[0] ?? "";
