@@ -117,7 +117,15 @@ service cloud.firestore {
 
     // apps/{appId}: generated apps.
     match /apps/{appId} {
-      allow read: if isOwner(resource.data.userId) || isAppCollaborator(database, appId);
+      // isTemplate == true opens read access to every signed-out-of-this-
+      // relationship caller too — these are the curated dashboard Templates
+      // (see lib/templates.ts, scripts/seed-templates.ts), owned by a
+      // dedicated system account specifically so anyone can duplicate one
+      // (app/api/apps/duplicate) without first being invited onto it like a
+      // normal collaborator would need to be.
+      allow read: if isOwner(resource.data.userId)
+        || isAppCollaborator(database, appId)
+        || resource.data.isTemplate == true;
       allow create: if isOwner(request.resource.data.userId);
       allow update: if (
         isAppEditor(database, appId)

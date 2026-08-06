@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { PromptComposer } from "@/components/prompt-composer";
-import { TemplateGallery } from "@/components/template-gallery";
+import { TemplatesSection } from "@/components/templates-section";
 import { GenerationProgress } from "@/components/generation-progress";
 import { GithubImportDialog } from "@/components/github-import-dialog";
 import { ConfirmDialog } from "@/components/confirm-dialog";
@@ -195,6 +195,7 @@ function DashboardContent() {
       )}
 
       {view === "all" && (
+      <>
       <section className="py-10 text-center md:py-14">
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
           {firstName ? `Let's build something, ${firstName}` : "Let's build something"}
@@ -294,12 +295,6 @@ function DashboardContent() {
             </div>
           )}
 
-          {!generating && !prompt && (
-            <div className="mt-6">
-              <TemplateGallery onSelect={setPrompt} />
-            </div>
-          )}
-
           {generating && (
             <div className="mt-5">
               <GenerationProgress
@@ -312,6 +307,11 @@ function DashboardContent() {
           )}
         </div>
       </section>
+
+      <section className="mt-10 border-t border-border pt-8">
+        <TemplatesSection plan={plan} onFallbackPrompt={setPrompt} />
+      </section>
+      </>
       )}
 
       <section className={cn("mt-10 border-t border-border pt-8", view !== "all" && "mt-0 border-t-0 pt-0")}>

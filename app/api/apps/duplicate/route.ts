@@ -51,11 +51,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // getDoc is itself rules-gated to the owner or an existing collaborator,
-    // so a caller unrelated to this app is rejected right here regardless.
+    // getDoc is itself rules-gated to the owner, an existing collaborator, or
+    // a template app (isTemplate == true is publicly readable — see
+    // firestore.rules), so a caller unrelated to this app in any of those
+    // ways is rejected right here regardless.
     const doc = await getDoc(`apps/${appId}`, idToken);
     if (!doc) return NextResponse.json({ error: "App not found." }, { status: 404 });
-    if (!(await hasEditAccess(appId, doc.fields.userId as string, uid, idToken))) {
+    const isTemplate = doc.fields.isTemplate === true;
+    // A dashboard Template is a curated public duplicate source by design —
+    // duplicating one isn't "editing someone else's app", so it skips the
+    // normal edit-access check entirely rather than requiring the caller be
+    // invited as a collaborator on the system template account's app.
+    if (!isTemplate && !(await hasEditAccess(appId, doc.fields.userId as string, uid, idToken))) {
       return NextResponse.json({ error: "You have view-only access to this app — ask the owner to make you an editor to do this." }, { status: 403 });
     }
 
