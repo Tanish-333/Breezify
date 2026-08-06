@@ -9,6 +9,7 @@ import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { CodePreview } from "@/components/code-preview";
 import { AppPreview } from "@/components/app-preview";
+import { AppVisualEditor } from "@/components/app-visual-editor";
 import { PromptComposer } from "@/components/prompt-composer";
 import { GenerationProgress } from "@/components/generation-progress";
 import { GithubPushDialog } from "@/components/github-push-dialog";
@@ -57,6 +58,7 @@ import {
   Loader2,
   Lock,
   MoreHorizontal,
+  MousePointerClick,
   Pencil,
   RefreshCw,
   Rocket,
@@ -65,7 +67,7 @@ import {
   X,
 } from "lucide-react";
 
-type Pane = "preview" | "code";
+type Pane = "preview" | "visual" | "code";
 
 /** One row in the workspace header's "More" menu — a link (external or locked-upsell) or an action button, never both. */
 function MenuItem({
@@ -213,6 +215,14 @@ function AppWorkspace() {
   useEffect(() => {
     if (app?.model && planAllowsModel(plan, app.model)) setModel(app.model);
   }, [app?.model, plan]);
+
+  // The Visual tab is hidden outright once canEdit turns false (a role
+  // downgrade mid-session, or the app doc taking a beat to load) — bounce
+  // back to Preview rather than leaving the toggle on a pane its own button
+  // no longer renders.
+  useEffect(() => {
+    if (pane === "visual" && !canEdit) setPane("preview");
+  }, [pane, canEdit]);
 
   // Keep the newest turn in view as the conversation grows.
   useEffect(() => {
@@ -664,7 +674,12 @@ function AppWorkspace() {
 
           {hasFiles && (
             <div className="flex items-center rounded-lg border border-border p-0.5">
-              {(["preview", "code"] as Pane[]).map((p) => (
+              {/* Visual editing has no read-only mode worth showing — unlike
+                  Code (still a legitimate way for a Viewer to read the
+                  source), a click-to-edit tab with every edit affordance
+                  disabled is just a broken UI, so it's hidden outright for
+                  anyone who can't edit, same as the composer below. */}
+              {(canEdit ? (["preview", "visual", "code"] as Pane[]) : (["preview", "code"] as Pane[])).map((p) => (
                 <button
                   key={p}
                   onClick={() => setPane(p)}
@@ -677,6 +692,8 @@ function AppWorkspace() {
                 >
                   {p === "preview" ? (
                     <Eye className="h-3 w-3" />
+                  ) : p === "visual" ? (
+                    <MousePointerClick className="h-3 w-3" />
                   ) : (
                     <Code2 className="h-3 w-3" />
                   )}
@@ -919,6 +936,22 @@ function AppWorkspace() {
                   removeBadge={plan !== "free"}
                   onError={setPreviewError}
                   onReload={() => setPreviewError(null)}
+                  reloadKey={turns.length}
+                />
+              ) : pane === "visual" && canEdit ? (
+                <AppVisualEditor
+                  files={files}
+                  onEdit={(instruction) => refine(instruction)}
+                  disabled={refining || insufficient || blockedByOtherEditor}
+                  disabledReason={
+                    insufficient
+                      ? "Out of credits — this edit runs a refine like any other."
+                      : blockedByOtherEditor
+                        ? "Wait for the other refine in progress to finish."
+                        : refining
+                          ? "An edit is already in progress."
+                          : undefined
+                  }
                   reloadKey={turns.length}
                 />
               ) : (
