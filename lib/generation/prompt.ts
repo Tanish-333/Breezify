@@ -44,6 +44,11 @@ DATA (persistence or shared state — a todo list, guestbook, comments, a poll):
   - Purely local/ephemeral state (drafts, UI toggles, single-player game's current state) still just uses localStorage/IndexedDB.
   - EVERY fetch to any of the above — GET, sign-in, POST, PATCH, DELETE — must be wrapped in try/catch (or a .catch()) that clears whatever loading state it set and shows a visible inline error message. A request that fails or a promise that rejects must NEVER leave the UI stuck on a loading/spinner state with no way out — that reads as "the app is broken" with no explanation. This matters even more here than elsewhere: sign-in specifically can fail for reasons outside this app's control (the visitor's network, a misconfigured backend), and the rest of the app — especially anything already loaded via GET — must keep working regardless.
 
+USER AUTHENTICATION (real named accounts the visitor signs up/logs into — not the anonymous cross-user coordination above): same Identity Toolkit API, same FIREBASE_API_KEY.
+  - Email/password: POST \`https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=<FIREBASE_API_KEY>\` (new account) or \`.../v1/accounts:signInWithPassword?key=<FIREBASE_API_KEY>\` (existing) with \`{"email","password","returnSecureToken":true}\`. Store \`idToken\`/\`refreshToken\`/\`localId\`/\`email\` in localStorage; refresh the same way as the DATA section above. This is real, it works out of the box, and it is the only login method to build unless told otherwise.
+  - "Sign in with Google" / any social-login button: DO NOT generate one. It needs an OAuth client and consent screen scoped to this one app, which this shared backend cannot provide — the button would show up as a different app's identity and fail to redirect correctly for every visitor. If asked for Google/social login, build working email/password auth instead and say so plainly in the summary and README (e.g. "Google sign-in isn't available on this platform — this app uses email/password accounts instead").
+  - Password reset / email verification flows: only if explicitly asked, since they need email sending this app doesn't have configured — otherwise omit them rather than generating a "check your email" step that never arrives.
+
 AI FEATURES (chat, generation, summarization): direct client-side calls to the Google Gemini API (generativelanguage.googleapis.com supports browser requests), with a settings screen for the end user to paste their OWN Gemini key into localStorage. Never assume a server-side key exists; link https://aistudio.google.com/apikey in the README. Only use a backend api/ route if the key genuinely must stay hidden from the client.
 
 Output a single JSON object (no markdown fences, no commentary), this exact shape:
@@ -65,8 +70,11 @@ export function userPrompt(prompt: string, appId: string) {
 
 /**
  * Prompt for iterating on an app that already exists. The current files are
- * included so the model edits rather than starts over, and it must return the
- * complete file set again in the same JSON shape.
+ * included so the model edits rather than starts over. Unlike a fresh build,
+ * it must return ONLY the files it added or changed — re-emitting every
+ * unchanged file on every refine (most generation calls after the first
+ * build) was pure wasted output tokens. mergeRefineFiles() reconstructs the
+ * complete file set server-side from this partial response.
  */
 export function refinePrompt(
   originalPrompt: string,
@@ -86,7 +94,31 @@ ${listing}
 
 CHANGE REQUESTED: ${instruction}
 
-Apply the requested change. Return the COMPLETE updated file set in the same JSON shape as before, including files you did not modify and a fresh "suggestions" list. Delete a file by omitting it. Keep the app runnable. In "summary", describe what you changed in this update rather than what the app does overall.${backendDataApiBlock(appId)}`;
+Apply the requested change. Unlike a fresh build, do NOT return the whole file set again — "files" must contain ONLY files you are adding or changing, each with its full new content; never re-include a file you didn't touch. To remove a file, add its path to a "deletedFiles" array (omitting a file from "files" just means "unchanged", not "deleted"). If changing one file requires updating another that depends on it (package.json, a shared type, an index that imports a renamed file), include that file too even though its core logic didn't change. Output shape:
+{
+  "appName": "short-kebab-case-name",
+  "summary": "one sentence describing what changed in this update",
+  "files": { "path/to/changed-or-new-file.ext": "full new file contents", ... },
+  "deletedFiles": ["path/to/removed-file.ext"],
+  "suggestions": ["three or four short follow-up changes the user might want next, each under 6 words"]
+}
+Keep the app runnable.${backendDataApiBlock(appId)}`;
+}
+
+/**
+ * Reconstructs the complete file set from a refine response, which contains
+ * only the files that actually changed. Tolerant of a model that ignores the
+ * partial-response instruction and returns the full set anyway — merging a
+ * complete set onto itself is a no-op.
+ */
+export function mergeRefineFiles(
+  existing: Record<string, string>,
+  changed: Record<string, string>,
+  deletedFiles: string[]
+): Record<string, string> {
+  const merged = { ...existing, ...changed };
+  for (const path of deletedFiles) delete merged[path];
+  return merged;
 }
 
 /**
@@ -150,6 +182,7 @@ export function parseGenerationJSON(raw: string): {
   appName?: string;
   summary?: string;
   files?: Record<string, string>;
+  deletedFiles?: string[];
   suggestions?: string[];
 } {
   const start = raw.indexOf("{");
