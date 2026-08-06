@@ -12,6 +12,7 @@ import { useUserApps } from "@/lib/use-apps";
 import { cn } from "@/lib/utils";
 import { PLANS } from "@/lib/types";
 import {
+  BarChart3,
   CreditCard,
   FolderOpen,
   LayoutGrid,
@@ -24,6 +25,7 @@ import {
 const MAIN_NAV = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
   { href: "/build", label: "New app", icon: Plus },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
 const ACCOUNT_NAV = [
