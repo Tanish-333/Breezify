@@ -88,13 +88,29 @@ export async function POST(req: NextRequest) {
   const results: Record<string, { status: string; message: string }> = {};
 
   try {
-    // Clean up old sessions (older than 30 days)
-    // In production, this would query Firestore and delete old sessions
-    // For now, we log that this would happen
-    results.sessions = {
-      status: "completed",
-      message: "Would delete sessions older than 30 days",
-    };
+    // client-errors and metrics are both public, unauthenticated write
+    // targets (see the doc comment on pruneByTimestamp above) with no
+    // built-in expiry — this used to be two fake stubs that logged "would
+    // delete..." without ever touching either collection, so they grew
+    // forever with no pruning actually happening.
+    if (!isFirebaseAdminConfigured()) {
+      results.errors = { status: "skipped", message: "FIREBASE_SERVICE_ACCOUNT not configured." };
+      results.metrics = { status: "skipped", message: "FIREBASE_SERVICE_ACCOUNT not configured." };
+    } else {
+      try {
+        const deleted = await pruneByTimestamp("client-errors", 30 * 24 * 60 * 60 * 1000);
+        results.errors = { status: "completed", message: `Deleted ${deleted} client-error log(s) older than 30 days.` };
+      } catch (error) {
+        results.errors = { status: "error", message: error instanceof Error ? error.message : "Unknown error" };
+      }
+
+      try {
+        const deleted = await pruneByTimestamp("metrics", 90 * 24 * 60 * 60 * 1000);
+        results.metrics = { status: "completed", message: `Deleted ${deleted} metric(s) older than 90 days.` };
+      } catch (error) {
+        results.metrics = { status: "error", message: error instanceof Error ? error.message : "Unknown error" };
+      }
+    }
 
     // Apps left stuck in "deploying" by a killed function or a failed
     // final status write (see app/api/deploy).
@@ -106,12 +122,6 @@ export async function POST(req: NextRequest) {
         message: error instanceof Error ? error.message : "Unknown error",
       };
     }
-
-    // Clean up expired analytics data (older than 90 days)
-    results.analytics = {
-      status: "completed",
-      message: "Would archive analytics older than 90 days",
-    };
 
     return NextResponse.json(
       {
