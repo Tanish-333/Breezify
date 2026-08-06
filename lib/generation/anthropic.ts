@@ -34,11 +34,17 @@ export async function generateWithAnthropic(
   const anthropic = getClient();
   const apiModel = MODEL_INFO[model].apiModel;
 
+  // SYSTEM_PROMPT is identical on every call, for every user, forever — marking
+  // it as an ephemeral cache breakpoint means only the first call in each 5min
+  // window pays full price for it; every call after reads it at ~10% of the
+  // input-token cost. Below each model's minimum cacheable prefix (varies by
+  // model, see shared/prompt-caching.md) the marker is simply a no-op, not an
+  // error, so this is safe to leave on unconditionally.
   const stream = anthropic.messages.stream(
     {
       model: apiModel,
       max_tokens: maxOutputTokens,
-      system: SYSTEM_PROMPT,
+      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
       messages: [{ role: "user", content: userContent }],
     },
     { signal }
@@ -66,12 +72,20 @@ export async function generateWithAnthropic(
   const pricing = PRICE_PER_MTOK[apiModel] ?? { input: 3.0, output: 15.0 };
   const inputTokens = message.usage.input_tokens;
   const outputTokens = message.usage.output_tokens;
+  // Cache writes cost 1.25x the normal input rate, cache reads ~0.1x — without
+  // these, a cache hit would look identical to a cache miss in cost tracking
+  // and understate what caching is actually saving (or, on a write, overstate it).
+  const cacheCreationTokens = message.usage.cache_creation_input_tokens ?? 0;
+  const cacheReadTokens = message.usage.cache_read_input_tokens ?? 0;
 
   return {
     raw,
     inputTokens,
     outputTokens,
     actualCostUSD:
-      (inputTokens / 1_000_000) * pricing.input + (outputTokens / 1_000_000) * pricing.output,
+      (inputTokens / 1_000_000) * pricing.input +
+      (cacheCreationTokens / 1_000_000) * pricing.input * 1.25 +
+      (cacheReadTokens / 1_000_000) * pricing.input * 0.1 +
+      (outputTokens / 1_000_000) * pricing.output,
   };
 }

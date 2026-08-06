@@ -86,7 +86,7 @@ function apiRoutesBanner() {
 </div>`;
 }
 
-function hasApiRoutes(files: Record<string, string>) {
+export function hasApiRoutes(files: Record<string, string>) {
   return Object.keys(files).some((p) => /^api\//i.test(p));
 }
 

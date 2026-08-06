@@ -6,6 +6,7 @@ import { withWatermark } from "@/lib/watermark";
 import { withAnalytics } from "@/lib/analytics-snippet";
 import { deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
 import { unsupportedReason } from "@/lib/app-support";
+import { hasApiRoutes } from "@/lib/preview";
 import { tryWrapExpressForVercel } from "@/lib/express-adapter";
 import { missingEnvVars } from "@/lib/backend-env";
 import { deployNewApp, deployFreeTierApp, subdomainSlug, DeployLimitError } from "@/lib/deploy-actions";
@@ -168,7 +169,14 @@ export async function POST(req: NextRequest) {
         alreadyLive,
         expiryDays: DEPLOY_EXPIRY_DAYS[userPlan],
       });
-      return NextResponse.json({ url: result.url });
+      // Free-tier hosting is client-side only (see the long comment above) —
+      // any api/ routes in the bundle are dead weight once live, not a
+      // partial feature. Say so up front rather than letting the user
+      // discover it later as "my backend doesn't work."
+      const note = hasApiRoutes(rawFiles)
+        ? "This app includes backend (api/) code, but the Free plan hosts static sites only — the backend won't run on this live site. Upgrade to a paid plan to deploy a working backend."
+        : undefined;
+      return NextResponse.json({ url: result.url, note });
     }
 
     if (!isDeployConfigured()) {
