@@ -4,6 +4,7 @@ import { PromptHero } from "@/components/prompt-hero";
 import { BuilderMockup } from "@/components/builder-mockup";
 import { FaqAccordion } from "@/components/faq-accordion";
 import { PricingTable } from "@/components/pricing-table";
+import { Reveal } from "@/components/reveal";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { PLANS, PLAN_IDS } from "@/lib/types";
@@ -121,26 +122,23 @@ export default function LandingPage() {
 
       <section id="features" className="border-b border-border py-24">
         <div className="container">
-          <div className="mb-14 max-w-xl">
+          <Reveal className="mb-14 max-w-xl">
             <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
               Everything you need to ship, nothing you don&apos;t
             </h2>
             <p className="mt-3 text-muted-foreground">
               Breezify is built for people who want a finished product, not a demo.
             </p>
-          </div>
+          </Reveal>
           <div className="grid grid-cols-1 gap-px overflow-hidden rounded-lg border border-border bg-border sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map((f) => (
-              <div
-                key={f.title}
-                className={`card-hover relative bg-background p-7 ${f.span ?? ""}`}
-              >
+            {FEATURES.map((f, i) => (
+              <Reveal key={f.title} delay={i * 60} className={`card-hover relative bg-background p-7 ${f.span ?? ""}`}>
                 <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-lg border border-border bg-muted/40">
                   <f.icon className="h-5 w-5" strokeWidth={1.5} />
                 </div>
                 <h3 className="mb-2 font-medium">{f.title}</h3>
                 <p className="text-sm leading-relaxed text-muted-foreground">{f.body}</p>
-              </div>
+              </Reveal>
             ))}
           </div>
         </div>
@@ -148,21 +146,21 @@ export default function LandingPage() {
 
       <section id="pricing" className="border-b border-border py-24">
         <div className="container">
-          <div className="mb-14 max-w-xl">
+          <Reveal className="mb-14 max-w-xl">
             <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
               Simple, transparent pricing
             </h2>
             <p className="mt-3 text-muted-foreground">
               Start free. Pay only for what you generate.
             </p>
-          </div>
+          </Reveal>
           <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {PLAN_IDS.map((id) => {
+            {PLAN_IDS.map((id, i) => {
               const plan = PLANS[id];
               return (
+              <Reveal key={plan.name} delay={i * 80}>
               <Card
-                key={plan.name}
-                className={`card-hover ${plan.highlighted ? "border-foreground" : ""}`}
+                className={`card-hover h-full ${plan.highlighted ? "border-foreground" : ""}`}
               >
                 <CardContent className="flex h-full flex-col p-7">
                   <div className="flex items-center justify-between">
@@ -196,33 +194,36 @@ export default function LandingPage() {
                   </Link>
                 </CardContent>
               </Card>
+              </Reveal>
               );
             })}
           </div>
 
-          <div className="mt-14">
+          <Reveal className="mt-14">
             <h3 className="mb-5 text-sm font-medium text-muted-foreground">
               Compare every plan
             </h3>
             <PricingTable />
-          </div>
+          </Reveal>
         </div>
       </section>
 
       <section id="faq" className="border-b border-border py-24">
         <div className="container max-w-3xl">
-          <div className="mb-10">
+          <Reveal className="mb-10">
             <h2 className="text-3xl font-semibold tracking-tight md:text-4xl">
               Frequently asked questions
             </h2>
             <p className="mt-3 text-muted-foreground">Everything you need to know before building with Breezify.</p>
-          </div>
-          <FaqAccordion items={FAQS} />
+          </Reveal>
+          <Reveal delay={100}>
+            <FaqAccordion items={FAQS} />
+          </Reveal>
         </div>
       </section>
 
       <section className="py-24">
-        <div className="container flex flex-col items-center gap-6 text-center">
+        <Reveal className="container flex flex-col items-center gap-6 text-center">
           <h2 className="max-w-2xl text-balance text-3xl font-semibold tracking-tight md:text-4xl">
             Your next app is one prompt away.
           </h2>
@@ -232,7 +233,7 @@ export default function LandingPage() {
               <ArrowRight className="h-4 w-4" />
             </Button>
           </Link>
-        </div>
+        </Reveal>
       </section>
 
       <footer className="border-t border-border py-10">
