@@ -139,7 +139,7 @@ function DashboardContent() {
 
   return (
     <div className="mx-auto max-w-4xl">
-      <section className="py-10 text-center md:py-16">
+      <section className="py-10 text-center md:py-14">
         <h1 className="text-3xl font-semibold tracking-tight md:text-4xl">
           {firstName ? `Let's build something, ${firstName}` : "Let's build something"}
         </h1>
@@ -147,35 +147,34 @@ function DashboardContent() {
           Describe an app and Breezify writes the whole codebase.
         </p>
 
-        <div className="mt-4 flex justify-center">
-          {canImport ? (
-            <button
-              type="button"
-              onClick={() => setShowImport(true)}
-              className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-muted-foreground hover:text-foreground"
-            >
-              <GithubIcon className="h-3.5 w-3.5" />
-              Import from GitHub
-            </button>
-          ) : (
-            <Link
-              href="/billing"
-              title="Upgrade to Plus to import from GitHub"
-              className="flex items-center gap-1.5 rounded-full border border-border px-3 py-1.5 text-xs text-muted-foreground transition-colors hover:border-muted-foreground hover:text-foreground"
-            >
-              <span className="relative inline-flex">
-                <GithubIcon className="h-3.5 w-3.5" />
-                <Lock
-                  className="absolute -bottom-1 -right-1.5 h-2 w-2 rounded-full bg-background text-muted-foreground"
-                  strokeWidth={3}
-                />
-              </span>
-              Import from GitHub
-            </Link>
-          )}
-        </div>
-
         <div className="mx-auto mt-8 max-w-2xl text-left">
+          <div className="mb-2 flex justify-end">
+            {canImport ? (
+              <button
+                type="button"
+                onClick={() => setShowImport(true)}
+                className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <GithubIcon className="h-3.5 w-3.5" />
+                Import from GitHub
+              </button>
+            ) : (
+              <Link
+                href="/billing"
+                title="Upgrade to Plus to import from GitHub"
+                className="flex items-center gap-1.5 text-xs text-muted-foreground transition-colors hover:text-foreground"
+              >
+                <span className="relative inline-flex">
+                  <GithubIcon className="h-3.5 w-3.5" />
+                  <Lock
+                    className="absolute -bottom-1 -right-1.5 h-2 w-2 rounded-full bg-background text-muted-foreground"
+                    strokeWidth={3}
+                  />
+                </span>
+                Import from GitHub
+              </Link>
+            )}
+          </div>
           <PromptComposer
             value={prompt}
             onChange={setPrompt}
@@ -258,12 +257,12 @@ function DashboardContent() {
         </div>
       </section>
 
-      <section className="border-t border-border pt-8">
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-sm font-medium">
+      <section className="mt-10 border-t border-border pt-8">
+        <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
+          <h2 className="text-base font-medium">
             Your apps
             {apps.length > 0 && (
-              <span className="ml-2 font-normal text-muted-foreground">{apps.length}</span>
+              <span className="ml-2 text-sm font-normal text-muted-foreground">{apps.length}</span>
             )}
           </h2>
           {apps.length > 6 && (
@@ -293,11 +292,11 @@ function DashboardContent() {
             </CardContent>
           </Card>
         ) : (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {visible.map((app) => (
               <Card
                 key={app.id}
-                className="group flex flex-col transition-colors hover:border-muted-foreground"
+                className="group flex flex-col transition-all hover:-translate-y-0.5 hover:border-muted-foreground hover:shadow-sm"
               >
                 <CardContent className="flex flex-1 flex-col p-4">
                   <div className="flex items-start justify-between gap-2">
