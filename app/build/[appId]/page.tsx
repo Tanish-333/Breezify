@@ -67,6 +67,7 @@ import {
   MoreHorizontal,
   MousePointerClick,
   Pencil,
+  Plug,
   RefreshCw,
   Rocket,
   Star,
@@ -606,8 +607,8 @@ function AppWorkspace() {
 
                   {isOwner && (
                     <MenuItem
-                      icon={KeyRound}
-                      label="Secrets"
+                      icon={Plug}
+                      label="Connectors"
                       warn={missingSecrets.length > 0}
                       disabledTitle={
                         missingSecrets.length > 0
