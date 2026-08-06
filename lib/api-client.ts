@@ -122,6 +122,21 @@ export async function duplicateAppRequest(appId: string): Promise<string> {
   return data.appId as string;
 }
 
+/** Creates a brand new app from a hand-written template's static file bundle — see app/api/apps/from-template for the plan gate. */
+export async function duplicateTemplateRequest(templateId: string): Promise<string> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You must be signed in.");
+  const idToken = await user.getIdToken();
+  const res = await fetch("/api/apps/from-template", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ templateId }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Couldn't use this template.");
+  return data.appId as string;
+}
+
 /** Deletes an app entirely — see app/api/apps/[appId] (DELETE). Immediately frees its active-subdomain slot, if any. */
 export async function deleteAppRequest(appId: string): Promise<void> {
   const user = auth.currentUser;
