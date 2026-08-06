@@ -4,34 +4,30 @@ import { useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
-import { duplicateAppRequest } from "@/lib/api-client";
-import { useTemplateApps } from "@/lib/use-apps";
+import { duplicateTemplateRequest } from "@/lib/api-client";
 import { FEATURED_TEMPLATES, TEMPLATE_CATEGORIES, TEMPLATES, type AppTemplate } from "@/lib/templates";
 import { DUPLICATE_MIN_PLAN, PLAN_RANK, type PlanId } from "@/lib/types";
 import { AlertCircle, ArrowRight, Loader2, Lock } from "lucide-react";
 
 /**
- * One template card. A seeded template (its slug found in `seededAppId`)
- * duplicates a real pre-built app via the existing Pro+ duplicate flow; an
- * unseeded one falls back to prefilling the composer, same as the plain
- * prompt gallery this replaces, so the section is fully usable before
- * app/api/admin/seed-templates has been run against a live deployment.
+ * One template card. Every template has a real, hand-written static file
+ * bundle now (see lib/template-apps/), so there's no more "seeded vs. not"
+ * distinction — the only thing that decides whether a card is a real,
+ * clickable duplicate action or a plan-locked upsell is the viewer's own
+ * plan, checked server-side by app/api/apps/from-template.
  */
 function TemplateCard({
   template,
-  seededAppId,
   canDuplicate,
   using,
   onUse,
 }: {
   template: AppTemplate;
-  seededAppId: string | undefined;
   canDuplicate: boolean;
   using: boolean;
   onUse: () => void;
 }) {
   const Icon = template.icon;
-  const locked = !!seededAppId && !canDuplicate;
 
   const hero = (
     <div
@@ -51,7 +47,7 @@ function TemplateCard({
     </div>
   );
 
-  if (locked) {
+  if (!canDuplicate) {
     return (
       <Link
         href="/billing"
@@ -85,12 +81,9 @@ function TemplateCard({
 
 export function TemplatesSection({
   plan,
-  onSelectPrompt,
   variant = "full",
 }: {
   plan: PlanId;
-  /** Fallback for a template that hasn't been seeded yet — prefills the composer instead, same as the plain prompt gallery this replaces. */
-  onSelectPrompt: (prompt: string) => void;
   /**
    * "featured" is the dashboard's condensed "Try these" section: 4 cards
    * (one per category, see FEATURED_TEMPLATES), no category filter, and a
@@ -101,7 +94,6 @@ export function TemplatesSection({
   variant?: "full" | "featured";
 }) {
   const router = useRouter();
-  const { bySlug: seededApps } = useTemplateApps();
   const [category, setCategory] = useState<(typeof TEMPLATE_CATEGORIES)[number]>("All");
   const [usingId, setUsingId] = useState<string | null>(null);
   const [error, setError] = useState("");
@@ -116,14 +108,9 @@ export function TemplatesSection({
 
   async function applyTemplate(template: AppTemplate) {
     setError("");
-    const seededAppId = seededApps[template.id];
-    if (!seededAppId) {
-      onSelectPrompt(template.prompt);
-      return;
-    }
     setUsingId(template.id);
     try {
-      const newId = await duplicateAppRequest(seededAppId);
+      const newId = await duplicateTemplateRequest(template.id);
       router.push(`/build/${newId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't use this template.");
@@ -165,7 +152,6 @@ export function TemplatesSection({
           <TemplateCard
             key={t.id}
             template={t}
-            seededAppId={seededApps[t.id]}
             canDuplicate={canDuplicate}
             using={usingId === t.id}
             onUse={() => applyTemplate(t)}

@@ -1,15 +1,12 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { TemplatesSection } from "@/components/templates-section";
 import { useAuth } from "@/lib/auth-context";
-import { setPendingPrompt } from "@/lib/pending-prompt";
 import type { PlanId } from "@/lib/types";
 
 function TemplatesContent() {
-  const router = useRouter();
   const { profile } = useAuth();
   const plan: PlanId = profile?.plan ?? "free";
 
@@ -22,18 +19,7 @@ function TemplatesContent() {
         </p>
       </div>
 
-      <TemplatesSection
-        plan={plan}
-        variant="full"
-        onSelectPrompt={(prompt) => {
-          // This page has no composer of its own — hand the prompt off to
-          // the dashboard, the same way any other locked-navigation flow in
-          // this app already does (see ModelSelector's onLockedNavigate),
-          // rather than inventing a second mechanism.
-          setPendingPrompt(prompt);
-          router.push("/dashboard");
-        }}
-      />
+      <TemplatesSection plan={plan} variant="full" />
     </div>
   );
 }
