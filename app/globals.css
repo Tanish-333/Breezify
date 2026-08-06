@@ -100,26 +100,15 @@ body {
   animation: fade-in 0.5s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-/* Scroll-triggered reveal — see components/reveal.tsx. Starts hidden and
-   offset, transitions to its resting state once IntersectionObserver flags
-   it as in view. A plain CSS transition rather than the fade-in keyframe
-   above: this needs to sit in its "before" state indefinitely until JS
-   flips the class, which an animation (runs once on mount) can't do. */
-.reveal {
-  opacity: 0;
-  transform: translateY(28px);
-  transition: opacity 0.7s cubic-bezier(0.16, 1, 0.3, 1), transform 0.7s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.reveal-visible {
-  opacity: 1;
-  transform: translateY(0);
-}
-@media (prefers-reduced-motion: reduce) {
-  .reveal {
-    opacity: 1;
-    transform: none;
-    transition: none;
-  }
+/* Scroll-linked 3D reveal — see components/reveal.tsx. opacity/transform
+   are driven per-frame from actual scroll position, not a CSS transition
+   (a transition would visibly lag behind fast scrolling, "chasing" the
+   real position instead of tracking it exactly). will-change and
+   transform-style here are pure perf/rendering hints for that constant
+   per-frame transform, not part of the animation itself. */
+.reveal-3d {
+  will-change: transform, opacity;
+  transform-style: preserve-3d;
 }
 
 /* Indeterminate progress bar for long-running generations. */
