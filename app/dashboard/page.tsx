@@ -300,9 +300,9 @@ function DashboardContent() {
           {!generating && !prompt && (
             <div className="mt-8">
               <p className="mb-3 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Templates
+                Try these
               </p>
-              <TemplatesSection plan={plan} onSelectPrompt={setPrompt} />
+              <TemplatesSection plan={plan} onSelectPrompt={setPrompt} variant="featured" />
             </div>
           )}
 

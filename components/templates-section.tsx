@@ -6,9 +6,9 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { duplicateAppRequest } from "@/lib/api-client";
 import { useTemplateApps } from "@/lib/use-apps";
-import { TEMPLATE_CATEGORIES, TEMPLATES, type AppTemplate } from "@/lib/templates";
+import { FEATURED_TEMPLATES, TEMPLATE_CATEGORIES, TEMPLATES, type AppTemplate } from "@/lib/templates";
 import { DUPLICATE_MIN_PLAN, PLAN_RANK, type PlanId } from "@/lib/types";
-import { AlertCircle, Loader2, Lock } from "lucide-react";
+import { AlertCircle, ArrowRight, Loader2, Lock } from "lucide-react";
 
 /**
  * One template card. A seeded template (its slug found in `seededAppId`)
@@ -86,10 +86,19 @@ function TemplateCard({
 export function TemplatesSection({
   plan,
   onSelectPrompt,
+  variant = "full",
 }: {
   plan: PlanId;
   /** Fallback for a template that hasn't been seeded yet — prefills the composer instead, same as the plain prompt gallery this replaces. */
   onSelectPrompt: (prompt: string) => void;
+  /**
+   * "featured" is the dashboard's condensed "Try these" section: 4 cards
+   * (one per category, see FEATURED_TEMPLATES), no category filter, and a
+   * link to the full /templates page. "full" is that page itself: every
+   * template, with the category filter. Defaults to "full" since the
+   * dedicated page is this component's primary home now.
+   */
+  variant?: "full" | "featured";
 }) {
   const router = useRouter();
   const { bySlug: seededApps } = useTemplateApps();
@@ -99,7 +108,11 @@ export function TemplatesSection({
   const canDuplicate = PLAN_RANK[plan] >= PLAN_RANK[DUPLICATE_MIN_PLAN];
 
   const visible =
-    category === "All" ? TEMPLATES : TEMPLATES.filter((t) => t.category === category);
+    variant === "featured"
+      ? FEATURED_TEMPLATES
+      : category === "All"
+        ? TEMPLATES
+        : TEMPLATES.filter((t) => t.category === category);
 
   async function applyTemplate(template: AppTemplate) {
     setError("");
@@ -120,32 +133,34 @@ export function TemplatesSection({
 
   return (
     <div>
-      <div className="flex flex-wrap justify-center gap-1.5">
-        {TEMPLATE_CATEGORIES.map((c) => (
-          <button
-            key={c}
-            type="button"
-            onClick={() => setCategory(c)}
-            className={cn(
-              "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
-              category === c
-                ? "border-foreground bg-foreground text-background"
-                : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
-            )}
-          >
-            {c}
-          </button>
-        ))}
-      </div>
+      {variant === "full" && (
+        <div className="flex flex-wrap justify-center gap-1.5">
+          {TEMPLATE_CATEGORIES.map((c) => (
+            <button
+              key={c}
+              type="button"
+              onClick={() => setCategory(c)}
+              className={cn(
+                "rounded-full border px-3 py-1 text-xs font-medium transition-colors",
+                category === c
+                  ? "border-foreground bg-foreground text-background"
+                  : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
+              )}
+            >
+              {c}
+            </button>
+          ))}
+        </div>
+      )}
 
       {error && (
-        <div className="mt-3 flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
+        <div className={cn("flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error", variant === "full" && "mt-3")}>
           <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
           <span>{error}</span>
         </div>
       )}
 
-      <div className="mt-3 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+      <div className={cn("grid grid-cols-2 gap-2.5 sm:grid-cols-3", variant === "full" && "mt-3")}>
         {visible.map((t) => (
           <TemplateCard
             key={t.id}
@@ -157,6 +172,18 @@ export function TemplatesSection({
           />
         ))}
       </div>
+
+      {variant === "featured" && (
+        <div className="mt-3 text-center">
+          <Link
+            href="/templates"
+            className="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
+          >
+            See all templates
+            <ArrowRight className="h-3 w-3" />
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

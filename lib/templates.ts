@@ -24,6 +24,8 @@ export interface AppTemplate {
   icon: LucideIcon;
   /** Tailwind classes for the card's hero — a flat gradient, not a screenshot (see app/globals.css' monochrome palette; no new brand colors here). */
   gradient: string;
+  /** Shown in the dashboard's condensed "Try these" section (components/templates-section.tsx's "featured" variant) — one per category, kept to 4 so the dashboard stays a launch point, not a full catalog. The /templates page always shows all of them regardless of this flag. */
+  featured?: boolean;
 }
 
 // Same 9 prompts components/template-gallery.tsx already used (kept there
@@ -41,6 +43,7 @@ export const TEMPLATES: AppTemplate[] = [
       "A habit tracker with a list of daily habits, streak counts, and a calendar heatmap showing completion history for the last 3 months.",
     icon: CalendarCheck,
     gradient: "from-foreground/[0.06] via-muted to-background",
+    featured: true,
   },
   {
     id: "markdown-notes",
@@ -61,6 +64,7 @@ export const TEMPLATES: AppTemplate[] = [
       "An invoice generator with a client list, line items with quantity and price, automatic totals and tax, and a printable/PDF-style invoice preview.",
     icon: Receipt,
     gradient: "from-foreground/[0.05] via-background to-muted",
+    featured: true,
   },
   {
     id: "team-standup",
@@ -91,6 +95,7 @@ export const TEMPLATES: AppTemplate[] = [
       "A personal budget tracker with categorized income/expense entries, a monthly summary, and a chart breaking down spend by category.",
     icon: Wallet,
     gradient: "from-foreground/[0.06] via-muted to-background",
+    featured: true,
   },
   {
     id: "recipe-box",
@@ -121,6 +126,7 @@ export const TEMPLATES: AppTemplate[] = [
       "A trivia quiz game with multiple-choice questions, a countdown timer per question, running score, and a final results screen.",
     icon: Gamepad2,
     gradient: "from-foreground/[0.07] via-background to-muted",
+    featured: true,
   },
   {
     id: "pomodoro-timer",
@@ -135,3 +141,6 @@ export const TEMPLATES: AppTemplate[] = [
 ];
 
 export const TEMPLATE_CATEGORIES = ["All", "Productivity", "Business", "Personal", "Fun"] as const;
+
+/** One per category — see AppTemplate.featured's doc comment. */
+export const FEATURED_TEMPLATES = TEMPLATES.filter((t) => t.featured);

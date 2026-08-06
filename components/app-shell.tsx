@@ -16,7 +16,9 @@ import {
   Clock,
   CreditCard,
   FolderKanban,
+  LayoutDashboard,
   LayoutGrid,
+  LayoutTemplate,
   PanelLeft,
   Plus,
   Search,
@@ -78,7 +80,12 @@ function NavLink({
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const activeView = pathname === "/dashboard" ? searchParams.get("view") ?? "all" : null;
+  // Deliberately NOT defaulting a missing param to "all" here — Dashboard
+  // (the bare /dashboard, no view param) and "All projects" (?view=all)
+  // render the exact same content, but need distinct active-highlight
+  // states rather than both lighting up together.
+  const activeView = pathname === "/dashboard" ? searchParams.get("view") : null;
+  const isDashboardHome = pathname === "/dashboard" && activeView === null;
   const { user, profile } = useAuth();
   const { apps } = useUserApps(user?.uid);
   const [collapsed, setCollapsed] = useState(false);
@@ -167,7 +174,23 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           )}
 
-          <div>
+          <NavLink
+            href="/dashboard"
+            label="Dashboard"
+            icon={LayoutDashboard}
+            collapsed={collapsed}
+            active={isDashboardHome}
+          />
+
+          <NavLink
+            href="/templates"
+            label="Templates"
+            icon={LayoutTemplate}
+            collapsed={collapsed}
+            active={pathname === "/templates"}
+          />
+
+          <div className="pt-5">
             {!collapsed && (
               <p className="px-2.5 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
                 Projects
@@ -176,7 +199,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             {PROJECTS_NAV.map((item) => (
               <NavLink
                 key={item.view}
-                href={`/dashboard${item.view === "all" ? "" : `?view=${item.view}`}`}
+                href={`/dashboard?view=${item.view}`}
                 label={item.label}
                 icon={item.icon}
                 collapsed={collapsed}
