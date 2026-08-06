@@ -189,8 +189,6 @@ export function BuilderMockup() {
     return () => clearInterval(id);
   }, []);
 
-  const example = EXAMPLES[index];
-
   return (
     <div className="w-full overflow-hidden rounded-xl border border-border bg-muted/30 shadow-2xl shadow-black/50">
       <div className="flex items-center gap-1.5 border-b border-border px-4 py-3">
@@ -214,37 +212,53 @@ export function BuilderMockup() {
           ))}
         </div>
       </div>
-      <div key={index} className="animate-in grid grid-cols-1 sm:grid-cols-[280px_1fr]">
-        <div className="border-b border-border p-4 sm:border-b-0 sm:border-r">
-          <div className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
-            <span className="h-1.5 w-1.5 rounded-full bg-success" />
-            {example.model}
-          </div>
-          <p className="text-[13px] leading-relaxed text-foreground/90">{example.summary}</p>
-          <div className="mt-4 space-y-1">
-            {example.files.map((f) => (
-              <div
-                key={f.name}
-                className="flex items-center justify-between rounded-md px-2 py-1.5 text-xs text-muted-foreground"
-              >
-                <span className="flex items-center gap-1.5 truncate">
-                  <FileCode2 className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate font-mono">{f.name}</span>
-                </span>
-                <span className="shrink-0 text-[10px] text-muted-foreground/60">{f.lines}</span>
+      {/* A real carousel track (all three slides laid out side by side,
+          translated as one), not a fade/swap of a single element — the
+          content physically moves across the viewport. */}
+      <div className="overflow-hidden">
+        <div
+          className="flex transition-transform duration-[650ms] ease-[cubic-bezier(0.16,1,0.3,1)]"
+          style={{ transform: `translateX(-${index * 100}%)` }}
+        >
+          {EXAMPLES.map((ex, i) => (
+            <div
+              key={i}
+              aria-hidden={i !== index}
+              className="grid w-full shrink-0 grid-cols-1 sm:grid-cols-[280px_1fr]"
+            >
+              <div className="min-h-[420px] border-b border-border p-4 sm:border-b-0 sm:border-r">
+                <div className="mb-3 flex items-center gap-2 text-xs font-medium text-muted-foreground">
+                  <span className="h-1.5 w-1.5 rounded-full bg-success" />
+                  {ex.model}
+                </div>
+                <p className="text-[13px] leading-relaxed text-foreground/90">{ex.summary}</p>
+                <div className="mt-4 space-y-1">
+                  {ex.files.map((f) => (
+                    <div
+                      key={f.name}
+                      className="flex items-center justify-between rounded-md px-2 py-1.5 text-xs text-muted-foreground"
+                    >
+                      <span className="flex items-center gap-1.5 truncate">
+                        <FileCode2 className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate font-mono">{f.name}</span>
+                      </span>
+                      <span className="shrink-0 text-[10px] text-muted-foreground/60">{f.lines}</span>
+                    </div>
+                  ))}
+                </div>
+                <div className="mt-4 flex items-center gap-1.5 rounded-lg border border-border p-3 text-xs text-muted-foreground">
+                  <Sparkles className="h-3.5 w-3.5 shrink-0" />
+                  {ex.note}
+                </div>
+                <div className="mt-4 flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-foreground text-xs font-medium text-background">
+                  <Rocket className="h-3.5 w-3.5" />
+                  Deploy
+                </div>
               </div>
-            ))}
-          </div>
-          <div className="mt-4 flex items-center gap-1.5 rounded-lg border border-border p-3 text-xs text-muted-foreground">
-            <Sparkles className="h-3.5 w-3.5 shrink-0" />
-            {example.note}
-          </div>
-          <div className="mt-4 flex h-9 w-full items-center justify-center gap-1.5 rounded-lg bg-foreground text-xs font-medium text-background">
-            <Rocket className="h-3.5 w-3.5" />
-            Deploy
-          </div>
+              <div className="p-6">{ex.panel}</div>
+            </div>
+          ))}
         </div>
-        <div className="p-6">{example.panel}</div>
       </div>
     </div>
   );
