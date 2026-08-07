@@ -43,6 +43,7 @@ async function vercelFetch(path: string, init?: RequestInit) {
 export interface DeployResult {
   url: string;
   id: string;
+  note?: string;
 }
 
 /**
@@ -111,13 +112,19 @@ async function tryCleanAlias(deploymentId: string, slug: string): Promise<string
  * my-app.breezify.app instead of a *.vercel.app URL. Only attempted when
  * DEPLOY_DOMAIN is set, and the domain must already be added and verified
  * on the Vercel project/team for this to succeed. Best-effort: any failure
- * (domain not configured yet, not verified, network error) is swallowed and
- * logged, and the deploy falls back to its default *.vercel.app URL rather
- * than failing outright.
+ * (domain not configured yet, not verified, network error) doesn't fail the
+ * deploy outright — it still falls back to the default *.vercel.app URL —
+ * but the actual reason is returned to the caller instead of only going to
+ * a console.warn nobody outside Vercel's own function logs can see. Without
+ * that, "DEPLOY_DOMAIN is set but every deploy still lands on .vercel.app"
+ * has no way to be diagnosed short of digging through Vercel's dashboard.
  */
-async function tryCustomAlias(deploymentId: string, slug: string): Promise<string | null> {
+async function tryCustomAlias(
+  deploymentId: string,
+  slug: string
+): Promise<{ alias: string | null; error?: string }> {
   const domain = getDeployDomain();
-  if (!domain) return null;
+  if (!domain) return { alias: null };
   const alias = `${slug}.${domain}`;
   try {
     const res = await vercelFetch(`/v2/deployments/${deploymentId}/aliases${scopeQuery()}`, {
@@ -125,16 +132,15 @@ async function tryCustomAlias(deploymentId: string, slug: string): Promise<strin
       body: JSON.stringify({ alias }),
     });
     if (!res.ok) {
-      console.warn(
-        `[vercel-deploy] Couldn't alias to ${alias}:`,
-        res.body?.error?.message || res.body?.message
-      );
-      return null;
+      const reason = res.body?.error?.message || res.body?.message || `HTTP ${res.status}`;
+      console.warn(`[vercel-deploy] Couldn't alias to ${alias}:`, reason);
+      return { alias: null, error: reason };
     }
-    return alias;
+    return { alias };
   } catch (err) {
-    console.warn(`[vercel-deploy] Couldn't alias to ${alias}:`, err);
-    return null;
+    const reason = err instanceof Error ? err.message : String(err);
+    console.warn(`[vercel-deploy] Couldn't alias to ${alias}:`, reason);
+    return { alias: null, error: reason };
   }
 }
 
@@ -273,9 +279,16 @@ export async function deployToVercel(
       // change on the next redeploy.
       const aliases: string[] = Array.isArray(check.body.alias) ? check.body.alias : [];
       const cleanAlias = aliases.find((a) => a === `${slug}.vercel.app`) ?? (await tryCleanAlias(id, slug));
-      const customAlias = await tryCustomAlias(id, slug);
+      const { alias: customAlias, error: customAliasError } = await tryCustomAlias(id, slug);
       await disableDeploymentProtection(slug);
-      return { url: `https://${customAlias ?? cleanAlias ?? url}`, id };
+      // DEPLOY_DOMAIN being set at all means a custom domain was actually
+      // wanted for this deploy — surface why it didn't land instead of
+      // silently handing back a .vercel.app URL with no explanation.
+      const note =
+        customAliasError && getDeployDomain()
+          ? `Couldn't alias to ${slug}.${getDeployDomain()}, so this deployed to a *.vercel.app URL instead: ${customAliasError}`
+          : undefined;
+      return { url: `https://${customAlias ?? cleanAlias ?? url}`, id, note };
     }
     if (state === "ERROR" || state === "CANCELED") {
       const canceled = state === "CANCELED";

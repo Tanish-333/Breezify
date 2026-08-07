@@ -317,7 +317,7 @@ async function handler(req: NextRequest) {
         }
       }
 
-      const note = [wrapped?.note, secretsNote].filter(Boolean).join(" ") || undefined;
+      const note = [wrapped?.note, secretsNote, result.note].filter(Boolean).join(" ") || undefined;
       return NextResponse.json({ url: result.url, note });
     } catch (err) {
       const message = err instanceof Error ? err.message : "Deploy failed.";
