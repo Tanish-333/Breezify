@@ -5,11 +5,13 @@ import { undeployApp } from "@/lib/deploy-actions";
 export const runtime = "nodejs";
 
 /**
- * Takes an app offline without deleting it, freeing the active-subdomain
- * slot it held (see MAX_ACTIVE_DEPLOYED_APPS in lib/types.ts) so a new app
- * can be deployed in its place. The app, its generated code, and its history
- * are untouched — it can be redeployed any time, subject to the cap again
- * at that point.
+ * Takes an app offline (a paid-plan deploy's underlying Vercel project is
+ * actually deleted, not just forgotten about — see undeployApp's own doc
+ * comment for why) and frees the active-subdomain slot it held (see
+ * MAX_ACTIVE_DEPLOYED_APPS in lib/types.ts) so a new app can be deployed in
+ * its place. The app itself, its generated code, and its history are
+ * untouched — it can be redeployed any time, subject to the cap again at
+ * that point.
  */
 export async function POST(req: NextRequest, { params }: { params: { appId: string } }) {
   try {

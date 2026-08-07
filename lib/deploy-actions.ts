@@ -181,10 +181,22 @@ async function tryDeleteVercelProject(fields: Record<string, unknown>): Promise<
 }
 
 /**
- * Takes an app offline without deleting it: clears its deploy state so it
- * stops counting against MAX_ACTIVE_DEPLOYED_APPS, but keeps the app, its
- * generated code, and its turn history intact so it can be redeployed later
- * (subject to the cap again at that point, same as any other deploy).
+ * Takes an app offline without deleting IT (the app record, code, and
+ * history stay put — see below) — but the site itself must actually stop
+ * being served, not just be forgotten by Breezify while Vercel keeps
+ * hosting it at the old *.vercel.app URL forever. So for a real paid-plan
+ * deploy, this deletes the underlying Vercel project the same way deleteApp
+ * does (redeploying later just recreates it fresh under the same
+ * deterministic slug — see subdomainSlug — so nothing about "redeploy any
+ * time" changes). Free-tier apps have no project of their own to delete
+ * (see tryDeleteVercelProject); clearing `subdomain` below is what actually
+ * takes those offline, since middleware.ts stops finding them the moment
+ * it's gone.
+ *
+ * Also clears its deploy state so it stops counting against
+ * MAX_ACTIVE_DEPLOYED_APPS, but keeps the app, its generated code, and its
+ * turn history intact so it can be redeployed later (subject to the cap
+ * again at that point, same as any other deploy).
  *
  * Detaches the domain from the Vercel project (a domain can't stay usefully
  * pointed at a project with nothing live on it) but deliberately does NOT
@@ -207,6 +219,7 @@ export async function undeployApp(params: { appId: string; uid: string; idToken:
   if (appDoc.fields.userId !== uid) throw new Error("You don't have access to this app.");
 
   await tryDetachDomain(appDoc.fields);
+  await tryDeleteVercelProject(appDoc.fields);
 
   const fields = {
     deployStatus: "error" as const,
