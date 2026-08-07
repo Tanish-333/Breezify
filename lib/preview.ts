@@ -382,10 +382,22 @@ const ENTRY = ${JSON.stringify(entry)};
 const CDN = "https://esm.sh/";
 const DEP_VERSIONS = ${JSON.stringify(depVersions)};
 
-// Pins a bare specifier ("lucide-react", "react-dom/client", "@scope/pkg/sub")
+// Pins a bare specifier ("lucide-react", "date-fns/format", "@scope/pkg/sub")
 // to the version range this app's own package.json declares, when known.
+// react and react-dom are deliberately EXCLUDED from this and always left on
+// the CDN's default/unpinned resolution: react-dom (and the jsx-runtime
+// Babel's automatic JSX transform auto-injects into every compiled module)
+// has its own internal peer-dependency resolution for "react", which
+// doesn't necessarily follow a version pinned on a separate, independent
+// request for the bare "react" package — when it doesn't, two different
+// copies of React end up rendering the same tree, and an element created by
+// one React's createElement failing another copy's internal $$typeof check
+// is exactly what "Minified React error #31" is. Leaving both unpinned
+// keeps them mutually consistent the same way they always were before any
+// of this per-package pinning existed.
 function pinSpecifier(spec) {
   const pkgName = spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0];
+  if (pkgName === "react" || pkgName === "react-dom") return spec;
   const version = DEP_VERSIONS[pkgName];
   if (!version) return spec;
   return pkgName + "@" + version + spec.slice(pkgName.length);
