@@ -99,6 +99,17 @@ export function CustomDomainDialog({
   const [loading, setLoading] = useState(false);
   const [checking, setChecking] = useState(false);
   const [removing, setRemoving] = useState(false);
+  // A just-removed domain must stop showing immediately, but `currentDomain`
+  // is a prop fed by the parent's live Firestore listener — it doesn't
+  // reflect the DELETE until that listener's next snapshot lands. Without
+  // this, activeDomain's `status?.name ?? currentDomain` fallback re-shows
+  // the stale domain name (status is null, so it falls through to the old
+  // prop) right after removal succeeds. Reset whenever the prop itself
+  // changes, so once the listener does catch up this stops overriding it.
+  const [removed, setRemoved] = useState(false);
+  useEffect(() => {
+    setRemoved(false);
+  }, [currentDomain]);
 
   // Buy-a-new-domain flow
   const [query, setQuery] = useState("");
@@ -157,6 +168,7 @@ export function CustomDomainDialog({
         body: JSON.stringify({ appId, domain: trimmed }),
       });
       setStatus(data);
+      setRemoved(false);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't add that domain.");
     } finally {
@@ -187,6 +199,7 @@ export function CustomDomainDialog({
       });
       setStatus(null);
       setDomain("");
+      setRemoved(true);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't remove that domain.");
     } finally {
@@ -239,7 +252,7 @@ export function CustomDomainDialog({
     }
   }
 
-  const activeDomain = status?.name ?? currentDomain;
+  const activeDomain = removed ? undefined : status?.name ?? currentDomain;
 
   return (
     <ModalPortal>

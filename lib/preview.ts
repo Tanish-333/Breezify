@@ -344,6 +344,22 @@ export function buildPreview(
   const css = collectCss(files);
   const badge = showBadge ? watermarkSnippet(appUrl) : "";
 
+  // Bare imports (react, lucide-react, etc.) resolve to esm.sh's *latest*
+  // published version unless pinned — but the app's own package.json already
+  // records the version it was written and tested against. Without pinning,
+  // a dependency that ships a breaking change (e.g. lucide-react dropping a
+  // trademarked brand icon like `Github` in a later release) silently breaks
+  // every existing app's preview the moment esm.sh's "latest" moves past it,
+  // with no code change on Breezify's side. Reusing package.json's own
+  // version range keeps the preview on whatever the app actually declares.
+  let depVersions: Record<string, string> = {};
+  try {
+    const pkg = JSON.parse(files["package.json"] ?? "{}");
+    depVersions = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+  } catch {
+    // Malformed package.json: fall back to unpinned CDN imports below.
+  }
+
   // The loader below runs inside the iframe. It transpiles each module on
   // demand, rewrites relative imports to blob URLs, and caches by path.
   const doc = `<!doctype html>
@@ -364,6 +380,16 @@ ${envShimScript()}
 const SOURCES = ${JSON.stringify(sources)};
 const ENTRY = ${JSON.stringify(entry)};
 const CDN = "https://esm.sh/";
+const DEP_VERSIONS = ${JSON.stringify(depVersions)};
+
+// Pins a bare specifier ("lucide-react", "react-dom/client", "@scope/pkg/sub")
+// to the version range this app's own package.json declares, when known.
+function pinSpecifier(spec) {
+  const pkgName = spec.startsWith("@") ? spec.split("/").slice(0, 2).join("/") : spec.split("/")[0];
+  const version = DEP_VERSIONS[pkgName];
+  if (!version) return spec;
+  return pkgName + "@" + version + spec.slice(pkgName.length);
+}
 
 function fail(message) {
   const el = document.createElement("pre");
@@ -453,7 +479,7 @@ function toBlobUrl(path) {
         return prefix + quote + toBlobUrl(target) + quote;
       }
       if (spec.startsWith("http")) return match;
-      return prefix + quote + CDN + spec + quote;
+      return prefix + quote + CDN + pinSpecifier(spec) + quote;
     }
   );
 
@@ -487,8 +513,8 @@ try {
   const entryUrl = toBlobUrl(ENTRY);
   const isComponentEntry = /App\\.(tsx|jsx)$/.test(ENTRY);
   const boot = isComponentEntry
-    ? 'import React from "' + CDN + 'react";' +
-      'import { createRoot } from "' + CDN + 'react-dom/client";' +
+    ? 'import React from "' + CDN + pinSpecifier("react") + '";' +
+      'import { createRoot } from "' + CDN + pinSpecifier("react-dom/client") + '";' +
       'import App from "' + entryUrl + '";' +
       'createRoot(document.getElementById("root")).render(React.createElement(App));'
     : 'import "' + entryUrl + '";';

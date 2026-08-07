@@ -206,6 +206,17 @@ export async function deployToVercel(
     (f) => /(^|\/)index\.html$/i.test(f) || /vite\.config\.[jt]s$/i.test(f)
   );
 
+  // Vercel's build container sets NODE_ENV=production, and npm (since v7)
+  // treats that as an implicit `--omit=dev` unless told otherwise — every
+  // generated app's build tooling (vite, typescript, tailwindcss,
+  // @vitejs/plugin-react, ...) lives in devDependencies, so an unpatched
+  // install silently skips all of it and the build fails immediately with
+  // "vite: command not found" before a single line of the app's own code
+  // runs. Verified locally: `NODE_ENV=production npm install` on one of
+  // these templates installs only the runtime deps and leaves vite missing.
+  // NPM_CONFIG_PRODUCTION=false overrides that regardless of NODE_ENV.
+  const buildEnv: Record<string, string> = { NPM_CONFIG_PRODUCTION: "false", ...(env ?? {}) };
+
   const created = await vercelFetch(`/v13/deployments${scopeQuery()}`, {
     method: "POST",
     body: JSON.stringify({
@@ -216,13 +227,15 @@ export async function deployToVercel(
         file: file.replace(/^\/+/, ""),
         data,
       })),
-      // Only the app's own api/ serverless functions ever see these (a
-      // static Vite build has no server-side code to read process.env at
-      // all), populated from that app's Secrets panel (see
+      // Only the app's own api/ serverless functions ever see `env` at
+      // runtime (a static Vite build has no server-side code to read
+      // process.env at all), populated from that app's Secrets panel (see
       // app/api/deploy/route.ts). Skipped entirely when there are none.
-      ...(env && Object.keys(env).length > 0
-        ? { env, build: { env } }
-        : {}),
+      // `build.env` always goes through — the devDependencies fix above
+      // needs to apply on every deploy, not just ones with secrets — and
+      // still carries those same secrets so the build step can see them too.
+      ...(env && Object.keys(env).length > 0 ? { env } : {}),
+      build: { env: buildEnv },
     }),
   });
 
