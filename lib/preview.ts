@@ -344,6 +344,22 @@ export function buildPreview(
   const css = collectCss(files);
   const badge = showBadge ? watermarkSnippet(appUrl) : "";
 
+  // esm.sh serves whatever it considers "latest" for an unversioned bare
+  // import — that drifts out from under us over time (e.g. lucide-react
+  // dropped several brand icons like Github/Twitter/Instagram in newer
+  // releases than the one every template/generated app was actually built
+  // against), silently crashing a preview that imports one. Pinning every
+  // bare import to the version actually declared in the app's own
+  // package.json keeps the preview matching what the code was written for.
+  let depVersions: Record<string, string> = {};
+  try {
+    const pkg = JSON.parse(files["package.json"] ?? "{}");
+    depVersions = { ...pkg.dependencies, ...pkg.devDependencies };
+  } catch {
+    // No package.json, or it doesn't parse — fall back to unpinned esm.sh
+    // resolution below, same as before this existed.
+  }
+
   // The loader below runs inside the iframe. It transpiles each module on
   // demand, rewrites relative imports to blob URLs, and caches by path.
   const doc = `<!doctype html>
@@ -363,7 +379,23 @@ ${envShimScript()}
 <script>
 const SOURCES = ${JSON.stringify(sources)};
 const ENTRY = ${JSON.stringify(entry)};
+const DEP_VERSIONS = ${JSON.stringify(depVersions)};
 const CDN = "https://esm.sh/";
+
+// Pins a bare import ("lucide-react", "@radix-ui/react-dialog/x") to the
+// exact version declared in the app's package.json, when there is one —
+// see this function's doc comment above where depVersions is built.
+function pinnedSpec(spec) {
+  const scoped = spec.charAt(0) === "@";
+  const parts = spec.split("/");
+  const name = scoped ? parts.slice(0, 2).join("/") : parts[0];
+  const subpath = spec.slice(name.length);
+  const range = DEP_VERSIONS[name];
+  if (!range) return spec;
+  const match = String(range).match(/\\d[\\d.]*/);
+  if (!match) return spec;
+  return name + "@" + match[0] + subpath;
+}
 
 function fail(message) {
   const el = document.createElement("pre");
@@ -453,7 +485,7 @@ function toBlobUrl(path) {
         return prefix + quote + toBlobUrl(target) + quote;
       }
       if (spec.startsWith("http")) return match;
-      return prefix + quote + CDN + spec + quote;
+      return prefix + quote + CDN + pinnedSpec(spec) + quote;
     }
   );
 
