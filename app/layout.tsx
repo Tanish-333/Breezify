@@ -4,6 +4,7 @@ import { Analytics } from "@vercel/analytics/next";
 import { AuthProvider } from "@/lib/auth-context";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import { MonitoringInit } from "@/components/monitoring-init";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 import "./globals.css";
 
 const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
@@ -12,7 +13,10 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 // prerendering so builds don't require Firebase env vars to be present.
 export const dynamic = "force-dynamic";
 
-const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://breezify.dev";
+// getAppBaseUrl(), not a raw env read: it strips a trailing slash (a common
+// paste mistake on NEXT_PUBLIC_APP_URL — see that function's own comment),
+// which this file used to skip, unlike every other reader of that env var.
+const SITE_URL = getAppBaseUrl();
 const TITLE = "Breezify: Build and ship apps with AI";
 const DESCRIPTION =
   "Breezify turns a plain-English prompt into a production-ready app, deployed in seconds. No code required.";
