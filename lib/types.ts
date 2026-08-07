@@ -321,27 +321,29 @@ export const MAX_ACTIVE_DEPLOYED_APPS: Record<PlanId, number | null> = {
 /**
  * Page views allowed per deployed app in a rolling ~30-day window before
  * visitors get redirected to /limit-reached instead of the app — see
- * lib/traffic-guard.ts. null = no cap.
+ * lib/traffic-guard.ts. null = no cap. Every plan has a real ceiling —
+ * even the top plan's is just high, not unlimited, so a runaway/abused
+ * app can't rack up unbounded Vercel bandwidth on any plan.
  */
 export const MONTHLY_PAGE_VIEW_LIMIT: Record<PlanId, number | null> = {
-  free: 5_000,
-  plus: 100_000,
-  pro: null,
-  max: null,
+  free: 1_000,
+  plus: 5_000,
+  pro: 50_000,
+  max: 250_000,
 };
 
 /**
  * Days a deployed subdomain stays live before it auto-expires and starts
  * redirecting visitors to /limit-reached (see lib/traffic-guard.ts) until
  * the owner renews it (see app/api/apps/[appId]/renew). null = never
- * expires. Only the free plan expires at all — a real incentive to upgrade,
- * not just a soft nudge, matching MAX_ACTIVE_DEPLOYED_APPS and
- * MONTHLY_PAGE_VIEW_LIMIT above.
+ * expires — only the top plan gets that; every other plan has a real
+ * renewal cadence, a genuine incentive to upgrade rather than a one-time
+ * free-plan nudge.
  */
 export const DEPLOY_EXPIRY_DAYS: Record<PlanId, number | null> = {
   free: 30,
-  plus: null,
-  pro: null,
+  plus: 120,
+  pro: 365,
   max: null,
 };
 

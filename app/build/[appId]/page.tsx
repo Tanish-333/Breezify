@@ -300,8 +300,8 @@ function AppWorkspace() {
   // someone even tries to deploy.
   const missingSecrets = isOwner ? missingEnvVars(files, appSecrets.map((s) => s.key)) : [];
 
-  // Free-tier subdomain expiry (DEPLOY_EXPIRY_DAYS) — unset entirely on
-  // plans that never expire, see app/api/deploy/route.ts.
+  // Deployed subdomain expiry (DEPLOY_EXPIRY_DAYS) — unset entirely on the
+  // one plan that never expires, see app/api/deploy/route.ts.
   const deployExpired = isDeployExpired(app.deployExpiresAt);
   const deployRenewable = canRenewDeploy(app.deployExpiresAt);
   const daysUntilExpiry =
