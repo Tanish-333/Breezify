@@ -15,6 +15,8 @@ import { files as recipeBoxFiles } from "./recipe-box";
 import { files as linkInBioFiles } from "./link-in-bio";
 import { files as triviaQuizFiles } from "./trivia-quiz";
 import { files as pomodoroTimerFiles } from "./pomodoro-timer";
+import { files as supportDeskFiles } from "./support-desk";
+import { files as applicantTrackerFiles } from "./applicant-tracker";
 
 /** Keyed by lib/templates.ts' AppTemplate.id. */
 export const TEMPLATE_APP_FILES: Record<string, Record<string, string>> = {
@@ -28,4 +30,6 @@ export const TEMPLATE_APP_FILES: Record<string, Record<string, string>> = {
   "link-in-bio": linkInBioFiles,
   "trivia-quiz": triviaQuizFiles,
   "pomodoro-timer": pomodoroTimerFiles,
+  "support-desk": supportDeskFiles,
+  "applicant-tracker": applicantTrackerFiles,
 };

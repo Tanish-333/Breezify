@@ -1,8 +1,10 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BookOpen,
+  Briefcase,
   CalendarCheck,
   Gamepad2,
+  Inbox,
   Kanban,
   Link2,
   NotebookPen,
@@ -85,6 +87,26 @@ export const TEMPLATES: AppTemplate[] = [
       "A mini CRM. A contacts list stores name, company, email, phone, and freeform notes, each contact linkable to one or more deals. A kanban board has columns Lead, Contacted, Proposal, Won, Lost; each deal is a card showing its linked contact, deal name, and dollar value, draggable between columns to update its stage. Clicking a deal opens a detail panel with an editable value, expected close date, and a running log of notes/activity you can append to over time. The top of the board shows total pipeline value and total won value, updating live as deals move. Include a simple search across contacts and deals by name or company.",
     icon: Kanban,
     gradient: "from-foreground/[0.09] via-background to-muted",
+  },
+  {
+    id: "support-desk",
+    category: "Business",
+    title: "Support desk",
+    description: "Ticket queue with threads and canned replies",
+    prompt:
+      "A customer support ticket queue. Tickets have a subject, requester name and email, priority (low/medium/high/urgent), status (open/pending/resolved/closed), and an assignee picked from a small fixed team list. The main view is a filterable, sortable ticket list — filter by status, priority, or assignee, and sort by last updated, newest, or priority — with pill stats across the top showing how many tickets are in each status. Clicking a ticket opens a detail panel with the full message thread, a reply box, status/priority/assignee selectors, and a small library of canned/saved replies you can insert into your reply with one click. Include basic seed/demo data — a handful of realistic tickets with existing message threads — so the queue doesn't look empty on first load; mark it clearly as demo data and make it fully editable and deletable, just like anything created from scratch.",
+    icon: Inbox,
+    gradient: "from-foreground/[0.04] via-background to-muted",
+  },
+  {
+    id: "applicant-tracker",
+    category: "Business",
+    title: "Applicant tracker",
+    description: "Hiring pipeline with a kanban board",
+    prompt:
+      "A hiring pipeline (ATS). Candidates have a name, email, the role they applied for, freeform resume notes, and a star rating. A kanban board has columns Applied, Screening, Interview, Offer, Hired, Rejected, with candidate cards draggable between columns to update their stage, and a live count per stage shown at the top of the board. Clicking a candidate opens a detail panel with editable notes and rating, plus a simple activity/notes log you can append timestamped entries to over time. Job postings are a small CRUD-able list of open roles (title, department, open/closed status) that candidates are tagged against, with a filter above the board to view only candidates for one role. Include seed/demo data — a few job postings and a spread of candidates across every stage — so the board doesn't look empty on first load; mark it clearly as demo data and make it fully editable and deletable, just like anything created from scratch.",
+    icon: Briefcase,
+    gradient: "from-foreground/[0.10] via-muted to-background",
   },
   {
     id: "budget-tracker",
