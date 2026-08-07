@@ -211,7 +211,6 @@ function AppWorkspace() {
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const conversationRef = useRef<HTMLDivElement>(null);
-  const autoDeployedRef = useRef<string | null>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -255,28 +254,6 @@ function AppWorkspace() {
   useEffect(() => {
     setPreviewError(null);
   }, [app?.turns?.length]);
-
-  // Auto-deploy straight to a live production URL the moment a brand-new
-  // app finishes its first build, rather than making "Deploy" a manual step
-  // nobody discovers. Only fires once per app, only for the owner (so it
-  // spends the owner's own daily deploy quota, same as a manual click
-  // would), and only for the very first build turn — a refine never
-  // re-triggers it, so redeploying an already-live app stays an explicit
-  // "Redeploy" click. An app that can't be deployed (e.g. a real always-on
-  // server) still just shows the same deploy-error banner a manual click
-  // would have produced.
-  useEffect(() => {
-    if (!app || !user || app.userId !== user.uid) return;
-    if (autoDeployedRef.current === app.id) return;
-    const files = app.generatedCode?.files ?? {};
-    if (Object.keys(files).length === 0) return;
-    const turns = app.turns ?? [];
-    const isFreshBuild = turns.length === 1 && turns[0].kind === "build";
-    if (!isFreshBuild || app.deployedUrl || effectiveDeployStatus(app) === "deploying") return;
-    autoDeployedRef.current = app.id;
-    deployApp();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [app?.id, app?.turns?.length, user?.uid]);
 
   if (loading) {
     return (
