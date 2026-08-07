@@ -205,6 +205,22 @@ function DashboardContent() {
 
   const searching = search.trim().length > 0;
 
+  const liveSlotIndicator = !ownedLoading && (
+    <p className="text-xs text-muted-foreground">
+      {liveSlotCap === null
+        ? `${liveSlotsUsed} live app${liveSlotsUsed === 1 ? "" : "s"}`
+        : `${liveSlotsUsed} of ${liveSlotCap} live app slot${liveSlotCap === 1 ? "" : "s"} used`}
+      {liveSlotCap !== null && liveSlotsUsed >= liveSlotCap && (
+        <>
+          {" — "}
+          <Link href="/billing" className="underline hover:text-foreground">
+            upgrade for more
+          </Link>
+        </>
+      )}
+    </p>
+  );
+
   return (
     <div className="mx-auto max-w-4xl">
       {isHome && (
@@ -215,21 +231,7 @@ function DashboardContent() {
         <p className="mt-2.5 text-sm text-muted-foreground">
           Describe an app and Breezify writes the whole codebase.
         </p>
-        {!ownedLoading && (
-          <p className="mt-1.5 text-xs text-muted-foreground">
-            {liveSlotCap === null
-              ? `${liveSlotsUsed} live app${liveSlotsUsed === 1 ? "" : "s"}`
-              : `${liveSlotsUsed} of ${liveSlotCap} live app slot${liveSlotCap === 1 ? "" : "s"} used`}
-            {liveSlotCap !== null && liveSlotsUsed >= liveSlotCap && (
-              <>
-                {" — "}
-                <Link href="/billing" className="underline hover:text-foreground">
-                  upgrade for more
-                </Link>
-              </>
-            )}
-          </p>
-        )}
+        <div className="mt-1.5">{liveSlotIndicator}</div>
 
         <div className="mx-auto mt-8 max-w-2xl text-left">
           <div className="mb-2 flex justify-end">
@@ -363,12 +365,15 @@ function DashboardContent() {
           </div>
         )}
         <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-base font-medium">
-            {heading}
-            {apps.length > 0 && (
-              <span className="ml-2 text-sm font-normal text-muted-foreground">{apps.length}</span>
-            )}
-          </h2>
+          <div>
+            <h2 className="text-base font-medium">
+              {heading}
+              {apps.length > 0 && (
+                <span className="ml-2 text-sm font-normal text-muted-foreground">{apps.length}</span>
+              )}
+            </h2>
+            {!isHome && <div className="mt-1">{liveSlotIndicator}</div>}
+          </div>
           {isHome && apps.length > 6 && (
             <div className="relative w-full sm:w-64">
               <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
