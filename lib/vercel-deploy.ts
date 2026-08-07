@@ -181,8 +181,28 @@ async function tryCustomAlias(slug: string): Promise<{ alias: string | null; err
     }
 
     if (attached?.verified === false) {
-      const reason =
-        "attached to this project but Vercel still hasn't marked it verified after several tries — a subdomain of an already-verified domain is expected to inherit that instantly, so if it's still unverified after a few minutes, check this project's own Domains tab in Vercel directly rather than DEPLOY_DOMAIN's setup.";
+      // "A subdomain of an already-verified apex inherits verification
+      // instantly" is only true when both the apex (DEPLOY_DOMAIN, verified
+      // on the MAIN Breezify project) and this per-app project live under
+      // the SAME Vercel account/team. If VERCEL_TOKEN (and VERCEL_TEAM_ID,
+      // if it's a team token) authenticates as a different account than
+      // the one DEPLOY_DOMAIN's apex is actually verified on, Vercel
+      // treats every single subdomain attach as a brand-new cross-account
+      // domain claim — it will NEVER auto-verify, no matter how long this
+      // retries, and Vercel's own per-attempt TXT record (in
+      // `attached.verification`, unique to this exact alias+attempt) is
+      // the only way to prove it, one at a time, per app, forever. That's
+      // an account/credentials mismatch to fix once in the Vercel
+      // dashboard, not something a retry loop can paper over — surfacing
+      // the verification record here at least makes each occurrence
+      // actionable instead of a dead end pointing at "check Vercel".
+      const verification = attached.verification as
+        | { type: string; domain: string; value: string }[]
+        | undefined;
+      const verificationText = verification?.length
+        ? ` Vercel wants this record to prove it: ${verification.map((v) => `${v.type} ${v.domain} -> ${v.value}`).join("; ")}. If this keeps happening on every new app, DEPLOY_DOMAIN's apex and this project are very likely verified on two DIFFERENT Vercel accounts/teams — check that VERCEL_TOKEN (and VERCEL_TEAM_ID) belong to the same account ${getDeployDomain()} is actually verified on.`
+        : "";
+      const reason = `attached to this project but Vercel still hasn't marked it verified after several tries — a subdomain of an already-verified domain is expected to inherit that instantly, so if it's still unverified after a few minutes, check this project's own Domains tab in Vercel directly rather than DEPLOY_DOMAIN's setup.${verificationText}`;
       console.warn(`[vercel-deploy] ${alias} attached to ${slug} but not verified:`, attached.verification);
       return { alias: null, error: reason };
     }
