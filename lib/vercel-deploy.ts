@@ -444,6 +444,36 @@ export async function purchaseDomainOnVercel(
   return orderId;
 }
 
+/**
+ * Renews a domain already registered through Vercel — a distinct endpoint
+ * from purchaseDomainOnVercel's buy call above, which is for a domain this
+ * account doesn't yet own. Calling buy again for a domain already owned is
+ * NOT the same operation and isn't guaranteed to behave like a renewal (the
+ * original, unverified assumption app/api/cron/renew-domains made before
+ * this existed). `expectedPrice` must match Vercel's own current price the
+ * same way buy's does; no contact info is needed since the registrant is
+ * already on file. Also asynchronous: returns an order ID to poll via
+ * pollDomainOrder, same as a purchase.
+ */
+export async function renewDomainOnVercel(
+  domain: string,
+  years: number,
+  expectedPrice: number
+): Promise<string> {
+  const res = await vercelFetch(withTeam(`/v1/registrar/domains/${encodeURIComponent(domain)}/renew`), {
+    method: "POST",
+    body: JSON.stringify({ years, expectedPrice }),
+  });
+  if (!res.ok) {
+    throw new Error(res.body?.error?.message || res.body?.message || "Couldn't renew that domain.");
+  }
+  const orderId = res.body.orderId as string | undefined;
+  if (!orderId) {
+    throw new Error("Vercel didn't return an order ID for the renewal.");
+  }
+  return orderId;
+}
+
 export interface DomainOrderStatus {
   status: "draft" | "purchasing" | "completed" | "failed";
   error?: string;

@@ -6,8 +6,7 @@ import {
   getDomainPrice,
   isDeployConfigured,
   pollDomainOrder,
-  purchaseDomainOnVercel,
-  type DomainContact,
+  renewDomainOnVercel,
 } from "@/lib/vercel-deploy";
 import { sendEmail } from "@/lib/email";
 import { markedUpDomainPrice } from "@/lib/types";
@@ -18,13 +17,16 @@ export const maxDuration = 120;
 // *** THIS ROUTE MOVES REAL MONEY. ***
 // Unlike app/api/cron/cleanup (which only touches Breezify's own data),
 // this one charges a customer's saved card off-session, unattended, and
-// only then extends their domain registration. It's fully wired here but
-// deliberately NOT added to vercel.json's crons — exercise it against
-// Stripe test mode (and confirm what purchaseDomainOnVercel actually does
-// when called again for a domain Breezify already owns, since that
-// specific behavior has no live environment here to verify against) before
-// adding:
-//   { "path": "/api/cron/renew-domains", "schedule": "0 3 * * *" }
+// only then extends their domain registration. It now calls Vercel's actual
+// renew-a-domain endpoint (POST /v1/registrar/domains/{domain}/renew) rather
+// than the buy endpoint it originally, incorrectly, reused for renewal —
+// see renewDomainOnVercel's doc comment in lib/vercel-deploy.ts. That fixes
+// the specific correctness concern this comment used to flag, but this
+// still has never run against a real Stripe/Vercel account: watch its first
+// few real firings (Vercel dashboard logs + the console.error lines below)
+// once enabled, since RENEW_WITHIN_MS means it won't attempt anything for
+// any domain bought after this shipped until that domain is genuinely close
+// to expiring.
 
 // Wide enough to comfortably catch a domain before it actually expires even
 // if this doesn't run every single day; narrow enough that it isn't
@@ -98,7 +100,6 @@ async function renewDomains() {
     }
     await docSnap.ref.update({ domainRenewLastAttemptAt: new Date().toISOString() });
 
-    const orderId = data.domainOrderId as string | undefined;
     const userSnap = await db.collection("users").doc(data.userId).get();
     const customerId = userSnap.get("stripeCustomerId") as string | undefined;
 
@@ -119,14 +120,12 @@ async function renewDomains() {
       }
     }
 
-    if (!customerId || !orderId || !paymentMethodId) {
+    if (!customerId || !paymentMethodId) {
       await docSnap.ref.update({ domainAutoRenew: false });
       await notifyOwner(
         data.userId,
         domain,
-        !customerId || !paymentMethodId
-          ? "We couldn't find a saved payment method to renew your domain automatically."
-          : "We couldn't find the original order to renew your domain from."
+        "We couldn't find a saved payment method to renew your domain automatically."
       );
       failed++;
       continue;
@@ -134,10 +133,10 @@ async function renewDomains() {
 
     let paymentIntentId: string | undefined;
     try {
-      const orderSnap = await db.collection("domainOrders").doc(orderId).get();
-      const contact = orderSnap.get("contact") as DomainContact | undefined;
-      if (!contact) throw new Error(`domainOrders/${orderId} has no registrant contact on file.`);
-
+      // Renewing an already-owned domain, so no registrant contact is
+      // needed here (Vercel already has it on file from the original
+      // purchase) — see renewDomainOnVercel's own doc comment in
+      // lib/vercel-deploy.ts for why this is a distinct call from a buy.
       const { purchasePrice, years } = await getDomainPrice(domain, 1);
       const chargePrice = markedUpDomainPrice(purchasePrice);
 
@@ -157,7 +156,7 @@ async function renewDomains() {
       }
 
       try {
-        const vercelOrderId = await purchaseDomainOnVercel(domain, years, purchasePrice, contact, true);
+        const vercelOrderId = await renewDomainOnVercel(domain, years, purchasePrice);
         await pollDomainOrder(vercelOrderId);
       } catch (registrarErr) {
         // A genuine registrar failure means the renewal definitely didn't
