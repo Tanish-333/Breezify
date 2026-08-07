@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { adminAuth, adminDb, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
-import { commit, createWrite, deleteWrite, getDoc, listCollection, updateWrite } from "@/lib/firestore-rest";
+import { commit, deleteWrite, getDoc, listCollection, updateWrite } from "@/lib/firestore-rest";
 import { sendCollaboratorInviteEmail } from "@/lib/email";
 import {
   COLLABORATOR_MIN_PLAN,
@@ -111,14 +111,7 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
       );
     }
 
-    const existing = await listCollection(`apps/${params.appId}/collaborators`, idToken);
     const limit = MAX_COLLABORATORS[plan];
-    if (existing.length >= limit) {
-      return NextResponse.json(
-        { error: `The ${PLANS[plan].name} plan allows up to ${limit} collaborators per app.` },
-        { status: 403 }
-      );
-    }
 
     if (!isFirebaseAdminConfigured()) {
       return NextResponse.json(
@@ -146,13 +139,33 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
     if (invitedUid === uid) {
       return NextResponse.json({ error: "You already own this app." }, { status: 400 });
     }
-    if (existing.some((r) => r.id === invitedUid)) {
-      return NextResponse.json({ error: "They're already a collaborator." }, { status: 409 });
-    }
 
-    await commit(
-      [
-        createWrite(`apps/${params.appId}/collaborators/${invitedUid}`, {
+    // The cap check and the duplicate-invite check used to be a plain read
+    // (listCollection) followed later by a separate write — two concurrent
+    // invites (a double-click, two tabs) could both read the same
+    // under-the-cap count and both pass, landing one over MAX_COLLABORATORS
+    // with nothing anywhere (not firestore.rules either — its `allow
+    // create` only checks ownership/role, never a count) to actually stop
+    // it; the same stale read let two concurrent invites of the same
+    // not-yet-collaborator email both pass the "already a collaborator"
+    // check and both send an invite email. Wrapping the recheck and the
+    // create in one Admin SDK transaction makes both checks atomic against
+    // the actual write, closing both races — whichever request's
+    // transaction commits first wins, and the loser gets a real "already a
+    // collaborator" or "at your cap" error instead of silently succeeding
+    // over the limit.
+    const collabCollection = adminDb().collection(`apps/${params.appId}/collaborators`);
+    const invitedRef = collabCollection.doc(invitedUid);
+    try {
+      await adminDb().runTransaction(async (tx) => {
+        const [countSnap, invitedSnap] = await Promise.all([tx.get(collabCollection), tx.get(invitedRef)]);
+        if (invitedSnap.exists) {
+          throw new Error("ALREADY_COLLABORATOR");
+        }
+        if (countSnap.size >= limit) {
+          throw new Error("OVER_LIMIT");
+        }
+        tx.set(invitedRef, {
           // Duplicated from the doc ID on purpose: a collectionGroup query
           // can't filter by documentId() equality with a bare uid (Firestore
           // requires a full document path there — a 1-segment value throws
@@ -163,10 +176,20 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
           role,
           addedBy: uid,
           addedAt: new Date(),
-        }),
-      ],
-      idToken
-    );
+        });
+      });
+    } catch (err) {
+      if (err instanceof Error && err.message === "ALREADY_COLLABORATOR") {
+        return NextResponse.json({ error: "They're already a collaborator." }, { status: 409 });
+      }
+      if (err instanceof Error && err.message === "OVER_LIMIT") {
+        return NextResponse.json(
+          { error: `The ${PLANS[plan].name} plan allows up to ${limit} collaborators per app.` },
+          { status: 403 }
+        );
+      }
+      throw err;
+    }
 
     // Best-effort, never blocks the invite itself: RESEND_API_KEY may not
     // be configured on this deployment (see lib/email.ts, a no-op in that
@@ -254,6 +277,17 @@ export async function PATCH(req: NextRequest, { params }: { params: { appId: str
     if (!doc) return NextResponse.json({ error: "App not found." }, { status: 404 });
     if (doc.fields.userId !== uid) {
       return NextResponse.json({ error: "Only this app's owner can change a collaborator's role." }, { status: 403 });
+    }
+
+    // Without this, a role change submitted against a collaborator who was
+    // concurrently removed (another tab, or they left) falls straight
+    // through to updateWrite, which firestore.rules rejects for a
+    // nonexistent doc (`resource` is null) — that surfaced as a generic
+    // 500 "Couldn't change that collaborator's role" with no indication of
+    // what actually went wrong.
+    const targetDoc = await getDoc(`apps/${params.appId}/collaborators/${targetUid}`, idToken);
+    if (!targetDoc) {
+      return NextResponse.json({ error: "That person is no longer a collaborator on this app." }, { status: 404 });
     }
 
     await commit(

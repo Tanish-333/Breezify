@@ -33,6 +33,7 @@ export function GithubPushDialog({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [url, setUrl] = useState("");
+  const [note, setNote] = useState("");
 
   useEffect(() => {
     setConnected(hasGithubToken());
@@ -53,6 +54,7 @@ export function GithubPushDialog({
 
   async function push() {
     setError("");
+    setNote("");
     setLoading(true);
     try {
       const user = auth.currentUser;
@@ -72,6 +74,7 @@ export function GithubPushDialog({
         throw new Error(data.error || "Push failed.");
       }
       setUrl(data.url);
+      if (data.note) setNote(data.note);
       onPushed(data.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Push failed.");
@@ -111,6 +114,12 @@ export function GithubPushDialog({
               <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
               <span>Pushed successfully.</span>
             </div>
+            {note && (
+              <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{note}</span>
+              </div>
+            )}
             <a href={url} target="_blank" rel="noreferrer">
               <Button className="w-full">
                 Open repository

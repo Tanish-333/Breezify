@@ -212,11 +212,29 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Persist only the public repo URL.
-    await commit(
-      [updateWrite(`apps/${appId}`, { githubUrl: repoUrlForCleanup }, ["githubUrl"])],
-      idToken
-    );
+    // Persist only the public repo URL. By this point the push has fully
+    // succeeded (the repo, blobs, tree, commit, and branch ref all exist
+    // with the user's real code) — a failure here is purely Breezify's own
+    // bookkeeping, not a failed push, so unlike every step above it must
+    // NOT surface as "Failed to push to GitHub" (that would tell the user
+    // the push failed when a real repo now exists, with no githubUrl on
+    // file to ever discover or resync it — see orphanedRepoNote above for
+    // the same concern at every earlier step). One retry, then degrade to
+    // a success response with a note rather than a false failure.
+    try {
+      await commit([updateWrite(`apps/${appId}`, { githubUrl: repoUrlForCleanup }, ["githubUrl"])], idToken);
+    } catch (err) {
+      try {
+        await commit([updateWrite(`apps/${appId}`, { githubUrl: repoUrlForCleanup }, ["githubUrl"])], idToken);
+      } catch (retryErr) {
+        console.error(`[github push] appId=${appId} pushed to ${repoUrlForCleanup} but failed to save the link:`, retryErr);
+        return NextResponse.json({
+          url: repoUrlForCleanup,
+          files: blobs.length,
+          note: `Pushed successfully, but couldn't save the repo link to this app — the "View repo" and Sync links won't show it yet. The repo itself is real at ${repoUrlForCleanup}; try pushing again to fix the link.`,
+        });
+      }
+    }
 
     return NextResponse.json({ url: repoUrlForCleanup, files: blobs.length });
   } catch (err) {

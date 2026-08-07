@@ -331,19 +331,20 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       // several of this developer's apps), not a real problem to log.
       if (!uid) break;
 
-      // Also moved: a line item's price used to be a directly-expanded
-      // `price` object; it's now nested under `pricing.price_details.price`
-      // (typically a plain id string, not expanded, in a webhook payload).
-      const priceRef = invoice.lines.data[0]?.pricing?.price_details?.price;
-      let priceId = typeof priceRef === "string" ? priceRef : priceRef?.id;
-      // The line item doesn't always carry a resolvable price (e.g. certain
-      // proration/invoice shapes) even though the subscription itself does;
-      // fall back to asking the subscription directly, the same place
-      // customer.subscription.updated below reads it from successfully.
-      if (!priceId && subscriptionId) {
-        const sub = await stripe.subscriptions.retrieve(subscriptionId);
-        priceId = sub.items.data[0]?.price?.id;
-      }
+      // Deliberately read the plan off the SUBSCRIPTION's current price,
+      // not the invoice's own line items. This used to read
+      // invoice.lines.data[0]'s price first: on a plan-change invoice,
+      // Stripe orders the proration "unused time" credit line for the OLD
+      // price before the new plan's charge line, so lines.data[0] can
+      // resolve to a valid but WRONG (old) price — and if this invoice.paid
+      // event is processed after customer.subscription.updated already set
+      // the correct new plan (Stripe doesn't guarantee event delivery
+      // order), this would silently revert a successful upgrade back to
+      // the old plan/credit amount right after it went through. A
+      // subscription only ever has one true current plan regardless of
+      // what its invoice's line items look like, so that's the only
+      // trustworthy source here.
+      const priceId = subscriptionId ? (await stripe.subscriptions.retrieve(subscriptionId)).items.data[0]?.price?.id : undefined;
       const plan = priceId ? planForPriceId(priceId) : undefined;
       if (plan) {
         await setPlan(uid, plan, customerId ?? undefined);
@@ -356,8 +357,17 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       break;
     }
 
-    // Fires when a subscription's price changes (e.g. the user switched
-    // plans in the billing portal), separately from renewals.
+    // Fires on ANY change to a subscription object — a real plan change
+    // (the user switched plans in the billing portal) is only one of many
+    // triggers; a coupon/discount applied or removed, pause_collection
+    // toggled, or even an unrelated metadata edit in the Stripe Dashboard
+    // all fire this exact same event with the exact same price on the
+    // subscription. setPlan() always resets credits to the plan's full
+    // allotment (that's correct for a genuine upgrade/downgrade or
+    // invoice.paid's monthly refill), so calling it unconditionally here
+    // used to silently top a subscriber's credits back up to full on any
+    // no-op subscription edit, mid-cycle, for free. Only call it when the
+    // resolved plan actually differs from what's on file — a real change.
     case "customer.subscription.updated": {
       const subscription = event.data.object as Stripe.Subscription;
       const customerId =
@@ -372,7 +382,10 @@ async function handleEvent(stripe: Stripe, event: Stripe.Event) {
       // A pending cancellation still has full access until the period
       // actually ends; customer.subscription.deleted handles that transition.
       if (uid && plan && !subscription.cancel_at_period_end) {
-        await setPlan(uid, plan, customerId);
+        const currentPlan = (await adminDb().collection("users").doc(uid).get()).data()?.plan;
+        if (currentPlan !== plan) {
+          await setPlan(uid, plan, customerId);
+        }
       }
       break;
     }
