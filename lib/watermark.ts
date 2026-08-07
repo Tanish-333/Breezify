@@ -25,7 +25,7 @@ export function watermarkSnippet(appUrl: string) {
 }
 
 function appUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
+  return process.env.NEXT_PUBLIC_APP_URL || "https://breezify.dev";
 }
 
 /**

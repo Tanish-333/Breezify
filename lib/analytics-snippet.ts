@@ -13,7 +13,7 @@
 const SNIPPET_ID = "breezify-analytics";
 
 function appUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
+  return process.env.NEXT_PUBLIC_APP_URL || "https://breezify.dev";
 }
 
 export function analyticsSnippet(appId: string) {

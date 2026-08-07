@@ -2,7 +2,7 @@ import type { PlanId } from "@/lib/types";
 import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
 
 function appBaseUrl() {
-  return process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
+  return process.env.NEXT_PUBLIC_APP_URL || "https://breezify.dev";
 }
 
 function backendDataApiBlock(appId: string) {
@@ -24,6 +24,16 @@ FRONTEND REQUIREMENTS:
 - package.json must include a working \`"build": "vite build"\` script and the actual "vite" and "@vitejs/plugin-react" devDependencies, so the project builds for production, not just \`npm run dev\`.
 - Must run immediately after \`npm install && npm run dev\`.
 - Prefer a small number of well-organized files over many tiny ones.
+
+DESIGN QUALITY: every app must look like a real, professionally designed product, never a rough or default-styled prototype. This is not optional polish, it's part of "production-ready":
+- Typography: import one Google Font suited to the app's tone (e.g. Inter or Manrope for a clean product feel, or a distinct display font for something playful) via a \`<link>\` tag in \`index.html\`, and set it as the base font in Tailwind. Establish a clear type scale — one dominant heading size, one body size, muted/secondary text at a smaller size and softer color — rather than every piece of text at the same weight and size.
+- Color: pick ONE restrained palette that fits the app's purpose (a neutral base of 2-3 grays plus a single accent color used deliberately for primary actions and key state, not sprinkled everywhere). Avoid default Tailwind blue-500/red-500 "unstyled" combinations and avoid using more than one accent hue. Support comfortable light-mode contrast at minimum.
+- Spacing & layout: use a consistent spacing rhythm (Tailwind's default scale is fine, just be consistent), generous whitespace, aligned grids, and a real layout structure (header/nav, content area, not everything crammed in one unstyled column). Constrain content width on large screens instead of letting it stretch edge to edge.
+- Components: give buttons, inputs, and cards real states — hover, focus-visible, active, disabled — and consistent rounded corners/border treatment across the app. Use subtle borders or shadows (not both heavily) to separate surfaces. Icons should come from \`lucide-react\` (add it as a real dependency), used consistently in size and stroke width, never emoji as UI chrome.
+- Every screen needs a real empty state (first-run, nothing added yet), a loading state for anything async, and an error state — each with actual copy and styling, never a bare "undefined" or blank screen.
+- Responsive down to a phone-width viewport: no horizontal overflow, touch-sized tap targets, and navigation that adapts (e.g. collapses) rather than just shrinking.
+- Motion should be restrained and purposeful (short transitions on hover/state changes), never required for the app to be usable.
+The bar is: this should look like something a design-conscious startup shipped, not a scaffold waiting to be styled.
 
 WHEN TO ADD A BACKEND (api/ folder): only reach for it when the request genuinely needs server-side logic the browser can't safely or correctly do itself — calling a third-party API with a secret that must never reach the client, doing a privileged operation, or coordinating something across users that Breezify's own data API (below) doesn't already cover. Most apps (todo lists, games, calculators, dashboards over the data API) need NO backend at all; don't add one just because it's available.
 

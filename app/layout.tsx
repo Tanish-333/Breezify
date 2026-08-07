@@ -12,7 +12,7 @@ const inter = Inter({ subsets: ["latin"], variable: "--font-inter" });
 // prerendering so builds don't require Firebase env vars to be present.
 export const dynamic = "force-dynamic";
 
-const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://breezify.dev";
 const TITLE = "Breezify: Build and ship apps with AI";
 const DESCRIPTION =
   "Breezify turns a plain-English prompt into a production-ready app, deployed in seconds. No code required.";

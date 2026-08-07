@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 
-const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://breezify.vercel.app";
+const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://breezify.dev";
 
 export default function sitemap(): MetadataRoute.Sitemap {
   const routes = ["", "/login", "/signup", "/terms", "/privacy"];
