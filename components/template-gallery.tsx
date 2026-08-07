@@ -29,7 +29,7 @@ const TEMPLATES: Template[] = [
     title: "Habit tracker",
     description: "Daily streaks and a calendar heatmap",
     prompt:
-      "A habit tracker with a list of daily habits, streak counts, and a calendar heatmap showing completion history for the last 3 months.",
+      "A habit tracker, styled like a calm, focused productivity tool (soft neutral background, one confident accent color for completed states). Left column: a list of habits, each as a card showing its name, current streak with a small flame/streak icon, and a one-tap toggle to mark today done. Right column: a GitHub-style calendar heatmap of the last 3 months per selected habit, with intensity shading by completion, plus a stats row (current streak, longest streak, completion rate). Include an 'Add habit' flow with a name and color picker, a real empty state for a brand-new account with zero habits, and smooth micro-animations when a habit is checked off.",
     icon: CalendarCheck,
   },
   {
@@ -37,7 +37,7 @@ const TEMPLATES: Template[] = [
     title: "Markdown notes",
     description: "Tags, folders, and full-text search",
     prompt:
-      "A markdown notes app with a sidebar of notes, tags, folders, live markdown preview, and full-text search across all notes.",
+      "A markdown notes app styled like a polished writing tool (generous whitespace, a serif or editorial font for the note content, sans-serif UI chrome). Left sidebar: collapsible folder tree, tag filter pills, and a search box that does live full-text search across all notes as you type. Main area: a split view with a markdown editor on one side and a live-rendered preview on the other (or a toggle on mobile). Top bar: note title, last-edited timestamp, folder/tag assignment. Include a real empty state for a new user, smooth transitions when switching notes, and keyboard shortcut hints (Cmd/Ctrl+N for new note, Cmd/Ctrl+F for search).",
     icon: NotebookPen,
   },
   {
@@ -45,7 +45,7 @@ const TEMPLATES: Template[] = [
     title: "Invoice generator",
     description: "Client list, line items, printable export",
     prompt:
-      "An invoice generator with a client list, line items with quantity and price, automatic totals and tax, and a printable/PDF-style invoice preview.",
+      "An invoice generator styled like real business software (clean, trustworthy, lots of whitespace, one accent color, tabular numbers for money). Left: a client list with name, email, and outstanding balance. Main: an invoice builder — client picker, line items table (description, quantity, unit price, computed line total) with add/remove rows, automatic subtotal/tax/total calculation, due date, and invoice number. Include a distinct print-optimized invoice preview (looks like an actual printable/PDF invoice, not the editor UI) reachable via a 'Preview' action, plus a status badge (Draft/Sent/Paid) and an empty state before any clients exist.",
     icon: Receipt,
   },
   {
@@ -53,7 +53,7 @@ const TEMPLATES: Template[] = [
     title: "Team standup board",
     description: "Async check-ins by day",
     prompt:
-      "A team standup board where teammates post async daily check-ins (yesterday/today/blockers), grouped by day, with a simple team member list.",
+      "An async team standup board styled like a clean internal tool (neutral palette, one accent color for the current day, avatar initials as colored circles). A day selector across the top (defaulting to today) with a simple team member list in a sidebar. Main area: each teammate's check-in as a card with three clearly labeled sections — Yesterday, Today, Blockers — editable inline, with blockers visually flagged (e.g. a warning-colored left border) when present. Include a 'Post check-in' flow, a real empty state for days with no check-ins yet, and a way to browse previous days.",
     icon: Users,
   },
   {
@@ -61,7 +61,7 @@ const TEMPLATES: Template[] = [
     title: "Mini CRM",
     description: "Contacts and a deal pipeline",
     prompt:
-      "A simple CRM with a contacts list and a kanban-style deal pipeline (Lead, Contacted, Proposal, Won, Lost) that deals can be dragged between.",
+      "A mini CRM styled like a modern sales tool (crisp neutral UI, one accent color for money/won states). Contacts view: a searchable, sortable table with name, company, email, and last-contacted date, opening a detail panel per contact. Pipeline view: a kanban board with columns for Lead, Contacted, Proposal, Won, Lost, each deal as a draggable card showing deal name, value, and contact; dragging between columns updates status with a smooth animation, and each column shows a running total value. Include empty states for a fresh pipeline, an 'Add deal'/'Add contact' flow, and a small dashboard header summarizing total pipeline value and deal count.",
     icon: Kanban,
   },
   {
@@ -69,7 +69,7 @@ const TEMPLATES: Template[] = [
     title: "Budget tracker",
     description: "Categories and monthly spend charts",
     prompt:
-      "A personal budget tracker with categorized income/expense entries, a monthly summary, and a chart breaking down spend by category.",
+      "A personal budget tracker styled like a calm personal-finance app (soft neutral background, restrained accent color, tabular numbers, no clutter). Top: a monthly summary card showing total income, total expenses, and net, with a month switcher. Middle: a donut or bar chart breaking down expenses by category with a matching color-coded legend. Bottom: a categorized, filterable transaction list (date, description, category tag, amount, income shown in a distinct color from expenses) with an 'Add transaction' form. Include a real empty state for a brand-new month with nothing logged yet.",
     icon: Wallet,
   },
   {
@@ -77,7 +77,7 @@ const TEMPLATES: Template[] = [
     title: "Recipe box",
     description: "Searchable recipes with tags",
     prompt:
-      "A recipe box app for saving recipes with ingredients, steps, tags (cuisine, diet), and a search/filter bar across all saved recipes.",
+      "A recipe box app styled like a warm, editorial cooking site (inviting typography, generous image/placeholder space, soft rounded cards). A responsive grid of recipe cards (title, cuisine/diet tags as pills, prep time) with a search bar and tag filters up top. Recipe detail view: ingredients list with checkable items, numbered step-by-step instructions, and tag/cuisine badges. Include an 'Add recipe' form (ingredients as a repeatable list, steps as a repeatable list, tag picker), a real empty state before any recipes are saved, and a pleasant hover state on recipe cards.",
     icon: BookOpen,
   },
   {
@@ -85,7 +85,7 @@ const TEMPLATES: Template[] = [
     title: "Trivia quiz",
     description: "Timed questions with a score screen",
     prompt:
-      "A trivia quiz game with multiple-choice questions, a countdown timer per question, running score, and a final results screen.",
+      "A trivia quiz game styled like a fun, energetic game show (bold accent color, playful but clean typography, satisfying transitions). Start screen with a category/difficulty pick and a 'Start' call to action. Question screen: the question, four answer options as large tappable cards, a visible countdown timer bar that drains over the question's time limit, and immediate color feedback (correct/incorrect) before advancing. Running score visible throughout. Final results screen: final score, an accuracy stat, and a 'Play again' action, with a small celebratory animation for a high score.",
     icon: Gamepad2,
   },
   {
@@ -93,7 +93,7 @@ const TEMPLATES: Template[] = [
     title: "Pomodoro timer",
     description: "Focus sessions with history",
     prompt:
-      "A pomodoro timer with configurable focus/break lengths, a running session, sound on completion, and a history log of past sessions.",
+      "A pomodoro focus timer styled like a minimal, distraction-free tool (large centered typography, one calm accent color, huge readable countdown). Center stage: a large circular or bar progress ring showing time remaining in the current focus/break session, with clear play/pause/reset controls. Settings panel to configure focus length, short break, and long break durations, and toggle a completion sound. A session history log below (or in a side panel) listing completed sessions by date/time with total focused time for today. Smooth visual/color transition when switching between focus and break modes.",
     icon: Timer,
   },
 ];
