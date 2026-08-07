@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import * as Sentry from "@sentry/nextjs";
 import { commit, createWrite } from "@/lib/firestore-rest";
 import { rateLimit } from "@/lib/rate-limit";
 import { randomUUID } from "crypto";
@@ -48,10 +49,23 @@ async function handler(req: NextRequest) {
     // Store in Firestore for debugging
     await commit([createWrite(`client-errors/${errorId}`, errorData)]);
 
-    // In production, also send to external error tracking service
-    if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
-      // Would send to Sentry here
-    }
+    // Also forward to Sentry (no-op if NEXT_PUBLIC_SENTRY_DSN isn't set —
+    // see sentry.server.config.ts) so a real error surfaces as an alert
+    // instead of only ever being visible to someone who goes looking in
+    // this Firestore collection.
+    Sentry.withScope((scope) => {
+      scope.setLevel(errorData.level === "warning" ? "warning" : "error");
+      scope.setContext("client-error-report", {
+        errorId,
+        url: errorData.url,
+        userAgent: errorData.userAgent,
+        extra: safeContext,
+      });
+      if (errorData.stack) {
+        scope.setExtra("originalStack", errorData.stack);
+      }
+      Sentry.captureMessage(errorData.message);
+    });
 
     return NextResponse.json(
       { id: errorId, status: "logged" },

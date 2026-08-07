@@ -1,5 +1,6 @@
 import { randomUUID } from "crypto";
 import { NextRequest } from "next/server";
+import { rateLimit } from "@/lib/rate-limit";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, createWrite, getDoc, incrementWrite, updateWrite } from "@/lib/firestore-rest";
 import { getOrCreateUserDoc } from "@/lib/ensure-user-doc-server";
@@ -75,7 +76,7 @@ async function releaseRefineLock(appId: string, previousStatus: string | undefin
   );
 }
 
-export async function POST(req: NextRequest) {
+async function handler(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? "";
   const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
   if (!idToken) return errorStream("Missing authorization token.");
@@ -485,3 +486,11 @@ export async function POST(req: NextRequest) {
 
   return new Response(stream, { headers: SSE_HEADERS });
 }
+
+// A real generation call costs actual AI-provider tokens on top of the
+// credit charge — the credit balance caps total spend per account, but
+// nothing capped how fast a single account (or a leaked token) could burn
+// through it, or hammer this 300s-max-duration route in a burst. Same
+// per-IP guard as the lighter ingestion endpoints, just tuned down for how
+// expensive each call actually is.
+export const POST = rateLimit(20, 5 * 60_000)(handler);

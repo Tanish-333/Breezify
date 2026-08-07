@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { rateLimit } from "@/lib/rate-limit";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, getDoc, incrementWrite, listCollection, updateWrite } from "@/lib/firestore-rest";
 import { hasEditAccess } from "@/lib/app-collaborators";
@@ -25,7 +26,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 export const runtime = "nodejs";
 export const maxDuration = 180;
 
-export async function POST(req: NextRequest) {
+async function handler(req: NextRequest) {
   try {
     const authHeader = req.headers.get("authorization") ?? "";
     const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -309,3 +310,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+// Each call hits the Vercel API to spin up a real deployment — already
+// gated by DEPLOY_DAILY_LIMIT per app, but nothing previously capped how
+// fast a single caller could burn through that across many apps or retries.
+export const POST = rateLimit(15, 5 * 60_000)(handler);

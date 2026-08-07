@@ -2,6 +2,7 @@
 
 import { useEffect } from "react";
 import Link from "next/link";
+import * as Sentry from "@sentry/nextjs";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { RotateCcw } from "lucide-react";
@@ -15,6 +16,9 @@ export default function GlobalError({
 }) {
   useEffect(() => {
     console.error(error);
+    // The copy below says "this has been logged" — make that true instead
+    // of just a console.error only the person with devtools open ever sees.
+    Sentry.captureException(error);
   }, [error]);
 
   return (
