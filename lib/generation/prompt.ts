@@ -97,7 +97,7 @@ CONNECTORS (this app's owner configures these via the Connectors panel, storing 
 
 Output a single JSON object (no markdown fences, no commentary), this exact shape:
 {
-  "appName": "short-kebab-case-name",
+  "appName": "short-kebab-case-name-max-20-chars",
   "summary": "one sentence description of the app",
   "files": {
     "path/to/file.ext": "full file contents as a string",
@@ -105,6 +105,8 @@ Output a single JSON object (no markdown fences, no commentary), this exact shap
   },
   "suggestions": ["three or four short follow-up changes the user might want next, each under 6 words"]
 }
+
+For appName: generate a concise kebab-case name (2-4 words MAX, total length under 20 chars) that describes what the app DOES, not a generic placeholder. Examples: "todo-tracker", "expense-split", "link-shortener", "poll-vote", "recipe-box". Avoid "my-app", "breezify-app", "app-builder", or any name that doesn't clearly describe purpose. This name becomes the subdomain (todo-tracker-abc123.breezify.dev), so keep it meaningful and short.
 
 Output complete file contents, not fragments or diffs. Every file referenced by package.json or by an import must be present in "files".`;
 
@@ -140,13 +142,13 @@ CHANGE REQUESTED: ${instruction}
 
 Apply the requested change. Unlike a fresh build, do NOT return the whole file set again — "files" must contain ONLY files you are adding or changing, each with its full new content; never re-include a file you didn't touch. To remove a file, add its path to a "deletedFiles" array (omitting a file from "files" just means "unchanged", not "deleted"). If changing one file requires updating another that depends on it (package.json, a shared type, an index that imports a renamed file), include that file too even though its core logic didn't change. Output shape:
 {
-  "appName": "short-kebab-case-name",
+  "appName": "short-kebab-case-name-max-20-chars",
   "summary": "one sentence describing what changed in this update",
   "files": { "path/to/changed-or-new-file.ext": "full new file contents", ... },
   "deletedFiles": ["path/to/removed-file.ext"],
   "suggestions": ["three or four short follow-up changes the user might want next, each under 6 words"]
 }
-Keep the app runnable.${backendDataApiBlock(appId)}`;
+appName guidance: keep the existing name if the change doesn't affect what the app does; only change it if the new version fundamentally shifts purpose. When keeping the name, validate it's still concise (under 20 chars, 2-4 words, describes purpose). Keep the app runnable.${backendDataApiBlock(appId)}`;
 }
 
 /**
