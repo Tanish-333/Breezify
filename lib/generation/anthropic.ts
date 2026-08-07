@@ -64,6 +64,18 @@ export async function generateWithAnthropic(
     throw new Error("Claude declined to build this app. Try rephrasing your request.");
   }
 
+  // A response cut off by the max_tokens budget can still be syntactically
+  // valid-looking JSON up to wherever it stopped (e.g. it closes mid-file
+  // right after a complete-looking brace), so parseGenerationJSON's own
+  // try/catch isn't a reliable way to catch this — it can silently succeed
+  // with files missing or truncated instead of throwing. stop_reason is the
+  // API telling us directly that it ran out of room, which is unambiguous.
+  if (message.stop_reason === "max_tokens") {
+    throw new Error(
+      "The generation ran out of room before it finished (too much code for one response). Try a smaller request, split it into a follow-up refine, or switch to a model with more output headroom."
+    );
+  }
+
   if (!raw) {
     const textBlock = message.content.find((b) => b.type === "text");
     raw = textBlock && "text" in textBlock ? textBlock.text : "";

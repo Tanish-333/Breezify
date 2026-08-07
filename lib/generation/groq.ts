@@ -59,6 +59,7 @@ export async function generateWithGroq(
   let raw = "";
   let inputTokens = 0;
   let outputTokens = 0;
+  let finishReason: string | null = null;
 
   while (true) {
     const { done, value } = await reader.read();
@@ -78,11 +79,13 @@ export async function generateWithGroq(
       } catch {
         continue;
       }
-      const delta = chunk.choices?.[0]?.delta?.content;
+      const choice = chunk.choices?.[0];
+      const delta = choice?.delta?.content;
       if (delta) {
         raw += delta;
         onProgress?.({ chars: raw.length, files: detectFiles(raw) });
       }
+      if (choice?.finish_reason) finishReason = choice.finish_reason;
       // Groq includes usage on the final streamed chunk under x_groq.usage,
       // falling back to a plain "usage" key to match the OpenAI shape.
       const usage = chunk.x_groq?.usage ?? chunk.usage;
@@ -95,6 +98,17 @@ export async function generateWithGroq(
 
   if (!raw.trim()) {
     throw new Error("Groq returned an empty response. Please try again.");
+  }
+
+  // A response cut off by the max_tokens budget can still look like
+  // syntactically valid JSON up to wherever it stopped, so relying on
+  // JSON.parse to fail downstream isn't reliable — it can silently succeed
+  // with files missing or truncated instead. finish_reason "length" is the
+  // API telling us directly that it ran out of room.
+  if (finishReason === "length") {
+    throw new Error(
+      "The generation ran out of room before it finished (too much code for one response). Try a smaller request, split it into a follow-up refine, or switch to a model with more output headroom."
+    );
   }
 
   const pricing = PRICE_PER_MTOK[apiModel] ?? { input: 0.5, output: 0.8 };

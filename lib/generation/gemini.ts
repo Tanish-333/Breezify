@@ -55,6 +55,7 @@ export async function generateWithGemini(
   let raw = "";
   let inputTokens = 0;
   let outputTokens = 0;
+  let finishReason: string | undefined;
 
   for await (const chunk of stream) {
     const text = chunk.text;
@@ -62,6 +63,8 @@ export async function generateWithGemini(
       raw += text;
       onProgress?.({ chars: raw.length, files: detectFiles(raw) });
     }
+    const reason = chunk.candidates?.[0]?.finishReason;
+    if (reason) finishReason = reason;
     // Usage arrives on the final chunks; keep the latest non-zero values.
     const usage = chunk.usageMetadata;
     if (usage) {
@@ -72,6 +75,17 @@ export async function generateWithGemini(
 
   if (!raw.trim()) {
     throw new Error("Gemini returned an empty response. Please try again.");
+  }
+
+  // A response cut off by the max_tokens budget can still look like
+  // syntactically valid JSON up to wherever it stopped, so relying on
+  // JSON.parse to fail downstream isn't reliable — it can silently succeed
+  // with files missing or truncated instead. finishReason "MAX_TOKENS" is
+  // the API telling us directly that it ran out of room.
+  if (finishReason === "MAX_TOKENS") {
+    throw new Error(
+      "The generation ran out of room before it finished (too much code for one response). Try a smaller request, split it into a follow-up refine, or switch to a model with more output headroom."
+    );
   }
 
   const pricing = PRICE_PER_MTOK[apiModel] ?? { input: 1.25, output: 10.0 };
