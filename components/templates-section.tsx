@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { duplicateTemplateRequest } from "@/lib/api-client";
 import { TemplatePreviewDialog } from "@/components/template-preview-dialog";
+import { TEMPLATE_COVERS } from "@/components/template-covers";
 import { FEATURED_TEMPLATES, TEMPLATE_CATEGORIES, TEMPLATES, type AppTemplate } from "@/lib/templates";
 import { DUPLICATE_MIN_PLAN, PLAN_RANK, type PlanId } from "@/lib/types";
 import { ArrowRight, Lock } from "lucide-react";
@@ -26,7 +27,7 @@ function TemplateCard({
   canDuplicate: boolean;
   onOpen: () => void;
 }) {
-  const Icon = template.icon;
+  const Cover = TEMPLATE_COVERS[template.id];
 
   return (
     <button
@@ -36,11 +37,11 @@ function TemplateCard({
     >
       <div
         className={cn(
-          "flex h-20 items-center justify-center rounded-t-lg bg-gradient-to-br",
+          "h-20 overflow-hidden rounded-t-lg bg-gradient-to-br",
           template.gradient
         )}
       >
-        <Icon className="h-7 w-7 text-foreground/70" strokeWidth={1.25} />
+        {Cover && <Cover className="h-full w-full" />}
       </div>
       {!canDuplicate && (
         <Lock className="absolute right-2 top-2 h-3.5 w-3.5 rounded-full bg-background/80 p-0.5 text-muted-foreground" />
