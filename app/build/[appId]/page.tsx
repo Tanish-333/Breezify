@@ -210,6 +210,7 @@ function AppWorkspace() {
   const [pane, setPane] = useState<Pane>("preview");
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [urlCopied, setUrlCopied] = useState(false);
   const conversationRef = useRef<HTMLDivElement>(null);
   const moreMenuRef = useRef<HTMLDivElement>(null);
 
@@ -340,6 +341,20 @@ function AppWorkspace() {
       setError("Couldn't rename this app.");
     }
     setRenaming(false);
+  }
+
+  async function copyDeployedUrl() {
+    if (!app?.deployedUrl) return;
+    try {
+      await navigator.clipboard.writeText(app.deployedUrl);
+      setUrlCopied(true);
+      setTimeout(() => setUrlCopied(false), 1500);
+    } catch {
+      // Clipboard access can be denied (permissions, insecure context) —
+      // the "Live" link right next to this still works either way, so a
+      // silent no-op here is fine rather than surfacing a whole error UI
+      // for a copy-to-clipboard convenience button.
+    }
   }
 
   async function deployApp() {
@@ -525,13 +540,23 @@ function AppWorkspace() {
             </Button>
           )}
           {hasFiles && app.deployedUrl && (
-            <a href={app.deployedUrl} target="_blank" rel="noreferrer">
-              <Button variant="ghost" size="sm">
-                <Rocket className="h-4 w-4" />
-                <span className="hidden sm:inline">Live</span>
-                <ExternalLink className="h-3 w-3" />
+            <>
+              <a href={app.deployedUrl} target="_blank" rel="noreferrer">
+                <Button variant="ghost" size="sm">
+                  <Rocket className="h-4 w-4" />
+                  <span className="hidden sm:inline">Live</span>
+                  <ExternalLink className="h-3 w-3" />
+                </Button>
+              </a>
+              <Button
+                variant="ghost"
+                size="sm"
+                title="Copy the live URL"
+                onClick={copyDeployedUrl}
+              >
+                {urlCopied ? <Check className="h-4 w-4 text-success" /> : <Copy className="h-4 w-4" />}
               </Button>
-            </a>
+            </>
           )}
 
           {hasFiles && canEdit && (

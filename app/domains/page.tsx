@@ -60,7 +60,18 @@ function DeployedRow({ app, onManage }: { app: FeatherApp; onManage: () => void 
           </Link>
           {app.customDomain ? (
             <div className="mt-1 flex flex-wrap items-center gap-2">
-              <span className="truncate font-mono text-xs text-muted-foreground">{app.customDomain}</span>
+              {app.customDomainVerified ? (
+                <a
+                  href={`https://${app.customDomain}`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="truncate font-mono text-xs text-muted-foreground hover:text-foreground hover:underline"
+                >
+                  {app.customDomain}
+                </a>
+              ) : (
+                <span className="truncate font-mono text-xs text-muted-foreground">{app.customDomain}</span>
+              )}
               {app.customDomainVerified ? (
                 <span className="flex shrink-0 items-center gap-1 text-[11px] text-success">
                   <CheckCircle2 className="h-3 w-3" />
@@ -80,10 +91,15 @@ function DeployedRow({ app, onManage }: { app: FeatherApp; onManage: () => void 
                 </span>
               )}
             </div>
-          ) : (
+          ) : fallbackHost ? (
             <p className="mt-1 truncate text-xs text-muted-foreground">
-              {fallbackHost ? `No custom domain — live at ${fallbackHost}` : "No custom domain"}
+              No custom domain — live at{" "}
+              <a href={app.deployedUrl} target="_blank" rel="noreferrer" className="hover:text-foreground hover:underline">
+                {fallbackHost}
+              </a>
             </p>
+          ) : (
+            <p className="mt-1 truncate text-xs text-muted-foreground">No custom domain</p>
           )}
         </div>
         <Button variant="secondary" size="sm" className="shrink-0" onClick={onManage}>
