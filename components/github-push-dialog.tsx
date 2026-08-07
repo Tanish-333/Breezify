@@ -27,7 +27,7 @@ export function GithubPushDialog({
   const [connecting, setConnecting] = useState(false);
   const [name, setName] = useState(
     defaultName.toLowerCase().replace(/[^a-z0-9._-]+/g, "-").replace(/^-+|-+$/g, "") ||
-      "feather-app"
+      "breezify-app"
   );
   const [isPrivate, setIsPrivate] = useState(true);
   const [loading, setLoading] = useState(false);

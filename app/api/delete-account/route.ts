@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { commit, deleteWrite, getDoc, listCollection, queryCollection, type FirestoreWrite } from "@/lib/firestore-rest";
+import {
+  commit,
+  deleteWrite,
+  getDoc,
+  listCollection,
+  queryCollection,
+  queryCollectionGroup,
+  type FirestoreWrite,
+} from "@/lib/firestore-rest";
 import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 
@@ -157,10 +165,38 @@ export async function POST(req: NextRequest) {
       )
     ).flat();
 
+    // This account may also be a COLLABORATOR on apps it doesn't own — those
+    // apps/{appId}/collaborators/{uid} docs live under someone else's app
+    // and aren't touched by anything above (which only ever looks at apps
+    // this uid owns). Without this, "delete your account permanently" left
+    // this uid's email/uid listed on every app it was ever invited to
+    // forever: a permanent ghost entry nobody can reclaim except the app
+    // owner manually noticing and removing it, and this account's data
+    // wasn't actually fully purged despite what deletion promised.
+    // firestore.rules' collaborators/{collabUid} read/delete rule already
+    // allows the collaborator to act on their own entry (isOwner(collabUid))
+    // regardless of which app it's nested under, which is what makes this
+    // collection-group query/delete valid under the caller's own idToken.
+    let ownCollaboratorEntries: { path: string }[] = [];
+    try {
+      const allEntries = await queryCollectionGroup("collaborators", "uid", uid, idToken);
+      // Entries on apps this uid itself owns are already covered by
+      // subcollectionWrites above (deleted alongside the whole app) — only
+      // entries on someone ELSE's app are new here.
+      const ownAppIds = new Set(apps.map((a) => a.id));
+      ownCollaboratorEntries = allEntries.filter((e) => {
+        const appId = e.path.split("/")[1];
+        return !ownAppIds.has(appId);
+      });
+    } catch (err) {
+      console.error(`[delete-account] uid=${uid} failed to look up collaborator entries on other apps:`, err);
+    }
+
     const writes: FirestoreWrite[] = [
       ...subcollectionWrites,
       ...apps.map((a) => deleteWrite(`apps/${a.id}`)),
       ...transactions.map((t) => deleteWrite(`transactions/${t.id}`)),
+      ...ownCollaboratorEntries.map((e) => deleteWrite(e.path)),
       deleteWrite(`users/${uid}`),
     ];
     if (writes.length > 0) {

@@ -1,15 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { adminAuth } from "@/lib/firebase-admin";
-import { commit, createWrite, deleteWrite, getDoc, listCollection } from "@/lib/firestore-rest";
+import { adminAuth, adminDb, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
+import { commit, createWrite, deleteWrite, getDoc, listCollection, updateWrite } from "@/lib/firestore-rest";
 import { sendCollaboratorInviteEmail } from "@/lib/email";
-import { COLLABORATOR_MIN_PLAN, MAX_COLLABORATORS, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
+import {
+  COLLABORATOR_MIN_PLAN,
+  isCollaboratorRole,
+  MAX_COLLABORATORS,
+  PLAN_RANK,
+  PLANS,
+  type PlanId,
+} from "@/lib/types";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
 export const runtime = "nodejs";
-
-function appUrl(req: NextRequest) {
-  return process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
-}
 
 async function authenticate(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? "";
@@ -38,13 +42,31 @@ export async function GET(req: NextRequest, { params }: { params: { appId: strin
     // so a caller unrelated to this app is rejected right here.
     const doc = await getDoc(`apps/${params.appId}`, idToken);
     if (!doc) return NextResponse.json({ error: "App not found." }, { status: 404 });
+    const ownerUid = doc.fields.userId as string;
+
+    // Best-effort — the roster is still useful without it (just an unlabeled
+    // owner row client-side), and this is display-only, never used for any
+    // access decision.
+    let ownerEmail: string | undefined;
+    if (isFirebaseAdminConfigured()) {
+      try {
+        ownerEmail = (await adminAuth().getUser(ownerUid)).email ?? undefined;
+      } catch {
+        // Ignore — see above.
+      }
+    }
 
     const rows = await listCollection(`apps/${params.appId}/collaborators`, idToken);
     return NextResponse.json({
-      ownerUid: doc.fields.userId,
+      ownerUid,
+      ownerEmail,
       collaborators: rows.map((r) => ({
         uid: r.id,
         email: r.fields.email as string,
+        // A role-less doc predates this feature — same back-compat default
+        // as lib/app-collaborators.ts's hasEditAccess and firestore.rules'
+        // isAppEditor: treat it as "editor", not as broken/unknown.
+        role: isCollaboratorRole(r.fields.role) ? r.fields.role : "editor",
         addedAt: r.fields.addedAt,
       })),
     });
@@ -61,10 +83,17 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
     if (auth.error) return auth.error;
     const { uid, idToken } = auth;
 
-    const { email } = await req.json();
+    const { email, role: rawRole } = await req.json();
     const trimmedEmail = typeof email === "string" ? email.trim().toLowerCase() : "";
     if (!trimmedEmail) {
       return NextResponse.json({ error: "Enter an email address." }, { status: 400 });
+    }
+    // Defaults to "editor" — the only behavior that existed before roles,
+    // and the more likely intent when you're specifically inviting someone
+    // to help build, vs. just show off progress (that's what "Viewer" is for).
+    const role = rawRole === undefined ? "editor" : rawRole;
+    if (!isCollaboratorRole(role)) {
+      return NextResponse.json({ error: "Invalid role." }, { status: 400 });
     }
 
     const doc = await getDoc(`apps/${params.appId}`, idToken);
@@ -91,10 +120,27 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
       );
     }
 
+    if (!isFirebaseAdminConfigured()) {
+      return NextResponse.json(
+        { error: "Inviting collaborators isn't configured on this deployment yet." },
+        { status: 400 }
+      );
+    }
     let invitedUid: string;
     try {
       invitedUid = (await adminAuth().getUserByEmail(trimmedEmail)).uid;
-    } catch {
+    } catch (err) {
+      // adminAuth().getUserByEmail() throws its own "user-not-found" error
+      // for a genuine miss, distinguishable from a real Firebase Admin API
+      // failure (network, permissions) — the isFirebaseAdminConfigured()
+      // check above already rules out the "no service account at all" case,
+      // this narrows the remaining ambiguity so a transient Admin API error
+      // isn't misreported as "that email has no account" to the inviter.
+      const code = (err as { code?: string } | undefined)?.code;
+      if (code && code !== "auth/user-not-found") {
+        console.error(`[collaborators] getUserByEmail failed for a reason other than not-found:`, err);
+        return NextResponse.json({ error: "Couldn't look up that email right now. Please try again." }, { status: 500 });
+      }
       return NextResponse.json({ error: "No Breezify account found with that email." }, { status: 404 });
     }
     if (invitedUid === uid) {
@@ -114,6 +160,7 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
           // useCollaboratingApps() filters on this field instead.
           uid: invitedUid,
           email: trimmedEmail,
+          role,
           addedBy: uid,
           addedAt: new Date(),
         }),
@@ -126,18 +173,36 @@ export async function POST(req: NextRequest, { params }: { params: { appId: stri
     // case), and even a real send failure shouldn't undo an invite that
     // already succeeded — the person still shows up on the roster and in
     // their own "shared with me" list either way.
-    try {
-      await sendCollaboratorInviteEmail({
-        to: trimmedEmail,
-        appName: (doc.fields.name as string) || "an app",
-        appId: params.appId,
-        appUrl: appUrl(req),
-      });
-    } catch (err) {
-      console.error(`[collaborators] appId=${params.appId} failed to send invite email to ${trimmedEmail}:`, err);
+    //
+    // Respects the invitee's own "email me when invited to collaborate"
+    // preference (Settings page, see lib/preferences default true) — read
+    // via the Admin SDK since the inviter's idToken has no access to
+    // another user's profile, and defaults to sending if the check itself
+    // fails, matching the always-send behavior before this preference
+    // existed.
+    let wantsEmail = true;
+    if (isFirebaseAdminConfigured()) {
+      try {
+        const invitedProfile = await adminDb().collection("users").doc(invitedUid).get();
+        wantsEmail = invitedProfile.data()?.emailNotifications !== false;
+      } catch {
+        // Default to sending — see above.
+      }
+    }
+    if (wantsEmail) {
+      try {
+        await sendCollaboratorInviteEmail({
+          to: trimmedEmail,
+          appName: (doc.fields.name as string) || "an app",
+          appId: params.appId,
+          appUrl: getAppBaseUrl(req.nextUrl.origin),
+        });
+      } catch (err) {
+        console.error(`[collaborators] appId=${params.appId} failed to send invite email to ${trimmedEmail}:`, err);
+      }
     }
 
-    return NextResponse.json({ uid: invitedUid, email: trimmedEmail });
+    return NextResponse.json({ uid: invitedUid, email: trimmedEmail, role });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Couldn't add that collaborator.";
     return NextResponse.json({ error: message }, { status: 500 });
@@ -166,6 +231,38 @@ export async function DELETE(req: NextRequest, { params }: { params: { appId: st
     return NextResponse.json({ ok: true });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Couldn't remove that collaborator.";
+    return NextResponse.json({ error: message }, { status: 500 });
+  }
+}
+
+/** Owner-only: changes an existing collaborator's role (editor <-> viewer). */
+export async function PATCH(req: NextRequest, { params }: { params: { appId: string } }) {
+  try {
+    const auth = await authenticate(req);
+    if (auth.error) return auth.error;
+    const { uid, idToken } = auth;
+
+    const { uid: targetUid, role } = await req.json();
+    if (!targetUid || typeof targetUid !== "string") {
+      return NextResponse.json({ error: "Missing collaborator." }, { status: 400 });
+    }
+    if (!isCollaboratorRole(role)) {
+      return NextResponse.json({ error: "Invalid role." }, { status: 400 });
+    }
+
+    const doc = await getDoc(`apps/${params.appId}`, idToken);
+    if (!doc) return NextResponse.json({ error: "App not found." }, { status: 404 });
+    if (doc.fields.userId !== uid) {
+      return NextResponse.json({ error: "Only this app's owner can change a collaborator's role." }, { status: 403 });
+    }
+
+    await commit(
+      [updateWrite(`apps/${params.appId}/collaborators/${targetUid}`, { role }, ["role"])],
+      idToken
+    );
+    return NextResponse.json({ ok: true });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Couldn't change that collaborator's role.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }

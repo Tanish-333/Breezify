@@ -1,27 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { adminDb } from "@/lib/firebase-admin";
-import { FieldValue } from "firebase-admin/firestore";
+import { claimSignup, getClientIp } from "@/lib/claim-signup";
 
 export const runtime = "nodejs";
-
-const SIGNUP_BONUS_CREDITS = 5.0;
-
-// Shared IPs (offices, schools, NAT'd households) are common, so this isn't
-// tuned to catch every alt account — it's tuned to make farming many
-// accounts from one IP in a single month costly rather than unlimited.
-const MAX_SIGNUPS_PER_IP_PER_MONTH = 3;
-
-function currentMonthKey(): string {
-  const now = new Date();
-  return `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, "0")}`;
-}
-
-function getClientIp(req: NextRequest): string {
-  const forwarded = req.headers.get("x-forwarded-for");
-  if (forwarded) return forwarded.split(",")[0].trim();
-  return req.headers.get("x-real-ip") ?? "unknown";
-}
 
 /**
  * Ensures users/{uid} exists, creating it (with the signup bonus) the first
@@ -65,61 +46,8 @@ export async function POST(req: NextRequest) {
     // Body is optional; profile fields just fall back to defaults below.
   }
 
-  const db = adminDb();
-  const userRef = db.collection("users").doc(uid);
-  const signupRef = db.collection("signups").doc(uid);
-  const ip = getClientIp(req);
-  const monthKey = currentMonthKey();
-  const ipRef = db.collection("signupIps").doc(`${ip}_${monthKey}`);
-
   try {
-    const result = await db.runTransaction(async (tx) => {
-      const [userSnap, signupSnap, ipSnap] = await Promise.all([
-        tx.get(userRef),
-        tx.get(signupRef),
-        tx.get(ipRef),
-      ]);
-
-      if (userSnap.exists) {
-        tx.update(userRef, {
-          lastLoginAt: FieldValue.serverTimestamp(),
-          authProviders: body.authProviders ?? userSnap.data()?.authProviders ?? [],
-          displayName: body.displayName ?? userSnap.data()?.displayName ?? null,
-          photoURL: body.photoURL ?? userSnap.data()?.photoURL ?? null,
-        });
-        return { granted: false, alreadyExisted: true };
-      }
-
-      // Never regrant the bonus once claimed, regardless of IP standing —
-      // this is what stops delete-and-recreate farming even after the
-      // 30-day account-deletion lock elapses.
-      const alreadyClaimedBonus = signupSnap.exists;
-      const ipCount = ipSnap.exists ? (ipSnap.data()?.count ?? 0) : 0;
-      const ipLimitHit = ipCount >= MAX_SIGNUPS_PER_IP_PER_MONTH;
-      const grantBonus = !alreadyClaimedBonus && !ipLimitHit;
-
-      tx.set(userRef, {
-        email: tokenEmail ?? null,
-        displayName: body.displayName ?? null,
-        photoURL: body.photoURL ?? null,
-        credits: grantBonus ? SIGNUP_BONUS_CREDITS : 0,
-        plan: "free",
-        createdAt: FieldValue.serverTimestamp(),
-        lastLoginAt: FieldValue.serverTimestamp(),
-        authProviders: body.authProviders ?? [],
-      });
-      if (!alreadyClaimedBonus) {
-        tx.set(signupRef, { claimedAt: FieldValue.serverTimestamp() });
-      }
-      tx.set(
-        ipRef,
-        { count: ipCount + 1, month: monthKey, lastSignupAt: FieldValue.serverTimestamp() },
-        { merge: true }
-      );
-
-      return { granted: grantBonus, alreadyExisted: false };
-    });
-
+    const result = await claimSignup(uid, getClientIp(req.headers), tokenEmail, body);
     return NextResponse.json({ ok: true, ...result });
   } catch (err) {
     console.error(`[claim-signup] uid=${uid} failed:`, err);

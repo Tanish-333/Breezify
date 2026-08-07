@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { commit, createWrite, getDoc, listCollection } from "@/lib/firestore-rest";
-import { hasAppAccess } from "@/lib/app-collaborators";
+import { hasEditAccess } from "@/lib/app-collaborators";
 import { DUPLICATE_MIN_PLAN, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
 
 export const runtime = "nodejs";
@@ -51,12 +51,18 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // getDoc is itself rules-gated to the owner or an existing collaborator,
-    // so a caller unrelated to this app is rejected right here regardless.
+    // getDoc is itself rules-gated to the owner, an existing collaborator,
+    // or (see firestore.rules) any signed-in user reading a template app —
+    // so a caller unrelated to a non-template app is rejected right here
+    // regardless.
     const doc = await getDoc(`apps/${appId}`, idToken);
     if (!doc) return NextResponse.json({ error: "App not found." }, { status: 404 });
-    if (!(await hasAppAccess(appId, doc.fields.userId as string, uid, idToken))) {
-      return NextResponse.json({ error: "You don't have access to this app." }, { status: 403 });
+    const isTemplate = doc.fields.isTemplate === true;
+    // A template is meant to be duplicated by anyone on the Pro+ plan
+    // already checked above, not just its owner (the system template
+    // account) or someone it's invited as a collaborator — nobody ever is.
+    if (!isTemplate && !(await hasEditAccess(appId, doc.fields.userId as string, uid, idToken))) {
+      return NextResponse.json({ error: "You have view-only access to this app — ask the owner to make you an editor to do this." }, { status: 403 });
     }
 
     const newAppId = crypto.randomUUID();

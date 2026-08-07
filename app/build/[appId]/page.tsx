@@ -9,6 +9,7 @@ import { AppShell } from "@/components/app-shell";
 import { ProtectedRoute } from "@/components/protected-route";
 import { CodePreview } from "@/components/code-preview";
 import { AppPreview } from "@/components/app-preview";
+import { AppVisualEditor } from "@/components/app-visual-editor";
 import { PromptComposer } from "@/components/prompt-composer";
 import { GenerationProgress } from "@/components/generation-progress";
 import { GithubPushDialog } from "@/components/github-push-dialog";
@@ -20,18 +21,20 @@ import { TurnCard } from "@/components/turn-card";
 import { StatusBadge, DeployBadge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useApp, useAppSecrets, revertToVersion, saveManualEdit } from "@/lib/use-apps";
+import { useApp, useAppSecrets, useMyCollaboratorRole, revertToVersion, saveManualEdit, toggleStarredApp } from "@/lib/use-apps";
 import { usePresence } from "@/lib/use-presence";
 import { missingEnvVars } from "@/lib/backend-env";
 import { useAuth } from "@/lib/auth-context";
-import { fetchModelAvailability, generateAppRequest, duplicateAppRequest } from "@/lib/api-client";
+import { fetchModelAvailability, generateAppRequest, duplicateAppRequest, renewAppRequest } from "@/lib/api-client";
 import {
+  canRenewDeploy,
   COLLABORATOR_MIN_PLAN,
   CUSTOM_DOMAIN_MIN_PLAN,
   displayStatus,
   DUPLICATE_MIN_PLAN,
   effectiveDeployStatus,
   IMPORT_MIN_PLAN,
+  isDeployExpired,
   MODEL_INFO,
   PLAN_RANK,
   planAllowsModel,
@@ -45,6 +48,7 @@ import {
   ArrowLeft,
   BarChart3,
   Check,
+  Clock,
   Code2,
   Copy,
   Eye,
@@ -53,14 +57,80 @@ import {
   KeyRound,
   Loader2,
   Lock,
+  MoreHorizontal,
+  MousePointerClick,
   Pencil,
   RefreshCw,
   Rocket,
+  Star,
   Users,
   X,
 } from "lucide-react";
 
-type Pane = "preview" | "code";
+type Pane = "preview" | "visual" | "code";
+
+/** One row in the workspace header's "More" menu — a link (external or locked-upsell) or an action button, never both. */
+function MenuItem({
+  icon: Icon,
+  label,
+  onClick,
+  href,
+  external,
+  locked,
+  disabled,
+  disabledTitle,
+  warn,
+}: {
+  icon: React.ComponentType<{ className?: string }>;
+  label: string;
+  onClick?: () => void;
+  href?: string;
+  external?: boolean;
+  locked?: boolean;
+  disabled?: boolean;
+  disabledTitle?: string;
+  warn?: boolean;
+}) {
+  const rowClassName = cn(
+    "flex w-full items-center gap-2.5 rounded-md px-2.5 py-2 text-left text-sm transition-colors",
+    disabled ? "cursor-not-allowed text-muted-foreground/50" : "hover:bg-muted"
+  );
+  const content = (
+    <>
+      <span className="relative inline-flex shrink-0">
+        <Icon className="h-4 w-4" />
+        {locked && (
+          <Lock
+            className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
+            strokeWidth={3}
+          />
+        )}
+        {warn && <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-warning" />}
+      </span>
+      <span className="flex-1">{label}</span>
+      {external && <ExternalLink className="h-3 w-3 shrink-0 text-muted-foreground" />}
+    </>
+  );
+
+  if (href) {
+    return (
+      <Link
+        href={href}
+        target={external ? "_blank" : undefined}
+        rel={external ? "noreferrer" : undefined}
+        className={rowClassName}
+        title={locked ? "Upgrade to unlock" : undefined}
+      >
+        {content}
+      </Link>
+    );
+  }
+  return (
+    <button type="button" onClick={onClick} disabled={disabled} title={disabledTitle} className={rowClassName}>
+      {content}
+    </button>
+  );
+}
 
 function AppWorkspace() {
   const params = useParams<{ appId: string }>();
@@ -79,6 +149,25 @@ function AppWorkspace() {
   const canInviteCollaborators = PLAN_RANK[plan] >= PLAN_RANK[COLLABORATOR_MIN_PLAN];
   const otherViewers = usePresence(app?.id, user?.uid, user?.email);
   const { secrets: appSecrets } = useAppSecrets(isOwner ? app?.id : undefined);
+  // A collaborator invited as "viewer" gets read-only access — this mirrors
+  // firestore.rules' isAppEditor and lib/app-collaborators.ts's
+  // hasEditAccess, which are what actually enforce it; this is just what
+  // keeps the UI from showing controls that would fail on click. Missing
+  // role (still loading, or the owner who has no collaborator doc at all)
+  // defaults to allowed, same back-compat-safe default used everywhere else.
+  const { role: myRole } = useMyCollaboratorRole(app?.id, user?.uid);
+  // A template app (see firestore.rules' apps/{appId} read rule) is
+  // readable by any signed-in user, not just an owner or invited
+  // collaborator — the one case where "no collaborator doc at all" no
+  // longer safely implies "the owner, or still loading" the way it does
+  // for every other app. Force it read-only for anyone but its actual
+  // owner (the system template account), rather than letting the
+  // no-role-means-editor default below apply to a completely unrelated
+  // visitor.
+  const canEdit = isOwner || (!app?.isTemplate && myRole !== "viewer");
+  // Starring is a per-viewer preference (users/{uid}.starredAppIds, see
+  // lib/use-apps.ts), not gated by canEdit — a Viewer can star same as anyone.
+  const starred = app ? (profile?.starredAppIds ?? []).includes(app.id) : false;
 
   const [instruction, setInstruction] = useState("");
   const [model, setModel] = useState<ModelId>("haiku");
@@ -95,21 +184,45 @@ function AppWorkspace() {
   const [deploying, setDeploying] = useState(false);
   const [deployError, setDeployError] = useState("");
   const [deployNote, setDeployNote] = useState("");
+  const [renewing, setRenewing] = useState(false);
+  const [renewError, setRenewError] = useState("");
   const [duplicating, setDuplicating] = useState(false);
   const [reverting, setReverting] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [pane, setPane] = useState<Pane>("preview");
   const [previewError, setPreviewError] = useState<string | null>(null);
+  const [moreMenuOpen, setMoreMenuOpen] = useState(false);
   const conversationRef = useRef<HTMLDivElement>(null);
+  const autoDeployedRef = useRef<string | null>(null);
+  const moreMenuRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     fetchModelAvailability().then(setAvailability).catch(() => {});
   }, []);
 
+  // Close the header's "More" menu on an outside click, same pattern as the
+  // model picker in PromptComposer.
+  useEffect(() => {
+    if (!moreMenuOpen) return;
+    function onDown(e: MouseEvent) {
+      if (!moreMenuRef.current?.contains(e.target as Node)) setMoreMenuOpen(false);
+    }
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [moreMenuOpen]);
+
   useEffect(() => {
     if (app?.model && planAllowsModel(plan, app.model)) setModel(app.model);
   }, [app?.model, plan]);
+
+  // The Visual tab is hidden outright once canEdit turns false (a role
+  // downgrade mid-session, or the app doc taking a beat to load) — bounce
+  // back to Preview rather than leaving the toggle on a pane its own button
+  // no longer renders.
+  useEffect(() => {
+    if (pane === "visual" && !canEdit) setPane("preview");
+  }, [pane, canEdit]);
 
   // Keep the newest turn in view as the conversation grows.
   useEffect(() => {
@@ -125,6 +238,28 @@ function AppWorkspace() {
   useEffect(() => {
     setPreviewError(null);
   }, [app?.turns?.length]);
+
+  // Auto-deploy straight to a live production URL the moment a brand-new
+  // app finishes its first build, rather than making "Deploy" a manual step
+  // nobody discovers. Only fires once per app, only for the owner (so it
+  // spends the owner's own daily deploy quota, same as a manual click
+  // would), and only for the very first build turn — a refine never
+  // re-triggers it, so redeploying an already-live app stays an explicit
+  // "Redeploy" click. An app that can't be deployed (e.g. a real always-on
+  // server) still just shows the same deploy-error banner a manual click
+  // would have produced.
+  useEffect(() => {
+    if (!app || !user || app.userId !== user.uid) return;
+    if (autoDeployedRef.current === app.id) return;
+    const files = app.generatedCode?.files ?? {};
+    if (Object.keys(files).length === 0) return;
+    const turns = app.turns ?? [];
+    const isFreshBuild = turns.length === 1 && turns[0].kind === "build";
+    if (!isFreshBuild || app.deployedUrl || effectiveDeployStatus(app) === "deploying") return;
+    autoDeployedRef.current = app.id;
+    deployApp();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [app?.id, app?.turns?.length, user?.uid]);
 
   if (loading) {
     return (
@@ -164,6 +299,13 @@ function AppWorkspace() {
   // server-side (app/api/deploy/route.ts); this is what surfaces it before
   // someone even tries to deploy.
   const missingSecrets = isOwner ? missingEnvVars(files, appSecrets.map((s) => s.key)) : [];
+
+  // Deployed subdomain expiry (DEPLOY_EXPIRY_DAYS) — unset entirely on the
+  // one plan that never expires, see app/api/deploy/route.ts.
+  const deployExpired = isDeployExpired(app.deployExpiresAt);
+  const deployRenewable = canRenewDeploy(app.deployExpiresAt);
+  const daysUntilExpiry =
+    app.deployExpiresAt ? Math.ceil((app.deployExpiresAt - Date.now()) / (24 * 60 * 60 * 1000)) : null;
 
   async function refine(text: string) {
     setError("");
@@ -234,6 +376,20 @@ function AppWorkspace() {
     }
   }
 
+  async function renewApp() {
+    setRenewError("");
+    setRenewing(true);
+    try {
+      await renewAppRequest(app!.id);
+      // Firestore's onSnapshot in useApp() picks up the new deployExpiresAt
+      // as soon as the server writes it.
+    } catch (err) {
+      setRenewError(err instanceof Error ? err.message : "Couldn't renew this app.");
+    } finally {
+      setRenewing(false);
+    }
+  }
+
   async function duplicate() {
     if (!app || !user) return;
     setDuplicating(true);
@@ -298,20 +454,31 @@ function AppWorkspace() {
           ) : (
             <>
               <h1 className="truncate font-medium">{app.name}</h1>
-              <button
-                onClick={() => {
-                  setNameDraft(app!.name);
-                  setRenaming(true);
-                }}
-                title="Rename"
-                className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                <Pencil className="h-3 w-3" />
-              </button>
+              {canEdit && (
+                <button
+                  onClick={() => {
+                    setNameDraft(app!.name);
+                    setRenaming(true);
+                  }}
+                  title="Rename"
+                  className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                >
+                  <Pencil className="h-3 w-3" />
+                </button>
+              )}
             </>
           )}
           <StatusBadge status={displayStatus(app.status)} />
           <DeployBadge status={effectiveDeployStatus(app)} />
+          {user && (
+            <button
+              onClick={() => toggleStarredApp(user.uid, app.id, starred)}
+              title={starred ? "Unstar" : "Star"}
+              className="rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <Star className={cn("h-3.5 w-3.5", starred && "fill-current text-foreground")} />
+            </button>
+          )}
           {otherViewers.length > 0 && (
             <span
               title={`Also here right now: ${otherViewers.map((v) => v.email || "another collaborator").join(", ")}`}
@@ -337,6 +504,32 @@ function AppWorkspace() {
               {app.visits ?? 0}
             </span>
           )}
+          {isOwner && app.deployExpiresAt && (
+            <span
+              title={
+                deployExpired
+                  ? "This app's link has expired — renew it to bring it back"
+                  : "This free-plan app auto-expires unless renewed"
+              }
+              className={cn(
+                "flex items-center gap-1 rounded-full border px-2 py-1 text-xs",
+                deployExpired
+                  ? "border-error/30 text-error"
+                  : deployRenewable
+                    ? "border-amber-500/30 text-amber-600 dark:text-amber-400"
+                    : "border-border text-muted-foreground"
+              )}
+            >
+              <Clock className="h-3 w-3" />
+              {deployExpired ? "Expired" : `Expires in ${daysUntilExpiry}d`}
+            </span>
+          )}
+          {isOwner && deployRenewable && (
+            <Button size="sm" variant="secondary" onClick={renewApp} loading={renewing}>
+              {!renewing && <RefreshCw className="h-4 w-4" />}
+              <span className="hidden sm:inline">Renew</span>
+            </Button>
+          )}
           {hasFiles && app.deployedUrl && (
             <a href={app.deployedUrl} target="_blank" rel="noreferrer">
               <Button variant="ghost" size="sm">
@@ -347,7 +540,7 @@ function AppWorkspace() {
             </a>
           )}
 
-          {hasFiles && (
+          {hasFiles && canEdit && (
             <Button
               size="sm"
               onClick={deployApp}
@@ -358,154 +551,135 @@ function AppWorkspace() {
             </Button>
           )}
 
-          {hasFiles && app.githubUrl && (
-            canSyncGithub ? (
-              <Button variant="ghost" size="sm" onClick={() => setShowSync(true)}>
-                <RefreshCw className="h-4 w-4" />
-                <span className="hidden sm:inline">Sync</span>
-              </Button>
-            ) : (
-              <Link href="/billing" title="Upgrade to Plus to pull the latest commit">
-                <Button variant="ghost" size="sm">
-                  <span className="relative inline-flex">
-                    <RefreshCw className="h-4 w-4" />
-                    <Lock
-                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
-                      strokeWidth={3}
-                    />
-                  </span>
-                  <span className="hidden sm:inline">Sync</span>
-                </Button>
-              </Link>
-            )
-          )}
-
-          {hasFiles &&
-            (app.githubUrl ? (
-              <a href={app.githubUrl} target="_blank" rel="noreferrer">
-                <Button variant="ghost" size="sm">
-                  <GithubIcon className="h-4 w-4" />
-                  <span className="hidden sm:inline">Repo</span>
-                  <ExternalLink className="h-3 w-3" />
-                </Button>
-              </a>
-            ) : plan === "free" ? (
-              <Link href="/billing" title="Upgrade to Plus to push to GitHub">
-                <Button variant="ghost" size="sm">
-                  <span className="relative inline-flex">
-                    <GithubIcon className="h-4 w-4" />
-                    <Lock
-                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
-                      strokeWidth={3}
-                    />
-                  </span>
-                  <span className="hidden sm:inline">Push to GitHub</span>
-                </Button>
-              </Link>
-            ) : (
-              <Button variant="ghost" size="sm" onClick={() => setShowGithub(true)}>
-                <GithubIcon className="h-4 w-4" />
-                <span className="hidden sm:inline">Push to GitHub</span>
-              </Button>
-            ))}
-
-          {hasFiles &&
-            (canDuplicate ? (
-              <Button variant="ghost" size="sm" onClick={duplicate} loading={duplicating}>
-                {!duplicating && <Copy className="h-4 w-4" />}
-                <span className="hidden sm:inline">Duplicate</span>
-              </Button>
-            ) : (
-              <Link href="/billing" title="Upgrade to Pro to duplicate this app">
-                <Button variant="ghost" size="sm">
-                  <Lock className="h-4 w-4" />
-                  <span className="hidden sm:inline">Duplicate</span>
-                </Button>
-              </Link>
-            ))}
-
-          {hasFiles && isOwner && (
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowSecrets(true)}
-              title={
-                missingSecrets.length > 0
-                  ? `Missing ${missingSecrets.join(", ")} — this app's backend won't work without them`
-                  : undefined
-              }
-            >
-              <span className="relative inline-flex">
-                <KeyRound className="h-4 w-4" />
-                {missingSecrets.length > 0 && (
-                  <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-warning" />
-                )}
-              </span>
-              <span className="hidden sm:inline">Secrets</span>
-            </Button>
-          )}
-
           {hasFiles && (
-            !isOwner || canInviteCollaborators ? (
-              <Button variant="ghost" size="sm" onClick={() => setShowCollaborators(true)}>
-                <Users className="h-4 w-4" />
-                <span className="hidden sm:inline">Team</span>
-              </Button>
-            ) : (
-              <Link href="/billing" title="Upgrade to Plus to invite collaborators">
-                <Button variant="ghost" size="sm">
-                  <span className="relative inline-flex">
-                    <Users className="h-4 w-4" />
-                    <Lock
-                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
-                      strokeWidth={3}
-                    />
-                  </span>
-                  <span className="hidden sm:inline">Team</span>
-                </Button>
-              </Link>
-            )
-          )}
-
-          {hasFiles && isOwner && (
-            !canCustomDomain ? (
-              <Link href="/billing" title="Upgrade to Pro to attach a custom domain">
-                <Button variant="ghost" size="sm">
-                  <span className="relative inline-flex">
-                    <Globe className="h-4 w-4" />
-                    <Lock
-                      className="absolute -bottom-1 -right-1.5 h-2.5 w-2.5 rounded-full bg-background text-muted-foreground"
-                      strokeWidth={3}
-                    />
-                  </span>
-                  <span className="hidden sm:inline">Domain</span>
-                </Button>
-              </Link>
-            ) : !app.deployedUrl ? (
-              // A domain attaches to a deployed project on Vercel, so there's
-              // nothing to attach it to yet — disabled rather than hidden,
-              // so a Pro+ owner can actually find this instead of wondering
-              // where it went.
+            <div className="relative" ref={moreMenuRef}>
               <Button
                 variant="ghost"
                 size="sm"
-                disabled
-                title="Deploy your app first — a custom domain attaches to the deployed version."
+                onClick={() => setMoreMenuOpen((o) => !o)}
+                title="More actions"
               >
-                <Globe className="h-4 w-4" />
-                <span className="hidden sm:inline">Domain</span>
+                <span className="relative inline-flex">
+                  <MoreHorizontal className="h-4 w-4" />
+                  {isOwner && missingSecrets.length > 0 && (
+                    <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full bg-warning" />
+                  )}
+                </span>
               </Button>
-            ) : (
-              <Button variant="ghost" size="sm" onClick={() => setShowDomain(true)}>
-                <Globe className="h-4 w-4" />
-                <span className="hidden sm:inline">Domain</span>
-              </Button>
-            )
+              {moreMenuOpen && (
+                <div className="absolute right-0 top-full z-20 mt-2 w-60 overflow-hidden rounded-lg border border-border bg-background p-1 shadow-xl animate-in">
+                  {app.githubUrl && canEdit && (
+                    canSyncGithub ? (
+                      <MenuItem
+                        icon={RefreshCw}
+                        label="Sync from GitHub"
+                        onClick={() => {
+                          setShowSync(true);
+                          setMoreMenuOpen(false);
+                        }}
+                      />
+                    ) : (
+                      <MenuItem icon={RefreshCw} label="Sync from GitHub" href="/billing" locked />
+                    )
+                  )}
+
+                  {app.githubUrl ? (
+                    <MenuItem icon={GithubIcon} label="View repo" href={app.githubUrl} external />
+                  ) : !canEdit ? null : plan === "free" ? (
+                    <MenuItem icon={GithubIcon} label="Push to GitHub" href="/billing" locked />
+                  ) : (
+                    <MenuItem
+                      icon={GithubIcon}
+                      label="Push to GitHub"
+                      onClick={() => {
+                        setShowGithub(true);
+                        setMoreMenuOpen(false);
+                      }}
+                    />
+                  )}
+
+                  {!canEdit ? null : canDuplicate ? (
+                    <MenuItem
+                      icon={Copy}
+                      label="Duplicate"
+                      onClick={() => {
+                        setMoreMenuOpen(false);
+                        duplicate();
+                      }}
+                      disabled={duplicating}
+                    />
+                  ) : (
+                    <MenuItem icon={Copy} label="Duplicate" href="/billing" locked />
+                  )}
+
+                  {isOwner && (
+                    <MenuItem
+                      icon={KeyRound}
+                      label="Connectors"
+                      warn={missingSecrets.length > 0}
+                      disabledTitle={
+                        missingSecrets.length > 0
+                          ? `Missing ${missingSecrets.join(", ")} — this app's backend won't work without them`
+                          : undefined
+                      }
+                      onClick={() => {
+                        setShowSecrets(true);
+                        setMoreMenuOpen(false);
+                      }}
+                    />
+                  )}
+
+                  {!isOwner || canInviteCollaborators ? (
+                    <MenuItem
+                      icon={Users}
+                      label="Team"
+                      onClick={() => {
+                        setShowCollaborators(true);
+                        setMoreMenuOpen(false);
+                      }}
+                    />
+                  ) : (
+                    <MenuItem icon={Users} label="Team" href="/billing" locked />
+                  )}
+
+                  {isOwner && (
+                    !canCustomDomain ? (
+                      <MenuItem icon={Globe} label="Domain" href="/billing" locked />
+                    ) : !app.deployedUrl ? (
+                      // A domain attaches to a deployed project on Vercel, so
+                      // there's nothing to attach it to yet — disabled rather
+                      // than hidden, so a Pro+ owner can still find it instead
+                      // of wondering where it went.
+                      <MenuItem
+                        icon={Globe}
+                        label="Domain"
+                        disabled
+                        disabledTitle="Deploy your app first — a custom domain attaches to the deployed version."
+                      />
+                    ) : (
+                      <MenuItem
+                        icon={Globe}
+                        label="Domain"
+                        onClick={() => {
+                          setShowDomain(true);
+                          setMoreMenuOpen(false);
+                        }}
+                      />
+                    )
+                  )}
+                </div>
+              )}
+            </div>
           )}
 
           {hasFiles && (
             <div className="flex items-center rounded-lg border border-border p-0.5">
-              {(["preview", "code"] as Pane[]).map((p) => (
+              {/* Visual editing has no read-only mode worth showing — unlike
+                  Code (still a legitimate way for a Viewer to read the
+                  source), a click-to-edit tab with every edit affordance
+                  disabled is just a broken UI, so it's hidden outright for
+                  anyone who can't edit, same as the composer below. */}
+              {(canEdit ? (["preview", "visual", "code"] as Pane[]) : (["preview", "code"] as Pane[])).map((p) => (
                 <button
                   key={p}
                   onClick={() => setPane(p)}
@@ -518,6 +692,8 @@ function AppWorkspace() {
                 >
                   {p === "preview" ? (
                     <Eye className="h-3 w-3" />
+                  ) : p === "visual" ? (
+                    <MousePointerClick className="h-3 w-3" />
                   ) : (
                     <Code2 className="h-3 w-3" />
                   )}
@@ -549,11 +725,13 @@ function AppWorkspace() {
             {turns.map((turn, i) => (
               <TurnCard
                 key={turn.id}
+                appId={app.id}
                 turn={turn}
                 files={files}
                 isLatest={i === turns.length - 1}
-                onRevert={() => revert(turn.id)}
+                onRevert={canEdit ? () => revert(turn.id) : undefined}
                 reverting={reverting === turn.id}
+                revertLocked={reverting !== null}
               />
             ))}
 
@@ -589,6 +767,13 @@ function AppWorkspace() {
               </div>
             )}
 
+            {renewError && (
+              <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>{renewError}</span>
+              </div>
+            )}
+
             {hasFiles && missingSecrets.length > 0 && (
               <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
                 <KeyRound className="mt-0.5 h-4 w-4 shrink-0" />
@@ -611,25 +796,28 @@ function AppWorkspace() {
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <div className="min-w-0 flex-1">
                   <p>
-                    The live preview hit a runtime error. Fixing it runs a refine like any other —
-                    {" "}{cost.toFixed(2)} credits with {MODEL_INFO[model].label}.
+                    {canEdit
+                      ? `The live preview hit a runtime error. Fixing it runs a refine like any other — ${cost.toFixed(2)} credits with ${MODEL_INFO[model].label}.`
+                      : "The live preview hit a runtime error."}
                   </p>
                   <pre className="mt-1.5 max-h-24 overflow-y-auto whitespace-pre-wrap break-words rounded bg-error/10 p-2 font-mono text-xs">
                     {previewError}
                   </pre>
                 </div>
-                <Button
-                  size="sm"
-                  variant="secondary"
-                  className="shrink-0"
-                  loading={refining}
-                  disabled={refining || insufficient || blockedByOtherEditor}
-                  onClick={() =>
-                    refine(`Fix this runtime error from the live preview:\n\n${previewError}`)
-                  }
-                >
-                  Fix this error · {cost.toFixed(2)}
-                </Button>
+                {canEdit && (
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    className="shrink-0"
+                    loading={refining}
+                    disabled={refining || insufficient || blockedByOtherEditor}
+                    onClick={() =>
+                      refine(`Fix this runtime error from the live preview:\n\n${previewError}`)
+                    }
+                  >
+                    Fix this error · {cost.toFixed(2)}
+                  </Button>
+                )}
               </div>
             )}
 
@@ -637,9 +825,9 @@ function AppWorkspace() {
               <div className="flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
                 <Loader2 className="mt-0.5 h-4 w-4 shrink-0 animate-spin" />
                 <span>
-                  {app.generatingByEmail ?? "Someone else"} is refining this app right now — your own
-                  refine will be blocked until they finish, to avoid the two changes overwriting each
-                  other.
+                  {app.generatingByEmail ?? "Someone else"} is refining or syncing this app right now
+                  — your own change will be blocked until they finish, to avoid the two overwriting
+                  each other.
                 </span>
               </div>
             )}
@@ -661,7 +849,7 @@ function AppWorkspace() {
             )}
           </div>
 
-          {hasFiles && (
+          {hasFiles && canEdit && (
             <div className="shrink-0 border-t border-border p-3">
               {!refining && suggestions.length > 0 && (
                 <div className="mb-2.5 flex flex-wrap gap-1.5">
@@ -697,10 +885,18 @@ function AppWorkspace() {
               />
             </div>
           )}
+          {hasFiles && !canEdit && (
+            <div className="shrink-0 border-t border-border p-3">
+              <p className="rounded-lg border border-border bg-muted/20 px-3 py-2.5 text-center text-xs text-muted-foreground">
+                <Eye className="mr-1.5 inline h-3.5 w-3.5" />
+                You have view-only access to this app.
+              </p>
+            </div>
+          )}
         </div>
 
-        <div className="min-h-0 min-w-0 flex-1">
-          {app.status === "generating" ? (
+        <div className="relative min-h-0 min-w-0 flex-1">
+          {app.status === "generating" && !hasFiles ? (
             <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
               <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
               <p className="text-sm text-muted-foreground">Generating your app...</p>
@@ -722,25 +918,58 @@ function AppWorkspace() {
               </Button>
             </div>
           ) : hasFiles ? (
-            pane === "preview" ? (
-              <AppPreview
-                files={files}
-                removeBadge={plan !== "free"}
-                onError={setPreviewError}
-                onReload={() => setPreviewError(null)}
-                reloadKey={turns.length}
-              />
-            ) : (
-              <div className="h-full overflow-auto p-4">
-                <CodePreview
+            <>
+              {/* A refine of an already-built app keeps the last working preview
+                  on screen instead of blanking it — losing it made every refine
+                  feel like starting over instead of live-editing. Only a brand
+                  new build (no files yet, handled above) still gets the
+                  full-screen spinner, since there's nothing to show underneath it. */}
+              {app.status === "generating" && (
+                <div className="absolute inset-x-0 top-0 z-10 flex items-center justify-center gap-2 border-b border-border bg-background/90 px-3 py-2 text-xs text-muted-foreground backdrop-blur-sm">
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  Updating your app...
+                </div>
+              )}
+              {pane === "preview" ? (
+                <AppPreview
                   files={files}
-                  appName={app.name}
-                  locked={plan === "free"}
-                  editable={plan !== "free" && !blockedByOtherEditor}
-                  onSave={saveEdit}
+                  removeBadge={plan !== "free"}
+                  onError={setPreviewError}
+                  onReload={() => setPreviewError(null)}
+                  reloadKey={turns.length}
                 />
-              </div>
-            )
+              ) : pane === "visual" && canEdit ? (
+                <AppVisualEditor
+                  files={files}
+                  onEdit={(instruction) => refine(instruction)}
+                  onAddToChat={(reference) =>
+                    setInstruction((prev) => (prev.trim() ? `${prev}\n\n${reference}` : reference))
+                  }
+                  disabled={refining || insufficient || blockedByOtherEditor}
+                  disabledReason={
+                    insufficient
+                      ? "Out of credits — this edit runs a refine like any other."
+                      : blockedByOtherEditor
+                        ? "Wait for the other refine in progress to finish."
+                        : refining
+                          ? "An edit is already in progress."
+                          : undefined
+                  }
+                  reloadKey={turns.length}
+                />
+              ) : (
+                <div className="h-full overflow-auto p-4">
+                  <CodePreview
+                    files={files}
+                    appName={app.name}
+                    locked={plan === "free"}
+                    editable={plan !== "free" && !blockedByOtherEditor && canEdit}
+                    onSave={saveEdit}
+                    versionKey={turns.length}
+                  />
+                </div>
+              )}
+            </>
           ) : null}
         </div>
       </div>

@@ -13,6 +13,9 @@ export interface ClarifyQuestion {
   options: string[];
 }
 
+/** At most 2 — see MAX_QUESTIONS in lib/generation/clarify.ts. */
+export type ClarifyQuestions = ClarifyQuestion[];
+
 export interface GenerateHandlers {
   onStatus?: (message: string) => void;
   onProgress?: (progress: { chars: number; files: string[] }) => void;
@@ -33,7 +36,7 @@ export async function generateAppRequest(
   appId?: string,
   /** Set once the user has already answered a clarifying question. */
   clarified?: boolean
-): Promise<GenerateResult | { clarify: ClarifyQuestion }> {
+): Promise<GenerateResult | { clarify: ClarifyQuestions }> {
   const user = auth.currentUser;
   if (!user) throw new Error("You must be signed in to generate an app.");
 
@@ -59,7 +62,7 @@ export async function generateAppRequest(
   const decoder = new TextDecoder();
   let buffer = "";
   let result: GenerateResult | null = null;
-  let clarify: ClarifyQuestion | null = null;
+  let clarify: ClarifyQuestions | null = null;
   let error: string | null = null;
 
   while (true) {
@@ -86,7 +89,7 @@ export async function generateAppRequest(
         handlers.onProgress?.({ chars: event.chars, files: event.files });
       else if (event.type === "done") result = event;
       else if (event.type === "clarify")
-        clarify = { question: event.question, options: event.options };
+        clarify = Array.isArray(event.questions) ? event.questions : [];
       else if (event.type === "error") error = event.error;
     }
   }
@@ -117,4 +120,59 @@ export async function duplicateAppRequest(appId: string): Promise<string> {
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || "Couldn't duplicate this app.");
   return data.appId as string;
+}
+
+/** Creates a brand new app from a hand-written template's static file bundle — see app/api/apps/from-template for the plan gate. */
+export async function duplicateTemplateRequest(templateId: string): Promise<string> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You must be signed in.");
+  const idToken = await user.getIdToken();
+  const res = await fetch("/api/apps/from-template", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${idToken}` },
+    body: JSON.stringify({ templateId }),
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Couldn't use this template.");
+  return data.appId as string;
+}
+
+/** Deletes an app entirely — see app/api/apps/[appId] (DELETE). Immediately frees its active-subdomain slot, if any. */
+export async function deleteAppRequest(appId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You must be signed in.");
+  const idToken = await user.getIdToken();
+  const res = await fetch(`/api/apps/${encodeURIComponent(appId)}`, {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Couldn't delete this app.");
+}
+
+/** Takes an app offline without deleting it, freeing its active-subdomain slot — see app/api/apps/[appId]/undeploy. */
+export async function undeployAppRequest(appId: string): Promise<void> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You must be signed in.");
+  const idToken = await user.getIdToken();
+  const res = await fetch(`/api/apps/${encodeURIComponent(appId)}/undeploy`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Couldn't undeploy this app.");
+}
+
+/** Renews a free-tier app's expiry clock — only accepted inside its renewal window, see app/api/apps/[appId]/renew. */
+export async function renewAppRequest(appId: string): Promise<number> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You must be signed in.");
+  const idToken = await user.getIdToken();
+  const res = await fetch(`/api/apps/${encodeURIComponent(appId)}/renew`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Couldn't renew this app.");
+  return data.deployExpiresAt as number;
 }

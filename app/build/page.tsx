@@ -18,6 +18,7 @@ import {
   type GenerateResult,
 } from "@/lib/api-client";
 import { setPendingPrompt, takePendingPrompt } from "@/lib/pending-prompt";
+import { getDefaultModel } from "@/lib/preferences";
 import {
   MODEL_INFO,
   PLANS,
@@ -49,7 +50,11 @@ function BuildContent() {
   const [progress, setProgress] = useState({ chars: 0, files: [] as string[] });
   const [error, setError] = useState("");
   const [result, setResult] = useState<GenerateResult | null>(null);
-  const [clarify, setClarify] = useState<ClarifyQuestion | null>(null);
+  // 0-2 questions from a single clarify round, walked through sequentially —
+  // see the matching state in app/dashboard/page.tsx for the full reasoning.
+  const [clarify, setClarify] = useState<ClarifyQuestion[] | null>(null);
+  const [clarifyIndex, setClarifyIndex] = useState(0);
+  const [clarifyAnswers, setClarifyAnswers] = useState<string[]>([]);
   const [clarifyAnswer, setClarifyAnswer] = useState("");
   const abortRef = useRef<AbortController | null>(null);
 
@@ -57,6 +62,11 @@ function BuildContent() {
     const pending = takePendingPrompt();
     if (pending) setPrompt(pending);
     fetchModelAvailability().then(setAvailability).catch(() => {});
+    // A preference set on the Settings page (see lib/preferences.ts); only
+    // applied if the user's plan actually still covers it.
+    const preferred = getDefaultModel();
+    if (preferred && planAllowsModel(plan, preferred)) setModel(preferred);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // If the user's plan doesn't cover the selected model, fall back to Haiku,
@@ -84,6 +94,8 @@ function BuildContent() {
     setError("");
     setResult(null);
     setClarify(null);
+    setClarifyIndex(0);
+    setClarifyAnswers([]);
     setClarifyAnswer("");
     setProgress({ chars: 0, files: [] });
     setStatus("Starting");
@@ -123,8 +135,17 @@ function BuildContent() {
   }
 
   function answerClarify(answer: string) {
-    if (!clarify || !answer.trim()) return;
-    const combined = `${prompt}\n\n${clarify.question} ${answer.trim()}`;
+    const trimmed = answer.trim();
+    if (!clarify || !trimmed) return;
+    const answers = [...clarifyAnswers, trimmed];
+    if (clarifyIndex + 1 < clarify.length) {
+      setClarifyAnswers(answers);
+      setClarifyIndex((i) => i + 1);
+      setClarifyAnswer("");
+      return;
+    }
+    const qa = clarify.map((q, i) => `${q.question} ${answers[i]}`).join("\n\n");
+    const combined = `${prompt}\n\n${qa}`;
     setPrompt(combined);
     handleGenerate(combined, true);
   }
@@ -212,6 +233,7 @@ function BuildContent() {
             plan={plan}
             availability={availability}
             onLockedNavigate={() => prompt.trim() && setPendingPrompt(prompt)}
+            disabled={loading}
           />
         </div>
 
@@ -269,13 +291,18 @@ function BuildContent() {
 
         {clarify && !loading && (
           <div className="animate-in space-y-3 rounded-lg border border-border bg-muted/20 p-4">
-            <p className="text-sm font-medium">{clarify.question}</p>
+            {clarify.length > 1 && (
+              <p className="text-[11px] uppercase tracking-wide text-muted-foreground">
+                Question {clarifyIndex + 1} of {clarify.length}
+              </p>
+            )}
+            <p className="text-sm font-medium">{clarify[clarifyIndex].question}</p>
             <p className="text-xs text-muted-foreground">
               Answering costs nothing extra beyond the 0.50 credits already used to ask.
             </p>
-            {clarify.options.length > 0 && (
+            {clarify[clarifyIndex].options.length > 0 && (
               <div className="flex flex-wrap gap-2">
-                {clarify.options.map((opt) => (
+                {clarify[clarifyIndex].options.map((opt) => (
                   <button
                     key={opt}
                     type="button"
@@ -298,7 +325,7 @@ function BuildContent() {
                 className="flex h-9 w-full rounded border border-border bg-background px-3 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-foreground"
               />
               <Button size="sm" disabled={!clarifyAnswer.trim()} onClick={() => answerClarify(clarifyAnswer)}>
-                Continue
+                {clarifyIndex + 1 < clarify.length ? "Next" : "Continue"}
               </Button>
             </div>
           </div>

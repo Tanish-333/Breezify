@@ -1,7 +1,15 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { getDoc } from "@/lib/firestore-rest";
-import { getStripe, isStripeConfigured, resolveStripeCustomerId } from "@/lib/stripe";
+import {
+  getDowngradeLockedPortalConfigId,
+  getStripe,
+  isStripeConfigured,
+  maxDowngradeLockStatus,
+  resolveStripeCustomerId,
+} from "@/lib/stripe";
+import { isPlanId, type PlanId } from "@/lib/types";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
 export const runtime = "nodejs";
 
@@ -54,13 +62,32 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const returnUrl = `${process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin}/billing`;
+    const plan: PlanId = isPlanId(userDoc?.fields.plan) ? (userDoc!.fields.plan as PlanId) : "free";
+    const maxUpgradedAt = typeof userDoc?.fields.maxUpgradedAt === "string" ? userDoc.fields.maxUpgradedAt : undefined;
+    const { locked } = maxDowngradeLockStatus(plan, maxUpgradedAt);
+
+    const returnUrl = `${getAppBaseUrl(req.nextUrl.origin)}/billing`;
+    let configuration: string | undefined;
+    if (locked) {
+      try {
+        configuration = await getDowngradeLockedPortalConfigId();
+      } catch (err) {
+        // Fail open to the normal portal rather than blocking billing
+        // management entirely (payment method, invoices) over a Stripe API
+        // hiccup fetching/creating the restricted configuration — see the
+        // doc comment on getDowngradeLockedPortalConfigId for why this
+        // needs verifying in Stripe test mode.
+        console.error("[stripe/portal] Couldn't get the downgrade-locked portal configuration, opening normal portal:", err);
+      }
+    }
+
     const session = await getStripe().billingPortal.sessions.create({
       customer: customerId,
       return_url: returnUrl,
+      ...(configuration ? { configuration } : {}),
     });
 
-    return NextResponse.json({ url: session.url });
+    return NextResponse.json({ url: session.url, downgradeLocked: locked });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to open billing portal.";
     return NextResponse.json({ error: message }, { status: 500 });

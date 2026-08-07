@@ -3,6 +3,8 @@
 // personal or team API token from https://vercel.com/account/tokens);
 // VERCEL_TEAM_ID is only needed when that token belongs to a team account.
 
+import { getDeployDomain } from "@/lib/deploy-domain";
+
 const VERCEL_API = "https://api.vercel.com";
 
 export function isDeployConfigured() {
@@ -44,8 +46,69 @@ export interface DeployResult {
 }
 
 /**
+ * Turns off Vercel's own "Vercel Authentication" (SSO) and password
+ * protection on a project. New projects created under a Vercel *team*
+ * token silently inherit that team's default deployment-protection
+ * setting — when the team has it on (a common default), every visitor to
+ * a generated app who isn't logged into that Vercel team gets Vercel's own
+ * login wall instead of the app, on Production deployments too, not just
+ * Previews. These are meant-to-be-public generated apps, so protection is
+ * always wrong here; best-effort and non-fatal, same as tryCustomAlias —
+ * a deploy must still succeed even if this call fails.
+ */
+async function disableDeploymentProtection(slug: string): Promise<void> {
+  try {
+    const res = await vercelFetch(`/v9/projects/${encodeURIComponent(slug)}${scopeQuery()}`, {
+      method: "PATCH",
+      body: JSON.stringify({ ssoProtection: null, passwordProtection: null }),
+    });
+    if (!res.ok) {
+      console.warn(
+        `[vercel-deploy] Couldn't clear deployment protection on ${slug}:`,
+        res.body?.error?.message || res.body?.message
+      );
+    }
+  } catch (err) {
+    console.warn(`[vercel-deploy] Couldn't clear deployment protection on ${slug}:`, err);
+  }
+}
+
+/**
+ * Explicitly assigns `{slug}.vercel.app` to a finished deployment instead
+ * of hoping Vercel's poll response already lists it under `alias` — that
+ * auto-assignment isn't guaranteed to have landed by the moment READY is
+ * observed, and when it hasn't, the caller falls back to the longer
+ * per-deployment URL (`habit-tracker-a1b2c3-....vercel.app`), which changes
+ * on every redeploy. Storing that as the app's permanent deployedUrl means
+ * a visitor on the real, stable `{slug}.vercel.app` — the URL Vercel's own
+ * dashboard shows as "the" production URL — gets a different origin than
+ * what's on file, which is exactly the mismatch app/api/oauth/google/start
+ * rejects. Best-effort: falls back to whatever the caller already has.
+ */
+async function tryCleanAlias(deploymentId: string, slug: string): Promise<string | null> {
+  const alias = `${slug}.vercel.app`;
+  try {
+    const res = await vercelFetch(`/v2/deployments/${deploymentId}/aliases${scopeQuery()}`, {
+      method: "POST",
+      body: JSON.stringify({ alias }),
+    });
+    if (!res.ok) {
+      console.warn(
+        `[vercel-deploy] Couldn't alias to ${alias}:`,
+        res.body?.error?.message || res.body?.message
+      );
+      return null;
+    }
+    return alias;
+  } catch (err) {
+    console.warn(`[vercel-deploy] Couldn't alias to ${alias}:`, err);
+    return null;
+  }
+}
+
+/**
  * Aliases a finished deployment to `{slug}.DEPLOY_DOMAIN`, e.g.
- * my-app.feather123.app instead of a *.vercel.app URL. Only attempted when
+ * my-app.breezify.app instead of a *.vercel.app URL. Only attempted when
  * DEPLOY_DOMAIN is set, and the domain must already be added and verified
  * on the Vercel project/team for this to succeed. Best-effort: any failure
  * (domain not configured yet, not verified, network error) is swallowed and
@@ -53,7 +116,7 @@ export interface DeployResult {
  * than failing outright.
  */
 async function tryCustomAlias(deploymentId: string, slug: string): Promise<string | null> {
-  const domain = process.env.DEPLOY_DOMAIN;
+  const domain = getDeployDomain();
   if (!domain) return null;
   const alias = `${slug}.${domain}`;
   try {
@@ -181,19 +244,41 @@ export async function deployToVercel(
     if (!check.ok) continue;
     const state = check.body.readyState as string;
     url = check.body.url ?? url;
+    const inspectorUrl = typeof check.body.inspectorUrl === "string" ? check.body.inspectorUrl : null;
     if (state === "READY") {
+      // A production deployment (target: "production", set above) usually
+      // gets Vercel's own clean project alias — "<slug>.vercel.app" —
+      // assigned automatically alongside its per-deployment URL, but that
+      // isn't guaranteed to have landed yet at this exact poll (tryCleanAlias
+      // above forces it either way). `check.body.url` is always the longer
+      // per-deployment one (e.g.
+      // "habit-tracker-a1b2c3-<account>-projects.vercel.app"), which
+      // publicly embeds the Vercel account/team name in every generated
+      // app's URL. `alias` (plural, a separate field from `url`) lists
+      // every hostname actually assigned to this deployment; prefer the
+      // clean one, rather than exposing the account name or a URL that'll
+      // change on the next redeploy.
+      const aliases: string[] = Array.isArray(check.body.alias) ? check.body.alias : [];
+      const cleanAlias = aliases.find((a) => a === `${slug}.vercel.app`) ?? (await tryCleanAlias(id, slug));
       const customAlias = await tryCustomAlias(id, slug);
-      return { url: `https://${customAlias ?? url}`, id };
+      await disableDeploymentProtection(slug);
+      return { url: `https://${customAlias ?? cleanAlias ?? url}`, id };
     }
     if (state === "ERROR" || state === "CANCELED") {
       const canceled = state === "CANCELED";
       const logLines = canceled ? [] : await getDeploymentBuildLogs(id);
       const tail = logLines.slice(-40).join("\n");
-      throw new Error(
-        tail
-          ? `The deployment failed to build. Build output:\n\n${tail}`
-          : `The deployment failed to build${canceled ? " (canceled)" : ""}. Download the ZIP to see the full error on Vercel, or check that the app builds locally with \`npm run build\`.`
-      );
+      // The events endpoint above is best-effort and can come back empty
+      // even for a real build failure (a query-shape mismatch, an events
+      // page that hasn't landed yet) — a direct link to this exact
+      // deployment's own logs on Vercel is a real fallback either way,
+      // not just "check Vercel" with nothing to click.
+      const logsLine = inspectorUrl ? `\n\nFull logs: ${inspectorUrl}` : "";
+      const fallbackTail = "Download the ZIP to see the full error on Vercel, or check that the app builds locally with npm run build.";
+      const message = tail
+        ? `The deployment failed to build. Build output:\n\n${tail}${logsLine}`
+        : `The deployment failed to build${canceled ? " (canceled)" : ""}. ${logsLine ? `Full logs: ${inspectorUrl}` : fallbackTail}`;
+      throw new Error(message);
     }
   }
 
@@ -388,6 +473,22 @@ export async function getDomainOrderStatus(orderId: string): Promise<DomainOrder
  * later instead of assuming it failed — see each caller's own resume/retry
  * logic for how it acts on that.
  */
+/**
+ * Thrown when the poll window runs out while the order is still pending at
+ * Vercel — as opposed to Vercel actually reporting `status: "failed"`. A
+ * caller deciding whether to refund a charge tied to this order needs to
+ * tell the two apart: a genuine failure means the purchase definitely
+ * didn't happen (safe, correct to refund), but a timeout means it's still
+ * unresolved — it may well complete moments later, so refunding here would
+ * risk giving the money back for a domain that still ends up registered.
+ */
+export class DomainOrderTimeoutError extends Error {
+  constructor(orderId: string) {
+    super(`Domain order ${orderId} is still pending after the poll window; will retry later.`);
+    this.name = "DomainOrderTimeoutError";
+  }
+}
+
 export async function pollDomainOrder(orderId: string, deadlineMs = 45_000): Promise<void> {
   const deadline = Date.now() + deadlineMs;
   while (Date.now() < deadline) {
@@ -398,5 +499,5 @@ export async function pollDomainOrder(orderId: string, deadlineMs = 45_000): Pro
     }
     await new Promise((r) => setTimeout(r, 3000));
   }
-  throw new Error(`Domain order ${orderId} is still pending after the poll window; will retry later.`);
+  throw new DomainOrderTimeoutError(orderId);
 }

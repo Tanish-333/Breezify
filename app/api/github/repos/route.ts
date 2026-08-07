@@ -84,10 +84,18 @@ export async function POST(req: NextRequest) {
       githubToken
     );
     if (!res.ok) {
-      return NextResponse.json(
-        { error: "That GitHub token isn't valid, or it's missing the repo scope." },
-        { status: 400 }
-      );
+      // 403 here is very often GitHub's primary/secondary rate limit, not
+      // an invalid token — the client matches this message against /token/i
+      // and force-clears a perfectly good stored token on any match,
+      // sending the user through OAuth again for no reason. Only a genuine
+      // 401 means the token itself is bad.
+      const message =
+        res.status === 401
+          ? "That GitHub token isn't valid, or it's missing the repo scope."
+          : res.status === 403
+            ? "GitHub is rate-limiting this request. Wait a minute and try again."
+            : "Couldn't load your repositories from GitHub. Please try again.";
+      return NextResponse.json({ error: message }, { status: res.status === 401 ? 400 : 502 });
     }
 
     const repos = (res.body as any[]).map((r) => ({

@@ -2,12 +2,14 @@
 
 import { useEffect, useState } from "react";
 import {
+  arrayRemove,
+  arrayUnion,
   collection,
   collectionGroup,
   deleteDoc,
   doc,
   getDoc,
-  getDocs,
+  limitToLast,
   onSnapshot,
   orderBy,
   query,
@@ -19,7 +21,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import { logClientError } from "@/lib/client-error-log";
-import type { AppSecret, AppTurn, FeatherApp } from "@/lib/types";
+import type { AppSecret, AppTurn, CollaboratorRole, DailyAnalytics, FeatherApp } from "@/lib/types";
 
 /**
  * A Firestore listener error (a missing composite index, a rules rejection,
@@ -70,6 +72,7 @@ function toApp(id: string, data: any): FeatherApp {
       ? data.turns.map((t: any) => ({ ...t, createdAt: toMillis(t.createdAt) ?? Date.now() }))
       : [],
     deployedUrl: data.deployedUrl,
+    deployExpiresAt: toMillis(data.deployExpiresAt),
     githubUrl: data.githubUrl,
     subdomain: data.subdomain,
     customDomain: data.customDomain,
@@ -82,6 +85,7 @@ function toApp(id: string, data: any): FeatherApp {
     visits: typeof data.visits === "number" ? data.visits : undefined,
     createdAt: toMillis(data.createdAt) ?? Date.now(),
     deployedAt: toMillis(data.deployedAt),
+    isTemplate: data.isTemplate === true,
   };
 }
 
@@ -210,41 +214,87 @@ export function useCollaboratingApps(uid: string | undefined) {
   return { apps, loading };
 }
 
-// Firestore's client SDK batches also cap at 500 writes.
-const BATCH_WRITE_LIMIT = 450;
+/**
+ * The signed-in user's own role on one app: "editor"/"viewer" if they're an
+ * invited collaborator, null if they're the owner (irrelevant — isOwner
+ * covers that separately) or have no relationship to this app at all. Used
+ * to gate the build page's write actions (composer, deploy, etc.) for a
+ * viewer — the same policy firestore.rules' isAppEditor and
+ * lib/app-collaborators.ts's hasEditAccess already enforce server-side;
+ * this is just what lets the UI hide/disable those controls instead of
+ * showing them and failing on click.
+ */
+export function useMyCollaboratorRole(appId: string | undefined, uid: string | undefined) {
+  const [role, setRole] = useState<CollaboratorRole | null>(null);
+  const [loading, setLoading] = useState(true);
 
-function chunk<T>(items: T[], size: number): T[][] {
-  const out: T[][] = [];
-  for (let i = 0; i < items.length; i += size) out.push(items.slice(i, i + size));
-  return out;
+  useEffect(() => {
+    if (!appId || !uid) {
+      setRole(null);
+      setLoading(false);
+      return;
+    }
+    const unsub = onSnapshot(
+      doc(db, "apps", appId, "collaborators", uid),
+      (snap) => {
+        if (!snap.exists()) {
+          setRole(null);
+        } else {
+          // Role-less doc predates this feature — same back-compat default
+          // used everywhere else this is checked.
+          const raw = snap.data().role;
+          setRole(raw === "viewer" ? "viewer" : "editor");
+        }
+        setLoading(false);
+      },
+      (err) => {
+        logListenerError("useMyCollaboratorRole", err);
+        setLoading(false);
+      }
+    );
+    return () => unsub();
+  }, [appId, uid]);
+
+  return { role, loading };
 }
 
 /**
- * secrets, versions, and collaborators don't cascade-delete with their
- * parent app doc (Firestore never does this automatically), and secrets'
- * and collaborators' own rules check ownership via a get() on the parent
- * app doc — so deleting the app first would leave any leftover secrets
- * (real third-party API keys) not just orphaned, but permanently unreadable
- * and undeletable afterward. Clear the subcollections first.
+ * Hands ownership of an app to one of its current editors/viewers. The
+ * outgoing owner becomes a regular "editor" collaborator instead of losing
+ * access outright — a transfer is a handoff, not a removal. All three
+ * writes (the app doc's userId, dropping the new owner's now-redundant
+ * collaborator doc, adding the old owner's) land in one batch so nobody
+ * ever observes a half-applied transfer; firestore.rules' matching
+ * apps/{appId} and collaborators/{uid} rules only allow this exact
+ * three-write shape from the current owner.
  */
-export async function deleteApp(appId: string) {
-  const [secretsSnap, versionsSnap, collaboratorsSnap] = await Promise.all([
-    getDocs(collection(db, "apps", appId, "secrets")),
-    getDocs(collection(db, "apps", appId, "versions")),
-    getDocs(collection(db, "apps", appId, "collaborators")),
-  ]);
-  const subcollectionRefs = [...secretsSnap.docs, ...versionsSnap.docs, ...collaboratorsSnap.docs].map(
-    (d) => d.ref
-  );
-
-  for (const group of chunk(subcollectionRefs, BATCH_WRITE_LIMIT)) {
-    const batch = writeBatch(db);
-    for (const ref of group) batch.delete(ref);
-    await batch.commit();
-  }
-
-  await deleteDoc(doc(db, "apps", appId));
+export async function transferOwnership(
+  appId: string,
+  currentOwnerUid: string,
+  currentOwnerEmail: string,
+  newOwnerUid: string
+): Promise<void> {
+  const batch = writeBatch(db);
+  batch.update(doc(db, "apps", appId), { userId: newOwnerUid });
+  batch.delete(doc(db, "apps", appId, "collaborators", newOwnerUid));
+  batch.set(doc(db, "apps", appId, "collaborators", currentOwnerUid), {
+    uid: currentOwnerUid,
+    email: currentOwnerEmail,
+    role: "editor",
+    addedBy: newOwnerUid,
+    addedAt: serverTimestamp(),
+  });
+  await batch.commit();
 }
+
+// Deleting an app used to be a plain client-side Firestore batch delete
+// here, same reasoning as the removed client-side duplicateApp() below: it
+// never detached a custom domain from the app's Vercel project, leaving it
+// orphaned there even though Breezify itself had forgotten about it. Moved
+// to deleteAppRequest() in lib/api-client.ts, which hits
+// app/api/apps/[appId] (DELETE) — see lib/deploy-actions.ts' deleteApp(),
+// which does the domain detach before removing the secrets/versions/
+// collaborators subcollections and the app doc itself.
 
 // Duplicating an app used to be a plain client-side Firestore write here,
 // gated only by the "Duplicate" button's own Pro+ check — firestore.rules'
@@ -383,6 +433,58 @@ export function useAppSecrets(appId: string | undefined) {
   return { secrets, loading };
 }
 
+const ANALYTICS_WINDOW_DAYS = 30;
+
+function toDailyAnalytics(id: string, data: any): DailyAnalytics {
+  return {
+    date: id,
+    total: data.total ?? 0,
+    countries: data.countries ?? {},
+    referrers: data.referrers ?? {},
+    devices: data.devices ?? {},
+    paths: data.paths ?? {},
+  };
+}
+
+/**
+ * The last 30 days of one app's visit rollup (see lib/traffic-guard.ts's
+ * recordView) — day-doc ids are "YYYY-MM-DD", which sorts correctly as a
+ * plain string, so orderBy(documentId()) needs no separate date field.
+ * Empty (not an error) whenever FIREBASE_SERVICE_ACCOUNT isn't configured
+ * on this deployment, since that's the only path that ever writes these.
+ */
+export function useAppAnalytics(appId: string | undefined) {
+  const [days, setDays] = useState<DailyAnalytics[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!appId) {
+      setDays([]);
+      setLoading(false);
+      return;
+    }
+    const q = query(
+      collection(db, "apps", appId, "analytics"),
+      orderBy("__name__"),
+      limitToLast(ANALYTICS_WINDOW_DAYS)
+    );
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        setDays(snap.docs.map((d) => toDailyAnalytics(d.id, d.data())));
+        setLoading(false);
+      },
+      (err) => {
+        logListenerError("useAppAnalytics", err);
+        setLoading(false);
+      }
+    );
+    return () => unsub();
+  }, [appId]);
+
+  return { days, loading };
+}
+
 export async function addAppSecret(
   appId: string,
   userId: string,
@@ -395,6 +497,79 @@ export async function addAppSecret(
 
 export async function deleteAppSecret(appId: string, secretId: string): Promise<void> {
   await deleteDoc(doc(db, "apps", appId, "secrets", secretId));
+}
+
+/**
+ * Sets a secret by key, replacing any existing entry (or entries — the
+ * freeform "Custom" form and a connector card can both write the same key,
+ * and addAppSecret() always creates a fresh doc rather than checking for
+ * one) rather than piling up duplicates with the same key. Used by the
+ * Connectors panel (components/app-secrets-dialog.tsx) so re-saving a
+ * connector's key overwrites its old value instead of leaving both around —
+ * the deploy route's secretsEnv lookup would otherwise pick whichever one
+ * happened to sort last, silently.
+ */
+export async function upsertAppSecret(
+  appId: string,
+  userId: string,
+  key: string,
+  value: string,
+  existing: AppSecret[]
+): Promise<void> {
+  const dupes = existing.filter((s) => s.key === key);
+  await Promise.all(dupes.map((s) => deleteAppSecret(appId, s.id)));
+  await addAppSecret(appId, userId, key, value);
+}
+
+/**
+ * Toggles one app id in/out of the current user's own starredAppIds — see
+ * firestore.rules' users/{userId} update rule, which allows this exact
+ * write (and only this field) regardless of role on the starred app. Not
+ * gated by canEdit anywhere it's called: starring is a viewer-appropriate
+ * action, same as any other bookmark.
+ */
+export async function toggleStarredApp(uid: string, appId: string, starred: boolean): Promise<void> {
+  await updateDoc(doc(db, "users", uid), {
+    starredAppIds: starred ? arrayRemove(appId) : arrayUnion(appId),
+  });
+}
+
+/**
+ * Maps a template's slug (lib/templates.ts' AppTemplate.id) to the real
+ * generated app that duplicates from — see app/api/admin/seed-templates, which
+ * is what actually creates these once through the normal generation
+ * pipeline, owned by a dedicated system account, and firestore.rules'
+ * apps/{appId} read rule, which is what makes isTemplate docs readable by
+ * any signed-in user rather than just their owner. A template with no
+ * matching entry here hasn't been seeded yet — components/templates-section.tsx
+ * falls back to a plain prompt prefill for it instead of duplicating.
+ */
+export function useTemplateApps() {
+  const [bySlug, setBySlug] = useState<Record<string, string>>({});
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    const q = query(collection(db, "apps"), where("isTemplate", "==", true));
+    const unsub = onSnapshot(
+      q,
+      (snap) => {
+        const next: Record<string, string> = {};
+        for (const d of snap.docs) {
+          const slug = d.data().templateSlug;
+          if (typeof slug === "string") next[slug] = d.id;
+        }
+        setBySlug(next);
+        setLoading(false);
+      },
+      (err) => {
+        logListenerError("useTemplateApps", err);
+        setLoading(false);
+      }
+    );
+    return () => unsub();
+  }, []);
+
+  return { bySlug, loading };
 }
 
 export function useApp(appId: string | undefined) {

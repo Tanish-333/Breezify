@@ -4,6 +4,7 @@ import { authenticate, requirePlan, loadDeployedApp, DOMAIN_RE } from "@/lib/dom
 import { checkDomainAvailability, getDomainPrice, isDeployConfigured, type DomainContact } from "@/lib/vercel-deploy";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { markedUpDomainPrice } from "@/lib/types";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
 export const runtime = "nodejs";
 
@@ -18,10 +19,6 @@ const CONTACT_FIELDS = [
   "zip",
   "country",
 ] as const;
-
-function appUrl(req: NextRequest) {
-  return process.env.NEXT_PUBLIC_APP_URL || req.nextUrl.origin;
-}
 
 /**
  * Starts a domain purchase: re-validates availability/price server-side
@@ -104,9 +101,18 @@ export async function POST(req: NextRequest) {
         : undefined;
 
     const stripe = getStripe();
-    const returnUrl = `${appUrl(req)}/build/${appId}`;
+    const returnUrl = `${getAppBaseUrl(req.nextUrl.origin)}/build/${appId}`;
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
+      // The account has Managed Payments (Stripe-as-merchant-of-record) on
+      // by default, which requires every line item's product to carry a
+      // Stripe Tax product tax_code — this ad-hoc, dynamically-priced
+      // domain-resale item never had one, so every purchase 400'd before a
+      // customer could even see the checkout page. Opting this one-off
+      // session out of Managed Payments is Stripe's own documented fix and
+      // matches how the subscription checkout (create-checkout-session)
+      // already behaves without needing a tax code at all.
+      managed_payments: { enabled: false },
       line_items: [
         {
           price_data: {

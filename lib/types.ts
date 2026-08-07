@@ -166,6 +166,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     features: [
       "5.00 credits, one time",
       "Haiku 4.5",
+      "3 live app subdomains (frontend-only, no backend)",
       "Live preview only",
       "Community support",
     ],
@@ -180,6 +181,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     features: [
       "40.00 credits every month",
       "Adds Sonnet 4.5, Gemini 3.6 Flash, and Llama 3.1 8B (Groq)",
+      "7 live app subdomains, with real backend support",
       "View, copy & export code, badge-free",
       "Email support",
     ],
@@ -195,6 +197,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     features: [
       "100.00 credits every month",
       "Adds Opus 5, Gemini 3.1 Pro, and Llama 3.3 70B (Groq)",
+      "15 live app subdomains, plus custom domains",
       "Duplicate any app to experiment freely",
       "Visit analytics on deployed apps",
       "Priority support",
@@ -210,6 +213,7 @@ export const PLANS: Record<PlanId, PlanInfo> = {
     features: [
       "200.00 credits every month",
       "Every model",
+      "35 live app subdomains, plus custom domains",
       "Larger token budget per generation",
       "Duplicate any app to experiment freely",
       "Dedicated support",
@@ -251,8 +255,18 @@ export const CUSTOM_DOMAIN_MIN_PLAN: PlanId = "pro";
  */
 export const DOMAIN_PRICE_MARKUP = 1.2;
 
+/** Flat profit per domain (registration or renewal), added on top of the multiplier above. */
+export const DOMAIN_PRICE_FLAT_ADDON = 2.0;
+
 export function markedUpDomainPrice(wholesalePrice: number): number {
-  return Math.round(wholesalePrice * DOMAIN_PRICE_MARKUP * 100) / 100;
+  return Math.round((wholesalePrice * DOMAIN_PRICE_MARKUP + DOMAIN_PRICE_FLAT_ADDON) * 100) / 100;
+}
+
+/** An invited collaborator's permission level — the owner isn't tracked here, that's apps/{appId}.userId. */
+export type CollaboratorRole = "editor" | "viewer";
+export const COLLABORATOR_ROLES: CollaboratorRole[] = ["editor", "viewer"];
+export function isCollaboratorRole(v: unknown): v is CollaboratorRole {
+  return v === "editor" || v === "viewer";
 }
 
 /** Lowest plan that can invite collaborators onto an app. */
@@ -284,6 +298,75 @@ export const DEPLOY_DAILY_LIMIT: Record<PlanId, number> = {
   pro: 75,
   max: 200,
 };
+
+/**
+ * How many of a user's apps may be LIVE (holding a real subdomain, see
+ * isActiveDeployment()) at once — see lib/deploy-actions.ts. A user is
+ * always free to undeploy (lib/deploy-actions.ts undeployApp) or delete an
+ * app to immediately free a slot and deploy a new one. null = no cap.
+ *
+ * Deliberately capped on every plan, even Max: each live app is a real,
+ * separate Vercel project (see lib/vercel-deploy.ts), not a row in a
+ * shared table — an "unlimited" top tier would mean one account could grow
+ * an unbounded number of live Vercel projects, which is a real
+ * infra/ops cost, not just a product limit.
+ */
+export const MAX_ACTIVE_DEPLOYED_APPS: Record<PlanId, number | null> = {
+  free: 3,
+  plus: 7,
+  pro: 15,
+  max: 35,
+};
+
+/**
+ * Page views allowed per deployed app in a rolling ~30-day window before
+ * visitors get redirected to /limit-reached instead of the app — see
+ * lib/traffic-guard.ts. null = no cap. Every plan has a real ceiling —
+ * even the top plan's is just high, not unlimited, so a runaway/abused
+ * app can't rack up unbounded Vercel bandwidth on any plan.
+ */
+export const MONTHLY_PAGE_VIEW_LIMIT: Record<PlanId, number | null> = {
+  free: 1_000,
+  plus: 5_000,
+  pro: 50_000,
+  max: 250_000,
+};
+
+/**
+ * Days a deployed subdomain stays live before it auto-expires and starts
+ * redirecting visitors to /limit-reached (see lib/traffic-guard.ts) until
+ * the owner renews it (see app/api/apps/[appId]/renew). null = never
+ * expires — only the top plan gets that; every other plan has a real
+ * renewal cadence, a genuine incentive to upgrade rather than a one-time
+ * free-plan nudge.
+ */
+export const DEPLOY_EXPIRY_DAYS: Record<PlanId, number | null> = {
+  free: 30,
+  plus: 120,
+  pro: 365,
+  max: null,
+};
+
+/**
+ * A deployed app can only be renewed once it's within this many days of its
+ * deployExpiresAt — or any time after it's already expired. Renewing any
+ * earlier than that is rejected (see app/api/apps/[appId]/renew): the point
+ * is a genuine "it's about to lapse" renewal, not a way to keep pushing the
+ * clock out indefinitely right after every deploy.
+ */
+export const RENEWAL_WINDOW_DAYS = 2;
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** True once `expiresAt` (deployExpiresAt) has passed. Apps with no expiry (expiresAt undefined) never expire. */
+export function isDeployExpired(expiresAt: number | undefined, now: number = Date.now()): boolean {
+  return typeof expiresAt === "number" && now >= expiresAt;
+}
+
+/** True once `expiresAt` is within RENEWAL_WINDOW_DAYS of now, or already past — see RENEWAL_WINDOW_DAYS. */
+export function canRenewDeploy(expiresAt: number | undefined, now: number = Date.now()): boolean {
+  return typeof expiresAt === "number" && now >= expiresAt - RENEWAL_WINDOW_DAYS * DAY_MS;
+}
 
 export function planAllowsModel(plan: PlanId, model: ModelId): boolean {
   return PLAN_RANK[plan] >= PLAN_RANK[MODEL_INFO[model].minPlan];
@@ -336,6 +419,11 @@ export function effectiveDeployStatus(app: {
   return null;
 }
 
+/** True when `app` currently holds one of its owner's slots under MAX_ACTIVE_DEPLOYED_APPS. */
+export function isActiveDeployment(app: { status: AppStatus; deployStatus?: DeployStatus }): boolean {
+  return effectiveDeployStatus(app) === "live";
+}
+
 export interface AppTurn {
   id: string;
   /**
@@ -379,7 +467,10 @@ export interface FeatherApp {
   suggestions?: string[];
   turns?: AppTurn[];
   deployedUrl?: string;
+  /** When this deploy auto-expires (ms) — see DEPLOY_EXPIRY_DAYS. Unset on plans with no expiry. */
+  deployExpiresAt?: number;
   githubUrl?: string;
+  /** Set only on free-plan apps, by deployFreeTierApp() in lib/deploy-actions.ts — the slug app/apps/[subdomain]/route.ts looks this app up by. Paid plans deploy to their own real Vercel project instead (see deployedUrl) and never set this. */
   subdomain?: string;
   customDomain?: string;
   customDomainVerified?: boolean;
@@ -393,8 +484,14 @@ export interface FeatherApp {
   errorMessage?: string;
   createdAt: number;
   deployedAt?: number;
-  /** Page-load count on the deployed app. */
+  /** Lifetime page-load count on the deployed app. */
   visits?: number;
+  /** Rolling-window page-view count checked against MONTHLY_PAGE_VIEW_LIMIT — see lib/traffic-guard.ts. Only ever written server-side. */
+  monthlyViews?: number;
+  /** Start (ms) of the current monthlyViews window; the window rolls over ~30 days after this. */
+  monthlyViewsWindowStart?: number;
+  /** True for a seed app the Templates section duplicates from (see app/api/admin/seed-templates and components/templates-section.tsx) — the one case firestore.rules lets a non-owner, non-collaborator signed-in user read this doc at all. */
+  isTemplate?: boolean;
 }
 
 /** A key/value pair scoped to one app, e.g. an API key the generated app calls out with. */
@@ -403,6 +500,16 @@ export interface AppSecret {
   key: string;
   value: string;
   createdAt: number;
+}
+
+/** One day's rollup at apps/{appId}/analytics/{day} — see lib/traffic-guard.ts's recordView(). Doc id is the day, "YYYY-MM-DD". */
+export interface DailyAnalytics {
+  date: string;
+  total: number;
+  countries: Record<string, number>;
+  referrers: Record<string, number>;
+  devices: Record<string, number>;
+  paths: Record<string, number>;
 }
 
 export interface FeatherUser {
@@ -415,6 +522,16 @@ export interface FeatherUser {
   createdAt: number;
   lastLoginAt: number;
   authProviders: string[];
+  /** Whether to email this user for things like a collaborator invite. Absent/undefined means on — see the Settings page's Notifications card. */
+  emailNotifications?: boolean;
+  /**
+   * App ids this user has starred. Lives on the viewer's own doc, not on
+   * apps/{appId} — starring is a per-viewer preference (a collaborator can
+   * star an app the owner hasn't), and the app doc's write rules are
+   * owner/editor-gated in a way that's overkill for a trivial toggle. See
+   * toggleStarredApp() in lib/use-apps.ts.
+   */
+  starredAppIds?: string[];
 }
 
 export type TransactionType = "generation" | "topup" | "subscription";

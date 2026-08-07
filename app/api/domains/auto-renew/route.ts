@@ -16,15 +16,25 @@ export async function POST(req: NextRequest) {
     if (auth.error) return auth.error;
     const { uid, idToken } = auth;
 
-    const planError = await requirePlan(uid, idToken);
-    if (planError) return planError;
-
     const { appId, autoRenew } = await req.json();
     if (!appId || typeof appId !== "string") {
       return NextResponse.json({ error: "Missing app." }, { status: 400 });
     }
     if (typeof autoRenew !== "boolean") {
       return NextResponse.json({ error: "Invalid request." }, { status: 400 });
+    }
+
+    // Only gate turning auto-renew ON behind the plan requirement — turning
+    // it OFF must always be allowed regardless of current plan. Without
+    // this, a customer who downgrades below the custom-domain plan while
+    // still owning a Breezify-purchased, auto-renewing domain had no way to
+    // stop next year's charge through this control at all (it 403'd
+    // unconditionally): the only working path was detaching the domain
+    // entirely via DELETE /api/domains, a much more drastic, non-obvious
+    // workaround just to turn off a future charge.
+    if (autoRenew) {
+      const planError = await requirePlan(uid, idToken);
+      if (planError) return planError;
     }
 
     const loaded = await loadDeployedApp(appId, uid, idToken);

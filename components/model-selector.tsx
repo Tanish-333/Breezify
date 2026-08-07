@@ -18,6 +18,7 @@ export function ModelSelector({
   plan,
   availability,
   onLockedNavigate,
+  disabled,
 }: {
   value: ModelId;
   onChange: (model: ModelId) => void;
@@ -25,6 +26,8 @@ export function ModelSelector({
   availability?: Record<string, boolean>;
   /** Called just before navigating to /billing from a locked model card, so the caller can save any in-progress draft (e.g. the prompt) first. */
   onLockedNavigate?: () => void;
+  /** True while a generation using `value` is already in flight — switching models mid-request wouldn't affect that request, but leaving the picker live makes the cost/model shown look like it applies to work that's already running. */
+  disabled?: boolean;
 }) {
   return (
     <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 lg:grid-cols-3">
@@ -34,8 +37,8 @@ export function ModelSelector({
         // Availability is unknown until the fetch resolves; assume usable so
         // models don't flash as "unavailable" on first paint.
         const configured = availability ? availability[id] !== false : true;
-        const usable = unlocked && configured;
-        const active = value === id && usable;
+        const usable = unlocked && configured && !disabled;
+        const active = value === id && unlocked && configured;
 
         const card = (
           <div
@@ -99,12 +102,14 @@ export function ModelSelector({
           <button
             key={id}
             type="button"
-            disabled={!configured}
+            disabled={!configured || disabled}
             onClick={() => onChange(id)}
             title={
-              configured
-                ? info.label
-                : `${info.label} needs a provider API key on this deployment`
+              disabled
+                ? "Model is locked in for the generation already running"
+                : configured
+                  ? info.label
+                  : `${info.label} needs a provider API key on this deployment`
             }
             className="rounded-lg text-left focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-foreground disabled:cursor-not-allowed"
           >

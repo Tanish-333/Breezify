@@ -21,9 +21,33 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: TITLE,
   description: DESCRIPTION,
+  // Google Search and most non-Chromium browsers/crawlers still don't
+  // resolve an SVG-only favicon — /favicon.ico and a PNG are what actually
+  // show up in search results and browser tabs; the SVG stays first for
+  // browsers that do support it (sharper on high-DPI displays).
+  //
+  // Every icon here except favicon.ico itself is named with a "-v2" suffix,
+  // not just a query string: browsers cache a favicon by its exact URL,
+  // essentially forever, largely ignoring cache-control headers for it —
+  // and some browsers additionally auto-probe the literal /favicon.ico path
+  // directly regardless of <link> tags, a request they'd already cached
+  // from before this logo existed, unaffected by a query-string change on
+  // the <link> entry. A genuinely new filename is the one thing guaranteed
+  // to be a cache miss everywhere. favicon.ico itself is left unrenamed on
+  // purpose — something has to keep answering that literal legacy path for
+  // browsers/crawlers that check it with no <link> tag involved at all, so
+  // its *contents* were updated in place instead. Bump "-v2" to "-v3" (and
+  // rename the files) if these icons ever need to change again.
   icons: {
-    icon: "/favicon.svg",
+    icon: [
+      { url: "/favicon-v2.svg", type: "image/svg+xml" },
+      { url: "/favicon-v2-32.png", type: "image/png", sizes: "32x32" },
+      { url: "/favicon-v2-192.png", type: "image/png", sizes: "192x192" },
+    ],
+    shortcut: "/favicon.ico",
+    apple: "/apple-touch-icon-v2.png",
   },
+  manifest: "/site.webmanifest",
   openGraph: {
     title: TITLE,
     description: DESCRIPTION,
@@ -36,7 +60,28 @@ export const metadata: Metadata = {
     title: TITLE,
     description: DESCRIPTION,
   },
+  // Paste the "content" value from Google Search Console's HTML tag
+  // verification method into NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION — no
+  // code change needed after that, just set the env var and redeploy.
+  verification: googleSiteVerification() ? { google: googleSiteVerification() } : undefined,
 };
+
+/**
+ * Search Console shows the same code in two formats depending which
+ * verification method you pick: the HTML meta tag method gives just the
+ * bare code, but the DNS TXT record method gives
+ * "google-site-verification=<code>" — an easy value to paste into
+ * NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION by mistake, since it's visually the
+ * "the code" too. Next.js's `verification.google` field always renders as
+ * `<meta name="google-site-verification" content="...">`, so pasting the
+ * prefixed form would double it up and silently fail to verify. Stripping
+ * it here means either format works.
+ */
+function googleSiteVerification(): string | undefined {
+  const raw = process.env.NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION?.trim();
+  if (!raw) return undefined;
+  return raw.replace(/^google-site-verification=/i, "");
+}
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (

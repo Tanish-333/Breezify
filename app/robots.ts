@@ -1,6 +1,7 @@
 import type { MetadataRoute } from "next";
+import { getAppBaseUrl } from "@/lib/app-base-url";
 
-const SITE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://breezify.dev";
+const SITE_URL = getAppBaseUrl();
 
 export default function robots(): MetadataRoute.Robots {
   return {

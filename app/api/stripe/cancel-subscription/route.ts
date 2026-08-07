@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
 import { getDoc } from "@/lib/firestore-rest";
-import { getStripe, isStripeConfigured, resolveStripeCustomerId } from "@/lib/stripe";
+import { getStripe, isStripeConfigured, maxDowngradeLockStatus, resolveStripeCustomerId } from "@/lib/stripe";
+import { formatDate } from "@/lib/utils";
+import { isPlanId, type PlanId } from "@/lib/types";
 
 export const runtime = "nodejs";
 
@@ -49,6 +51,23 @@ export async function POST(req: NextRequest) {
     }
 
     const userDoc = await getDoc(`users/${uid}`, idToken);
+
+    // Canceling (turning auto-renew off) eventually drops a Max subscriber
+    // to free once the period ends — the same outcome as downgrading
+    // through the portal, so it has to respect the same 30-day lock or a
+    // Max subscriber could just cancel instead to route around it. Turning
+    // auto-renew back ON is never blocked, in either direction.
+    if (cancel) {
+      const plan: PlanId = isPlanId(userDoc?.fields.plan) ? (userDoc!.fields.plan as PlanId) : "free";
+      const maxUpgradedAt = typeof userDoc?.fields.maxUpgradedAt === "string" ? userDoc.fields.maxUpgradedAt : undefined;
+      const { locked, until } = maxDowngradeLockStatus(plan, maxUpgradedAt);
+      if (locked && until) {
+        return NextResponse.json(
+          { error: `Max plans can't be canceled or downgraded until ${formatDate(until)}, 30 days after upgrading.` },
+          { status: 403 }
+        );
+      }
+    }
     let customerId =
       typeof userDoc?.fields.stripeCustomerId === "string"
         ? (userDoc.fields.stripeCustomerId as string)
@@ -90,7 +109,11 @@ export async function POST(req: NextRequest) {
       subscription: {
         status: updated.status,
         cancelAtPeriodEnd: updated.cancel_at_period_end,
-        currentPeriodEnd: updated.current_period_end,
+        // Moved off the subscription object itself to its first item in
+        // recent API versions (a subscription can have items on different
+        // billing cycles now) — see the Subscription/SubscriptionItem type
+        // definitions in the installed stripe package for the current shape.
+        currentPeriodEnd: updated.items.data[0]?.current_period_end,
       },
     });
   } catch (err) {

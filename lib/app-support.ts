@@ -36,6 +36,16 @@ export function unsupportedReason(
     return `This app includes a real always-on server process, which Breezify can't ${action} (backend logic here must be Vercel serverless functions in an api/ folder instead). Download the ZIP or push it to GitHub and run it locally with its own server instead.`;
   }
 
+  // api/ routes are real once deployed, but the preview iframe has no
+  // server at all to run them against. That used to block the ENTIRE
+  // preview outright — but most generated apps with a backend still have a
+  // perfectly renderable frontend (the api/ calls are usually a fraction of
+  // the UI), so refusing to show anything at all just because api/ exists
+  // meant a large share of apps never got a live preview at all. Whatever
+  // actually calls into api/ fails at request time like any other network
+  // error, which is the same experience calling a real deployed backend
+  // that's down would give — the rest of the app still renders and works.
+
   // Client-side code reading a server env var can never work: nothing
   // injects secrets into the browser bundle. Backend api/ files are exempt
   // — those DO get the app's configured Secrets injected at deploy time.

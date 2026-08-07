@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import { doc, getDoc } from "firebase/firestore";
+import { db } from "@/lib/firebase";
 import { cn } from "@/lib/utils";
 import { MODEL_INFO, type AppTurn } from "@/lib/types";
 import { Check, Copy, FileCode2, History, Loader2 } from "lucide-react";
@@ -26,24 +28,60 @@ const KIND_LABEL: Record<AppTurn["kind"], string> = {
 };
 
 export function TurnCard({
+  appId,
   turn,
   files,
   isLatest,
   onRevert,
   reverting,
+  revertLocked,
 }: {
+  /** Needed to lazily fetch this turn's own file snapshot for non-latest turns — see the Files tab below. */
+  appId: string;
   turn: AppTurn;
+  /** The CURRENT, live file set — only actually this turn's own content when `isLatest`. */
   files: Record<string, string>;
   /** The current, live state, reverting to it would be a no-op. */
   isLatest?: boolean;
   onRevert?: () => void;
   reverting?: boolean;
+  /** True while ANY turn (not necessarily this one) is mid-revert — reverts aren't transactional against each other, so letting two fire concurrently against different turns is a real race that can silently drop one's result. */
+  revertLocked?: boolean;
 }) {
   const [tab, setTab] = useState<Tab>("details");
   const [copied, setCopied] = useState(false);
   const [confirming, setConfirming] = useState(false);
 
-  const paths = Object.keys(files).sort();
+  // For any turn except the latest, `files` is the app's CURRENT state, not
+  // what this turn actually produced — every turn's real snapshot lives
+  // separately at apps/{appId}/versions/{turn.id} (written alongside the
+  // turn itself, see app/api/generate/route.ts). Showing the live `files`
+  // list here for an older turn was actively misleading: it could list
+  // files a later turn added or removed, with no indication the list
+  // wasn't really this turn's own. Fetched lazily, once, only if the Files
+  // tab is actually opened on a non-latest turn.
+  const [historicalFiles, setHistoricalFiles] = useState<Record<string, string> | null>(null);
+  const [loadingHistorical, setLoadingHistorical] = useState(false);
+  const [historicalError, setHistoricalError] = useState(false);
+
+  async function openFilesTab() {
+    setTab("files");
+    if (isLatest || historicalFiles || loadingHistorical) return;
+    setLoadingHistorical(true);
+    setHistoricalError(false);
+    try {
+      const snap = await getDoc(doc(db, "apps", appId, "versions", turn.id));
+      const data = snap.data();
+      setHistoricalFiles((data?.files as Record<string, string> | undefined) ?? {});
+    } catch {
+      setHistoricalError(true);
+    } finally {
+      setLoadingHistorical(false);
+    }
+  }
+
+  const displayedFiles = isLatest ? files : historicalFiles;
+  const paths = displayedFiles ? Object.keys(displayedFiles).sort() : [];
 
   async function copySummary() {
     try {
@@ -77,7 +115,7 @@ export function TurnCard({
           {(["details", "files"] as Tab[]).map((t) => (
             <button
               key={t}
-              onClick={() => setTab(t)}
+              onClick={() => (t === "files" ? openFilesTab() : setTab(t))}
               className={cn(
                 "flex-1 rounded-md px-3 py-1.5 text-xs font-medium capitalize transition-colors",
                 tab === t
@@ -110,6 +148,13 @@ export function TurnCard({
                 </button>
               </div>
             </div>
+          ) : loadingHistorical ? (
+            <div className="flex items-center gap-1.5 py-2 text-[11px] text-muted-foreground">
+              <Loader2 className="h-3 w-3 animate-spin" />
+              Loading this version&apos;s files...
+            </div>
+          ) : historicalError ? (
+            <p className="py-2 text-[11px] text-error">Couldn&apos;t load this version&apos;s files.</p>
           ) : (
             <div className="max-h-44 space-y-0.5 overflow-y-auto">
               {paths.map((p) => (
@@ -135,7 +180,8 @@ export function TurnCard({
                     setConfirming(false);
                     onRevert();
                   }}
-                  className="font-medium text-foreground hover:underline"
+                  disabled={revertLocked}
+                  className="font-medium text-foreground hover:underline disabled:pointer-events-none disabled:opacity-50"
                 >
                   Yes, revert
                 </button>
@@ -149,7 +195,7 @@ export function TurnCard({
             ) : (
               <button
                 onClick={() => setConfirming(true)}
-                disabled={reverting}
+                disabled={reverting || revertLocked}
                 className="flex items-center gap-1.5 text-[11px] text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
               >
                 {reverting ? (

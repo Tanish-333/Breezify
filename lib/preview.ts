@@ -86,8 +86,145 @@ function apiRoutesBanner() {
 </div>`;
 }
 
-function hasApiRoutes(files: Record<string, string>) {
+export function hasApiRoutes(files: Record<string, string>) {
   return Object.keys(files).some((p) => /^api\//i.test(p));
+}
+
+// IDs of Breezify's own injected elements (the watermark badge, the api/
+// banner above) — never selectable for editing, same reasoning as the
+// isEligible() checks below excluding script/style/html/body.
+const NON_EDITABLE_IDS = ["breezify-badge", "feather-api-banner"];
+
+/**
+ * Appends the click-to-edit script the Visual tab uses (components/
+ * app-visual-editor.tsx) onto an already-built preview document — kept
+ * fully separate from buildPreview() above rather than threading a flag
+ * through its two branches, since this only ever needs to run for the one
+ * caller that wants it. Reports the clicked element back to the parent via
+ * postMessage, the exact same sandboxed-iframe pattern buildPreview's own
+ * runtime-error reporting already uses (see the `fail()` function above) —
+ * the iframe has no allow-same-origin, so postMessage is the only channel
+ * across that boundary either way.
+ *
+ * Capture-phase listeners intercept a click before the app's own handlers
+ * ever see it, and preventDefault/stopPropagation stop it from also
+ * navigating a link or submitting a form while in edit mode — the click is
+ * "select this element to edit," not "activate it."
+ */
+export function withVisualEditing(doc: string): string {
+  const script = `<script>
+(function () {
+  if (window.__breezifyVisualEdit) return;
+  window.__breezifyVisualEdit = true;
+
+  var NON_EDITABLE_IDS = ${JSON.stringify(NON_EDITABLE_IDS)};
+  var SKIP_TAGS = ["SCRIPT", "STYLE", "LINK", "META", "HTML", "BODY"];
+
+  var overlay = document.createElement("div");
+  overlay.style.cssText =
+    "position:fixed;pointer-events:none;z-index:2147483646;border:2px solid #3b82f6;" +
+    "background:rgba(59,130,246,.08);display:none;box-sizing:border-box;";
+  document.documentElement.appendChild(overlay);
+
+  function isNonEditable(el) {
+    for (var i = 0; i < NON_EDITABLE_IDS.length; i++) {
+      if (el.id === NON_EDITABLE_IDS[i] || (el.closest && el.closest("#" + NON_EDITABLE_IDS[i]))) return true;
+    }
+    return false;
+  }
+
+  function isEligible(el) {
+    if (!el || el.nodeType !== 1 || el === document.body || el === document.documentElement) return false;
+    if (SKIP_TAGS.indexOf(el.tagName) !== -1) return false;
+    if (isNonEditable(el)) return false;
+    var r = el.getBoundingClientRect();
+    return r.width > 0 && r.height > 0;
+  }
+
+  function selectorFor(el) {
+    if (el.id) return "#" + el.id;
+    var parts = [];
+    var node = el;
+    while (node && node.nodeType === 1 && node !== document.body) {
+      var parent = node.parentElement;
+      if (!parent) {
+        parts.unshift(node.tagName.toLowerCase());
+        break;
+      }
+      var siblings = Array.prototype.filter.call(parent.children, function (c) {
+        return c.tagName === node.tagName;
+      });
+      var index = siblings.indexOf(node) + 1;
+      parts.unshift(node.tagName.toLowerCase() + (siblings.length > 1 ? ":nth-of-type(" + index + ")" : ""));
+      node = parent;
+    }
+    return parts.join(" > ");
+  }
+
+  // Only this element's OWN text, not its children's — clicking a card with
+  // a heading and a paragraph inside should edit the card, not concatenate
+  // text that visually belongs to two different elements.
+  function directText(el) {
+    var text = "";
+    for (var i = 0; i < el.childNodes.length; i++) {
+      var n = el.childNodes[i];
+      if (n.nodeType === 3) text += n.textContent;
+    }
+    return text.trim();
+  }
+
+  document.addEventListener(
+    "mouseover",
+    function (e) {
+      if (!isEligible(e.target)) {
+        overlay.style.display = "none";
+        return;
+      }
+      var r = e.target.getBoundingClientRect();
+      overlay.style.display = "block";
+      overlay.style.left = r.left + "px";
+      overlay.style.top = r.top + "px";
+      overlay.style.width = r.width + "px";
+      overlay.style.height = r.height + "px";
+    },
+    true
+  );
+
+  document.addEventListener(
+    "click",
+    function (e) {
+      var el = e.target;
+      if (!isEligible(el)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      var r = el.getBoundingClientRect();
+      var cs = window.getComputedStyle(el);
+      try {
+        window.parent.postMessage(
+          {
+            source: "breezify-preview",
+            type: "element-click",
+            selector: selectorFor(el),
+            tag: el.tagName.toLowerCase(),
+            text: directText(el),
+            rect: { x: r.left, y: r.top, width: r.width, height: r.height },
+            styles: {
+              color: cs.color,
+              fontSize: cs.fontSize,
+              fontWeight: cs.fontWeight,
+              padding: cs.padding,
+            },
+          },
+          "*"
+        );
+      } catch (err) {}
+    },
+    true
+  );
+})();
+<\/script>`;
+
+  return doc.includes("</body>") ? doc.replace("</body>", `${script}</body>`) : `${doc}${script}`;
 }
 
 /**

@@ -11,6 +11,16 @@
 //     client-readable email index) — the actual Firestore write it makes
 //     still goes through the inviting owner's own idToken, so rules still
 //     enforce ownership there.
+//   - lib/traffic-guard.ts (used by app/api/track) uses adminDb() to read a
+//     deployed app owner's plan and roll its monthly page-view window: the
+//     caller there is an anonymous visitor's browser with no user token at
+//     all, and firestore.rules can't expose an owner's plan or a monthly
+//     cap to an unauthenticated reader. Optional: without this configured,
+//     traffic-cap enforcement fails open (see that file for the fallback).
+//   - app/api/admin/seed-templates uses adminDb() to write the Templates
+//     section's seed apps: an operator-triggered admin request, not a
+//     signed-in user's own action, so there's no ID token to write with
+//     through the normal lib/firestore-rest.ts path either.
 import { cert, getApps, initializeApp, type App } from "firebase-admin/app";
 import { getFirestore } from "firebase-admin/firestore";
 import { getAuth } from "firebase-admin/auth";

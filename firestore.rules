@@ -14,11 +14,30 @@ service cloud.firestore {
     // True if the caller has been invited onto apps/{appId} (see
     // apps/{appId}/collaborators/{uid} below, managed only through
     // app/api/apps/[appId]/collaborators — an app's owner can invite an
-    // existing Breezify user, who then gets read/refine/deploy access to
-    // that one app, using their own credits and plan, not the owner's).
+    // existing Breezify user, who then gets read access to that one app,
+    // and — if their role allows it, see isAppEditor below — write access
+    // too, using their own credits and plan, not the owner's).
     function isAppCollaborator(database, appId) {
       return isSignedIn()
         && exists(/databases/$(database)/documents/apps/$(appId)/collaborators/$(request.auth.uid));
+    }
+
+    // True for the owner, or a collaborator whose role isn't "viewer" (a
+    // role missing entirely — every collaborator doc written before roles
+    // existed — is treated as "editor", the only behavior that existed
+    // before this distinction, so nobody's access silently narrows). A
+    // viewer keeps isAppCollaborator's read access below but fails this,
+    // which is what actually makes "viewer" read-only: every direct
+    // client write to apps/{appId} (rename, manual code edit, revert to a
+    // version) is gated on this, on top of app/api/generate,
+    // app/api/deploy, duplicate, and GitHub push/sync each checking the
+    // same thing server-side via lib/app-collaborators.ts's hasEditAccess.
+    function isAppEditor(database, appId) {
+      return isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
+        || (
+          isSignedIn()
+          && get(/databases/$(database)/documents/apps/$(appId)/collaborators/$(request.auth.uid)).data.role != "viewer"
+        );
     }
 
     // The credit costs a generation can ever charge (see lib/types.ts
@@ -53,14 +72,26 @@ service cloud.firestore {
       // enforcement, not the caller's trustworthiness. (The Stripe webhook
       // sets plan/credits on a real payment via the Admin SDK, which
       // bypasses these rules entirely, not through this path.)
-      allow update: if isOwner(userId)
-        && request.resource.data.plan == resource.data.plan
-        && request.resource.data.credits <= resource.data.credits
-        && (
-          request.resource.data.credits == resource.data.credits
-          || isValidCost(resource.data.credits - request.resource.data.credits)
+      allow update: if isOwner(userId) && (
+        (
+          request.resource.data.plan == resource.data.plan
+          && request.resource.data.credits <= resource.data.credits
+          && (
+            request.resource.data.credits == resource.data.credits
+            || isValidCost(resource.data.credits - request.resource.data.credits)
+          )
+          && request.resource.data.credits >= 0
+        ) || (
+          // Starring is a lightweight, per-viewer preference (see
+          // toggleStarredApp() in lib/use-apps.ts) — deliberately not routed
+          // through the credit/plan checks above, which don't apply to it at
+          // all, but also deliberately not left to a bare isOwner() either:
+          // this scopes the exception to touching starredAppIds and nothing
+          // else, so a client can't piggyback an unrelated field change
+          // (say, plan) onto a write that looks like a star toggle.
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(["starredAppIds"])
         )
-        && request.resource.data.credits >= 0;
+      );
       allow delete: if isOwner(userId);
     }
 
@@ -87,11 +118,33 @@ service cloud.firestore {
 
     // apps/{appId}: generated apps.
     match /apps/{appId} {
-      allow read: if isOwner(resource.data.userId) || isAppCollaborator(database, appId);
-      allow create: if isOwner(request.resource.data.userId);
+      // Template apps (isTemplate == true, see app/api/admin/seed-templates and
+      // components/templates-section.tsx) are readable by any signed-in
+      // user, not just their owner — that's what lets the Templates
+      // section discover which slugs are seeded, and lets
+      // app/api/apps/duplicate read one to copy from for someone who's
+      // never been invited onto it. Still gated on isSignedIn(), same as
+      // everything else here — the dashboard that surfaces this is itself
+      // behind sign-in, so there's no case where a fully anonymous reader
+      // needs this.
+      allow read: if isOwner(resource.data.userId)
+        || isAppCollaborator(database, appId)
+        || (isSignedIn() && resource.data.isTemplate == true);
+      // isTemplate/templateSlug may never be set through this create rule —
+      // only app/api/admin/seed-templates (Admin SDK, bypasses these rules
+      // entirely) may ever write them. Without this, the read rule just
+      // above turns into a real hole: any signed-in user could otherwise
+      // create (or, see the update rule below, edit) their OWN app with
+      // isTemplate: true and a templateSlug matching a real template's
+      // slug, hijacking what components/templates-section.tsx duplicates
+      // for every user on that card — their content, not the real seed
+      // app's.
+      allow create: if isOwner(request.resource.data.userId)
+        && !request.resource.data.keys().hasAny(["isTemplate", "templateSlug"]);
       allow update: if (
-        (isOwner(resource.data.userId) || isAppCollaborator(database, appId))
+        isAppEditor(database, appId)
         && request.resource.data.userId == resource.data.userId
+        && !request.resource.data.diff(resource.data).affectedKeys().hasAny(["isTemplate", "templateSlug"])
       ) || (
         // Public visit-counter increments for deployed-app analytics
         // (see app/api/track): no auth required, but this is the ONLY
@@ -100,12 +153,40 @@ service cloud.firestore {
         // anything else on the document.
         request.resource.data.diff(resource.data).affectedKeys().hasOnly(["visits"])
         && request.resource.data.visits == resource.data.visits + 1
+      ) || (
+        // Ownership transfer (see lib/use-apps.ts's transferOwnership) —
+        // only the CURRENT owner, and only to someone already invited as a
+        // collaborator on this app, and userId is the only thing this
+        // particular write may touch (the matching collaborators/{uid}
+        // create/delete pair that actually swaps the two people's roles is
+        // a separate write in the same client-side batch, checked by the
+        // rules on that subcollection below).
+        isOwner(resource.data.userId)
+        && request.resource.data.userId != resource.data.userId
+        && exists(/databases/$(database)/documents/apps/$(appId)/collaborators/$(request.resource.data.userId))
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["userId"])
       );
       allow delete: if isOwner(resource.data.userId);
 
       match /events/{eventId} {
         allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
         allow write: if false;
+      }
+
+      // analytics/{day}: daily visit rollups (total/country/referrer/device/
+      // path breakdowns) for the Analytics page. Only ever written by
+      // lib/traffic-guard.ts's recordView() via the Admin SDK — an anonymous
+      // visitor's beacon has no ID token to write with, and the breakdowns
+      // themselves (country, referrer) aren't safe to let a client compute
+      // and submit unverified anyway. Same owner-only read as events/{eventId}.
+      match /analytics/{day} {
+        allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
+        allow create, update: if false;
+        // Only real client-side write these ever need: lib/deploy-actions.ts's
+        // deleteApp() cleaning these up alongside secrets/versions/collaborators
+        // when the owner deletes the whole app (Firestore doesn't cascade-delete
+        // subcollections on its own).
+        allow delete: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId);
       }
 
       // versions/{turnId}: a file snapshot taken after each turn, so a turn
@@ -131,7 +212,7 @@ service cloud.firestore {
         allow create: if isOwner(request.resource.data.userId);
         // Content itself stays immutable (no update, ever — that's what
         // makes a version trustworthy to revert to). Delete is owner-only,
-        // needed for deleteApp() (lib/use-apps.ts) to clean these up when
+        // needed for deleteApp() (lib/deploy-actions.ts) to clean these up when
         // the whole app goes: it batch-deletes every version alongside the
         // parent apps/{appId} doc, and Firestore batches are all-or-nothing
         // — with this at `if false`, that batch was rejected outright for
@@ -162,10 +243,11 @@ service cloud.firestore {
         allow update: if isOwner(resource.data.userId) && request.resource.data.userId == resource.data.userId;
       }
 
-      // collaborators/{uid}: who besides the owner can work on this app.
-      // Only the owner can invite (create) or remove someone else; a
-      // collaborator may remove themselves (leave) but never anyone else,
-      // and can never add themselves.
+      // collaborators/{uid}: who besides the owner can work on this app, and
+      // at what role ("editor" full access, "viewer" read-only — see
+      // isAppEditor above). Only the owner can invite (create), change a
+      // role, or remove someone else; a collaborator may remove themselves
+      // (leave) but never anyone else, and can never add themselves.
       match /collaborators/{collabUid} {
         allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
           || isOwner(collabUid)
@@ -174,12 +256,23 @@ service cloud.firestore {
         // finds a user's shared apps with a collectionGroup query filtered
         // on this field (documentId() equality doesn't work across a
         // collection group), so a mismatched value here would silently hide
-        // — or misdirect — that invite from the "shared with me" list.
+        // — or misdirect — that invite from the "shared with me" list. Also
+        // used to write the outgoing owner's own new collaborator doc as
+        // part of an ownership transfer (lib/use-apps.ts's
+        // transferOwnership) — get() here resolves against this commit's
+        // PRE-write state, so the caller is still "the owner" for this
+        // check even though the same batch's apps/{appId} write is what's
+        // about to hand ownership to someone else.
         allow create: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
-          && request.resource.data.uid == collabUid;
+          && request.resource.data.uid == collabUid
+          && request.resource.data.role in ["editor", "viewer"];
         allow delete: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
           || isOwner(collabUid);
-        allow update: if false;
+        // Role changes only — everything else about an existing invite
+        // (uid, email, who added them, when) is immutable.
+        allow update: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["role"])
+          && request.resource.data.role in ["editor", "viewer"];
       }
 
       // presence/{uid}: a live "who's currently viewing this app" heartbeat

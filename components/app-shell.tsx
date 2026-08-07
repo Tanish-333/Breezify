@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useSearchParams } from "next/navigation";
 import { Logo, BreezeMark } from "@/components/logo";
 import { CommandPalette } from "@/components/command-palette";
 import { AccountMenu } from "@/components/account-menu";
@@ -12,19 +12,36 @@ import { useUserApps } from "@/lib/use-apps";
 import { cn } from "@/lib/utils";
 import { PLANS } from "@/lib/types";
 import {
+  BarChart3,
+  Clock,
   CreditCard,
-  FolderOpen,
+  FolderKanban,
   HelpCircle,
+  LayoutDashboard,
   LayoutGrid,
+  LayoutTemplate,
+  Plug,
   PanelLeft,
   Plus,
   Search,
   Settings,
+  Star,
+  User,
+  Users,
 } from "lucide-react";
 
-const MAIN_NAV = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutGrid },
-  { href: "/build", label: "New app", icon: Plus },
+/** The dashboard's own app grid reads this from the URL (see app/dashboard/page.tsx) to decide which slice of the user's apps to show — one page, no route duplication. */
+const PROJECTS_NAV = [
+  { view: "all", label: "All projects", icon: FolderKanban },
+  { view: "starred", label: "Starred", icon: Star },
+  { view: "owned", label: "Owned by me", icon: User },
+  { view: "shared", label: "Shared with me", icon: Users },
+] as const;
+
+const TOP_NAV = [
+  { href: "/templates", label: "Templates", icon: LayoutTemplate },
+  { href: "/connectors", label: "Connectors", icon: Plug },
+  { href: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
 
 const ACCOUNT_NAV = [
@@ -51,9 +68,9 @@ function NavLink({
       href={href}
       title={collapsed ? label : undefined}
       className={cn(
-        "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-colors",
+        "flex items-center gap-2.5 rounded-md px-2.5 py-2 text-sm transition-all duration-200 ease-smooth",
         active
-          ? "bg-muted font-medium text-foreground"
+          ? "bg-muted font-medium text-foreground shadow-soft"
           : "text-muted-foreground hover:bg-muted/60 hover:text-foreground",
         collapsed && "justify-center px-0"
       )}
@@ -66,6 +83,13 @@ function NavLink({
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  // Deliberately NOT defaulting a missing param to "all" here — Dashboard
+  // (the bare /dashboard, no view param) and "All projects" (?view=all)
+  // render the exact same content, but need distinct active-highlight
+  // states rather than both lighting up together.
+  const activeView = pathname === "/dashboard" ? searchParams.get("view") : null;
+  const isDashboardHome = pathname === "/dashboard" && activeView === null;
   const { user, profile } = useAuth();
   const { apps } = useUserApps(user?.uid);
   const [collapsed, setCollapsed] = useState(false);
@@ -106,7 +130,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  const recents = apps.slice(0, 5);
   const lowCredits = profile !== null && profile.credits < 0.5;
 
   return (
@@ -155,7 +178,15 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             </button>
           )}
 
-          {MAIN_NAV.map((item) => (
+          <NavLink
+            href="/dashboard"
+            label="Dashboard"
+            icon={LayoutDashboard}
+            collapsed={collapsed}
+            active={isDashboardHome}
+          />
+
+          {TOP_NAV.map((item) => (
             <NavLink
               key={item.href}
               {...item}
@@ -163,6 +194,32 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               active={pathname === item.href}
             />
           ))}
+
+          <div className="pt-5">
+            {!collapsed && (
+              <p className="px-2.5 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                Projects
+              </p>
+            )}
+            {PROJECTS_NAV.map((item) => (
+              <NavLink
+                key={item.view}
+                href={`/dashboard?view=${item.view}`}
+                label={item.label}
+                icon={item.icon}
+                collapsed={collapsed}
+                active={activeView === item.view}
+              />
+            ))}
+          </div>
+
+          <NavLink
+            href="/dashboard?view=recent"
+            label="Recent"
+            icon={Clock}
+            collapsed={collapsed}
+            active={activeView === "recent"}
+          />
 
           <button
             onClick={() => setPaletteOpen(true)}
@@ -182,30 +239,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               </>
             )}
           </button>
-
-          {!collapsed && recents.length > 0 && (
-            <div className="pt-5">
-              <p className="px-2.5 pb-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                Recents
-              </p>
-              {recents.map((app) => (
-                <Link
-                  key={app.id}
-                  href={`/build/${app.id}`}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-colors",
-                    pathname === `/build/${app.id}`
-                      ? "bg-muted font-medium text-foreground"
-                      : "text-muted-foreground hover:bg-muted/60 hover:text-foreground"
-                  )}
-                  title={app.name}
-                >
-                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{app.name}</span>
-                </Link>
-              ))}
-            </div>
-          )}
 
           <div className="pt-5">
             {!collapsed && (
@@ -229,7 +262,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Link
               href="/billing"
               className={cn(
-                "mb-2 flex items-center justify-between rounded-md border px-2.5 py-2.5 text-xs transition-colors",
+                "mb-2 flex items-center justify-between rounded-md border px-2.5 py-2.5 text-xs transition-all duration-200 ease-smooth hover:shadow-soft",
                 lowCredits
                   ? "border-warning/40 text-warning hover:bg-warning/10"
                   : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
@@ -251,6 +284,20 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <Logo />
           </Link>
           <div className="flex items-center gap-1">
+            {profile && (
+              <Link
+                href="/billing"
+                className={cn(
+                  "mr-1 flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-medium tabular-nums transition-colors",
+                  lowCredits
+                    ? "border-warning/40 text-warning hover:bg-warning/10"
+                    : "border-border text-muted-foreground hover:border-muted-foreground hover:text-foreground"
+                )}
+                title={`${PLANS[profile.plan]?.name ?? "Free"} plan`}
+              >
+                {profile.credits.toFixed(2)}
+              </Link>
+            )}
             <ThemeToggle />
             <button
               onClick={() => setPaletteOpen(true)}

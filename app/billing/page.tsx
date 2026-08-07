@@ -42,6 +42,11 @@ function BillingContent() {
   const [customerId, setCustomerId] = useState<string | null>(null);
   const [subLoading, setSubLoading] = useState(false);
   const [cancelLoading, setCancelLoading] = useState(false);
+  // Set once you upgrade TO Max, and cleared 30 days later — see
+  // maxUpgradedAt in app/api/stripe/webhook and maxDowngradeLockStatus in
+  // lib/stripe.ts. Blocks downgrading or canceling out of Max before then.
+  const [downgradeLockedUntil, setDowngradeLockedUntil] = useState<number | null>(null);
+  const downgradeLocked = Boolean(downgradeLockedUntil && downgradeLockedUntil > Date.now());
 
   async function authedFetch(path: string, body?: unknown) {
     const idToken = await auth.currentUser?.getIdToken();
@@ -67,6 +72,7 @@ function BillingContent() {
     if (plan === "free" || !user) {
       setSubscription(null);
       setCustomerId(null);
+      setDowngradeLockedUntil(null);
       return;
     }
     let cancelled = false;
@@ -76,12 +82,14 @@ function BillingContent() {
         if (!cancelled) {
           setSubscription(data.subscription ?? null);
           setCustomerId(data.customerId ?? null);
+          setDowngradeLockedUntil(data.downgradeLockedUntil ?? null);
         }
       })
       .catch(() => {
         if (!cancelled) {
           setSubscription(null);
           setCustomerId(null);
+          setDowngradeLockedUntil(null);
         }
       })
       .finally(() => {
@@ -209,6 +217,16 @@ function BillingContent() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {downgradeLocked && downgradeLockedUntil && (
+              <div className="mb-4 flex items-start gap-2 rounded-lg border border-warning/30 bg-warning/5 p-3 text-sm text-warning">
+                <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                <span>
+                  Max plans can&apos;t be downgraded or canceled until{" "}
+                  <span className="font-medium">{formatDate(downgradeLockedUntil)}</span>, 30 days
+                  after upgrading.
+                </span>
+              </div>
+            )}
             {subLoading ? (
               <div className="flex h-9 items-center">
                 <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
@@ -249,6 +267,8 @@ function BillingContent() {
                     variant="ghost"
                     onClick={() => setAutoRenew(true)}
                     loading={cancelLoading}
+                    disabled={downgradeLocked}
+                    title={downgradeLocked ? "Max plans can't be canceled within 30 days of upgrading" : undefined}
                   >
                     Cancel plan
                   </Button>
@@ -332,8 +352,14 @@ function BillingContent() {
                       variant="ghost"
                       onClick={openPortal}
                       loading={portalLoading}
+                      disabled={plan === "max" && downgradeLocked}
+                      title={
+                        plan === "max" && downgradeLocked && downgradeLockedUntil
+                          ? `Available starting ${formatDate(downgradeLockedUntil)}`
+                          : undefined
+                      }
                     >
-                      Downgrade
+                      {plan === "max" && downgradeLocked ? "Locked 30 days" : "Downgrade"}
                     </Button>
                   )}
                 </CardContent>

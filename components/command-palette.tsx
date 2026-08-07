@@ -9,6 +9,7 @@ import {
   CreditCard,
   FolderOpen,
   LayoutGrid,
+  LayoutTemplate,
   Plus,
   Search,
   Settings,
@@ -44,6 +45,7 @@ export function CommandPalette({
     };
     const nav: Item[] = [
       { id: "nav-dashboard", label: "Dashboard", icon: LayoutGrid, run: go("/dashboard") },
+      { id: "nav-templates", label: "Templates", icon: LayoutTemplate, run: go("/templates") },
       { id: "nav-build", label: "New app", icon: Plus, run: go("/build") },
       { id: "nav-billing", label: "Billing", icon: CreditCard, run: go("/billing") },
       { id: "nav-settings", label: "Settings", icon: Settings, run: go("/settings") },

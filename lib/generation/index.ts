@@ -5,6 +5,7 @@ import { generateWithGroq, isGroqConfigured } from "./groq";
 import {
   assertHasFiles,
   maxOutputTokensFor,
+  mergeRefineFiles,
   parseGenerationJSON,
   refinePrompt,
   userPrompt,
@@ -22,13 +23,13 @@ export function isModelAvailable(model: ModelId): boolean {
   return isGeminiConfigured();
 }
 
-async function run(
+async function callModel(
   userContent: string,
   model: ModelId,
   plan: PlanId,
   onProgress?: ProgressFn,
   signal?: AbortSignal
-): Promise<GenerationResult> {
+) {
   const provider = MODEL_INFO[model].provider;
   const maxOutputTokens = maxOutputTokensFor(plan);
 
@@ -39,36 +40,46 @@ async function run(
         ? await generateWithGroq(userContent, model, maxOutputTokens, onProgress, signal)
         : await generateWithGemini(userContent, model, maxOutputTokens, onProgress, signal);
 
-  const parsed = parseGenerationJSON(raw);
-  assertHasFiles(parsed);
+  return { parsed: parseGenerationJSON(raw), inputTokens, outputTokens, actualCostUSD };
+}
 
-  return {
-    appName: parsed.appName || "generated-app",
-    summary: parsed.summary || "",
-    files: parsed.files,
-    suggestions: Array.isArray(parsed.suggestions)
-      ? parsed.suggestions.filter((x): x is string => typeof x === "string").slice(0, 4)
-      : [],
-    inputTokens,
-    outputTokens,
-    actualCostUSD,
-  };
+function suggestionsFrom(parsed: { suggestions?: string[] }): string[] {
+  return Array.isArray(parsed.suggestions)
+    ? parsed.suggestions.filter((x): x is string => typeof x === "string").slice(0, 4)
+    : [];
 }
 
 /** Build a brand new app from a prompt. */
-export function generateApp(
+export async function generateApp(
   prompt: string,
   appId: string,
   model: ModelId,
   plan: PlanId,
   onProgress?: ProgressFn,
   signal?: AbortSignal
-) {
-  return run(userPrompt(prompt, appId), model, plan, onProgress, signal);
+): Promise<GenerationResult> {
+  const { parsed, inputTokens, outputTokens, actualCostUSD } = await callModel(
+    userPrompt(prompt, appId),
+    model,
+    plan,
+    onProgress,
+    signal
+  );
+  assertHasFiles(parsed);
+
+  return {
+    appName: parsed.appName || "generated-app",
+    summary: parsed.summary || "",
+    files: parsed.files,
+    suggestions: suggestionsFrom(parsed),
+    inputTokens,
+    outputTokens,
+    actualCostUSD,
+  };
 }
 
 /** Apply a follow-up change to an app that already has generated files. */
-export function refineApp(
+export async function refineApp(
   originalPrompt: string,
   files: Record<string, string>,
   instruction: string,
@@ -77,12 +88,27 @@ export function refineApp(
   plan: PlanId,
   onProgress?: ProgressFn,
   signal?: AbortSignal
-) {
-  return run(
+): Promise<GenerationResult> {
+  const { parsed, inputTokens, outputTokens, actualCostUSD } = await callModel(
     refinePrompt(originalPrompt, files, instruction, appId),
     model,
     plan,
     onProgress,
     signal
   );
+
+  const merged = mergeRefineFiles(files, parsed.files ?? {}, parsed.deletedFiles ?? []);
+  if (Object.keys(merged).length === 0) {
+    throw new Error("The model did not return any files. Please try again.");
+  }
+
+  return {
+    appName: parsed.appName || "generated-app",
+    summary: parsed.summary || "",
+    files: merged,
+    suggestions: suggestionsFrom(parsed),
+    inputTokens,
+    outputTokens,
+    actualCostUSD,
+  };
 }
