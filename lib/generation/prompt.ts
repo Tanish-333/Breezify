@@ -166,11 +166,20 @@ export function mergeRefineFiles(
 }
 
 /**
- * Token budget for a full multi-file app. Max gets real headroom for bigger
- * generations; every other plan shares the same default budget.
+ * Token budget for a full multi-file app. A cut-off generation still charges
+ * the full upfront model cost (see app/api/generate/route.ts) for a result
+ * that can't be used at all, so the real cost of too tight a budget isn't
+ * just a worse error message — it's the user paying full price for nothing.
+ * Haiku in particular tends to need more tokens than a pricier model for the
+ * same spec (verbosity isn't correlated with cost), and every plan can reach
+ * for Haiku (see MODEL_INFO's minPlan), so this used to leave every non-max
+ * plan genuinely under-budgeted for an ordinary multi-file app, not just
+ * unusually large ones. 32000 was already max's own working budget in
+ * production; every plan gets that same proven number now, with max's own
+ * headroom raised to keep it a real step up rather than now-identical.
  */
 export function maxOutputTokensFor(plan: PlanId): number {
-  return plan === "max" ? 32000 : 24000;
+  return plan === "max" ? 40000 : 32000;
 }
 
 export interface GenerationResult {
