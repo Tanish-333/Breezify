@@ -132,6 +132,23 @@ function MenuItem({
   );
 }
 
+// The live preview (lib/preview.ts) loads react/react-dom/etc. from an
+// unpinned CDN URL that's completely independent of this app's own
+// package.json, and its resolved version shows up right there in stack
+// traces (e.g. "esm.sh/react-dom@19.2.8/..."). Handed that error text with
+// no context, a refine reasonably reads the version number as "this app's
+// React dependency is wrong" and edits package.json to pin it — which does
+// nothing for the preview (still CDN-resolved either way) but can break the
+// real deploy, which does read package.json. This note heads that off
+// without changing what a genuine app-code bug's fix prompt looks like.
+function fixErrorPrompt(errorText: string): string {
+  const isCdnArtifact = /esm\.sh\/react(-dom)?@/.test(errorText);
+  const note = isCdnArtifact
+    ? "\n\n(This error's stack trace is from the live preview's CDN-loaded React, not this app's own package.json — its version there is unrelated and already handled by the platform. Only touch package.json here if there's an actual bug in this app's own code; don't change the react/react-dom version to fix this.)"
+    : "";
+  return `Fix this runtime error from the live preview:\n\n${errorText}${note}`;
+}
+
 function AppWorkspace() {
   const params = useParams<{ appId: string }>();
   const searchParams = useSearchParams();
@@ -811,9 +828,7 @@ function AppWorkspace() {
                     className="shrink-0"
                     loading={refining}
                     disabled={refining || insufficient || blockedByOtherEditor}
-                    onClick={() =>
-                      refine(`Fix this runtime error from the live preview:\n\n${previewError}`)
-                    }
+                    onClick={() => refine(fixErrorPrompt(previewError))}
                   >
                     Fix this error · {cost.toFixed(2)}
                   </Button>
