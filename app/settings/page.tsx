@@ -580,18 +580,7 @@ function SettingsContent() {
       {showDeleteConfirm && (
         <ConfirmDialog
           title="Delete your account permanently?"
-          description={
-            <>
-              <p>This action cannot be undone. When you delete your account:</p>
-              <ul className="mt-2 space-y-1 ml-4 text-sm list-disc">
-                <li>All your Breezify apps will be permanently deleted</li>
-                <li>Every deployed app on Vercel will be automatically deleted from your Vercel account</li>
-                <li>All custom domains and project configurations will be removed</li>
-                <li>Your billing history and credit balance will be cleared</li>
-                <li>You will be signed out immediately</li>
-              </ul>
-            </>
-          }
+          description="All your Breezify apps, deployed Vercel projects, custom domains, billing history, and credits will be permanently deleted. This cannot be undone."
           confirmLabel="Yes, delete everything"
           loading={deleteLoading}
           error={deleteError}
