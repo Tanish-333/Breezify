@@ -97,6 +97,22 @@ export async function refineApp(
     signal
   );
 
+  // A refine that comes back with no changed files and nothing deleted
+  // means the model responded without actually editing anything — talked
+  // instead of coding (asking a clarifying question, describing what it
+  // WOULD do, refusing, etc.). Checking the merged total below doesn't
+  // catch this: merging {} onto the app's own existing (non-empty) files
+  // is a no-op that leaves `merged` non-empty, so this used to silently
+  // "succeed" as a turn that charged full price and changed nothing, with
+  // no error and no visible sign anything was wrong.
+  const changedFiles = parsed.files && Object.keys(parsed.files).length > 0;
+  const deletedFiles = parsed.deletedFiles && parsed.deletedFiles.length > 0;
+  if (!changedFiles && !deletedFiles) {
+    throw new Error(
+      "The model responded without making any changes. Try rephrasing your request, or describing it more specifically."
+    );
+  }
+
   const merged = mergeRefineFiles(files, parsed.files ?? {}, parsed.deletedFiles ?? []);
   if (Object.keys(merged).length === 0) {
     throw new Error("The model did not return any files. Please try again.");
