@@ -121,7 +121,7 @@ export function TemplatesSection({
         </div>
       )}
 
-      <div className={cn("grid grid-cols-2 gap-2.5 sm:grid-cols-3", variant === "full" && "mt-3")}>
+      <div className={cn("grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-4", variant === "full" && "mt-3")}>
         {visible.map((t) => (
           <TemplateCard
             key={t.id}

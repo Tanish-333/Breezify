@@ -2,12 +2,18 @@ import type { LucideIcon } from "lucide-react";
 import {
   BookOpen,
   CalendarCheck,
+  CalendarClock,
+  Clapperboard,
+  ClipboardList,
+  CreditCard,
+  Dumbbell,
   Gamepad2,
   Kanban,
   Link2,
   NotebookPen,
   Receipt,
   Timer,
+  Trophy,
   Users,
   Wallet,
 } from "lucide-react";
@@ -28,11 +34,12 @@ export interface AppTemplate {
   featured?: boolean;
 }
 
-// Same 9 prompts components/template-gallery.tsx already used (kept there
-// as a fallback/reference), plus one to round out the category spread —
-// every other category had a "make a page for yourself" angle except
-// Personal, which skewed utility (budget/recipes); a link-in-bio fits that
-// gap and is a genuinely common first request.
+// 16 templates, 4 per category — grown from an original 9
+// (components/template-gallery.tsx keeps those same prompts as a
+// fallback/reference) via link-in-bio (rounded Personal out to match the
+// other categories) and, later, six more (day-planner, meeting-notes,
+// expense-tracker, workout-log, watchlist, bucket-list) to bring every
+// category to an even 4.
 export const TEMPLATES: AppTemplate[] = [
   {
     id: "habit-tracker",
@@ -54,6 +61,26 @@ export const TEMPLATES: AppTemplate[] = [
       "A markdown notes app. Left sidebar lists notes grouped by folder, with folders creatable/renamable/deletable and notes draggable between them; each note also has freeform tags shown as chips. The main panel is a split view: a markdown textarea on the left and a live-rendered preview (headings, bold/italic, lists, code blocks, links) on the right, toggleable to preview-only on narrow screens. A search bar at the top does full-text search across note titles and bodies, plus filtering by tag. Notes autosave as you type (debounced) and show a 'last edited' timestamp. Include a way to pin favorite notes to the top of the sidebar.",
     icon: NotebookPen,
     gradient: "from-foreground/[0.08] via-muted to-background",
+  },
+  {
+    id: "day-planner",
+    category: "Productivity",
+    title: "Day planner",
+    description: "A time-blocked daily schedule",
+    prompt:
+      "A day planner with a vertical 24-hour timeline. Clicking anywhere on the timeline opens a form to add a time block there (title, start/end time, category: Work, Personal, Health, or Other), snapping to 15-minute increments; each block renders positioned and sized by its actual time, color-coded by category. Clicking an existing block opens the same form to edit or delete it. A header lets the user navigate to the previous day, next day, or jump back to today, showing how many blocks are scheduled. Persist a separate schedule per calendar day so past and future days keep their own blocks.",
+    icon: CalendarClock,
+    gradient: "from-foreground/[0.07] via-muted to-background",
+  },
+  {
+    id: "meeting-notes",
+    category: "Productivity",
+    title: "Meeting notes",
+    description: "Agendas, notes, and action items",
+    prompt:
+      "A meeting notes app with a sidebar listing past meetings (searchable across title, notes, and attendees) and a 'new meeting' button. Each meeting has a title, date, a chip-style attendee list (type a name, press Enter to add), a freeform agenda field, a freeform notes field, and a checklist of action items — each item has text, an owner, an optional due date, and a done toggle. The sidebar shows how many action items are still open per meeting. Everything autosaves as it's edited, with no explicit save button.",
+    icon: ClipboardList,
+    gradient: "from-foreground/[0.09] via-background to-muted",
   },
   {
     id: "invoice-generator",
@@ -87,6 +114,16 @@ export const TEMPLATES: AppTemplate[] = [
     gradient: "from-foreground/[0.09] via-background to-muted",
   },
   {
+    id: "expense-tracker",
+    category: "Business",
+    title: "Expense reports",
+    description: "Submit, approve, and reimburse expenses",
+    prompt:
+      "An expense report tracker. Line items (date, category — Travel/Meals/Supplies/Software/Other —, description, amount) are grouped into reports with a running total. A report moves through statuses: draft (line items are still editable), submitted, approved, reimbursed, or rejected (sent back to draft to revise and resubmit) — buttons to move a report between these appear based on its current status. A dashboard lists every report with its total and status, plus summary stats: total reports, total pending reimbursement, and total reimbursed.",
+    icon: CreditCard,
+    gradient: "from-foreground/[0.06] via-muted to-background",
+  },
+  {
     id: "budget-tracker",
     category: "Personal",
     title: "Budget tracker",
@@ -118,6 +155,16 @@ export const TEMPLATES: AppTemplate[] = [
     gradient: "from-foreground/[0.05] via-muted to-background",
   },
   {
+    id: "workout-log",
+    category: "Personal",
+    title: "Workout log",
+    description: "Sets, reps, and progress over time",
+    prompt:
+      "A workout log. Starting a workout creates an entry for today (or reopens today's if one already exists); each workout holds a list of exercises added by name, and each exercise holds a list of sets (reps + optional weight) logged one at a time. A progress view lets the user pick any exercise they've logged and see a line chart of their best set's weight per workout over time. A stats row shows the current streak of consecutive days trained, workouts logged in the last 7 days, and total workouts. Workout history is browsable by date.",
+    icon: Dumbbell,
+    gradient: "from-foreground/[0.08] via-background to-muted",
+  },
+  {
     id: "trivia-quiz",
     category: "Fun",
     title: "Trivia quiz",
@@ -137,6 +184,26 @@ export const TEMPLATES: AppTemplate[] = [
       "A pomodoro timer. Configurable focus length, short-break length, long-break length, and how many focus sessions before a long break (defaults 25/5/15/4, editable in settings). A large countdown display shows the current session's remaining time and whether it's a focus or break session, with start/pause/reset controls and automatic transition to the next session (focus -> short break -> focus -> ... -> long break) once time runs out, playing a short sound/beep on each transition. An optional task name field lets the user label what they're focusing on for the current session. A history log lists completed focus sessions with their task label, date, and duration, plus a simple daily total (e.g. total focused minutes today).",
     icon: Timer,
     gradient: "from-foreground/[0.09] via-background to-muted",
+  },
+  {
+    id: "watchlist",
+    category: "Fun",
+    title: "Movie & TV watchlist",
+    description: "Track what to watch and what you loved",
+    prompt:
+      "A movie and TV watchlist. Add a title with its type (Movie or TV Show), freeform genre tags, and a status (Want to watch, Watching, or Completed); once marked Completed, a 5-star rating and notes become available. The main view is a responsive card grid, each card showing a color-coded placeholder header (no image upload needed), title, type, status, and rating if rated. Include a search bar (matches title and genres) and filter pills for status. Clicking a card opens it for editing or removal.",
+    icon: Clapperboard,
+    gradient: "from-foreground/[0.05] via-muted to-background",
+  },
+  {
+    id: "bucket-list",
+    category: "Fun",
+    title: "Bucket list",
+    description: "Life goals, tracked and celebrated",
+    prompt:
+      "A bucket list app. Each goal has a title, an optional description, a category (Travel, Adventure, Skill, Experience, Other), and an optional target date. A header shows overall progress as a count and percentage of goals completed, with a colorful progress bar. One tap marks a goal complete, stamping the date it was finished; completed goals move to the bottom of the list with a struck-through title. Filter the list by category. Adding, editing, and deleting goals all happen through a simple form.",
+    icon: Trophy,
+    gradient: "from-foreground/[0.07] via-muted to-background",
   },
 ];
 

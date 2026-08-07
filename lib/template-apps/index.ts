@@ -15,6 +15,12 @@ import { files as recipeBoxFiles } from "./recipe-box";
 import { files as linkInBioFiles } from "./link-in-bio";
 import { files as triviaQuizFiles } from "./trivia-quiz";
 import { files as pomodoroTimerFiles } from "./pomodoro-timer";
+import { files as dayPlannerFiles } from "./day-planner";
+import { files as meetingNotesFiles } from "./meeting-notes";
+import { files as expenseTrackerFiles } from "./expense-tracker";
+import { files as workoutLogFiles } from "./workout-log";
+import { files as watchlistFiles } from "./watchlist";
+import { files as bucketListFiles } from "./bucket-list";
 
 /** Keyed by lib/templates.ts' AppTemplate.id. */
 export const TEMPLATE_APP_FILES: Record<string, Record<string, string>> = {
@@ -28,4 +34,10 @@ export const TEMPLATE_APP_FILES: Record<string, Record<string, string>> = {
   "link-in-bio": linkInBioFiles,
   "trivia-quiz": triviaQuizFiles,
   "pomodoro-timer": pomodoroTimerFiles,
+  "day-planner": dayPlannerFiles,
+  "meeting-notes": meetingNotesFiles,
+  "expense-tracker": expenseTrackerFiles,
+  "workout-log": workoutLogFiles,
+  watchlist: watchlistFiles,
+  "bucket-list": bucketListFiles,
 };
