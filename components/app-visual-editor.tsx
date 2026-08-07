@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { buildPreview, withVisualEditing } from "@/lib/preview";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
-import { Check, MousePointerClick, TriangleAlert, X } from "lucide-react";
+import { Check, MessageSquarePlus, MousePointerClick, TriangleAlert, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SelectedElement {
@@ -36,12 +36,23 @@ function rgbToHex(rgb: string): string {
 export function AppVisualEditor({
   files,
   onEdit,
+  onAddToChat,
   disabled,
   disabledReason,
   reloadKey,
 }: {
   files: Record<string, string>;
   onEdit: (instruction: string) => void;
+  /**
+   * Drops a reference to the selected element into the composer instead of
+   * submitting anything — for "I want to talk about this one, not just
+   * tweak its text/color/size/padding" (e.g. "make this whole card a link
+   * to the pricing page"), which the Save button's fixed set of style
+   * fields can't express. Never blocked by `disabled` — queuing up what to
+   * say next is exactly what you'd do while a previous refine is still
+   * running.
+   */
+  onAddToChat?: (reference: string) => void;
   /** True while a refine from a previous edit is already in flight, or credits are insufficient — blocks Save, doesn't block selecting (so the user can queue up what they want to say next). */
   disabled?: boolean;
   disabledReason?: string;
@@ -130,6 +141,15 @@ export function AppVisualEditor({
     setSelected(null);
   }
 
+  function addToChat() {
+    if (!selected) return;
+    const label = selected.text.trim()
+      ? `the ${selected.tag} element with the text "${selected.text.trim()}"`
+      : `the ${selected.tag} element matching the CSS selector "${selected.selector}"`;
+    onAddToChat?.(`Regarding ${label}: `);
+    setSelected(null);
+  }
+
   if (result.kind === "unsupported") {
     return (
       <div className="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
@@ -209,6 +229,16 @@ export function AppVisualEditor({
               Cancel
             </Button>
           </div>
+          {onAddToChat && (
+            <button
+              type="button"
+              onClick={addToChat}
+              className="flex w-full items-center justify-center gap-1.5 rounded-md border border-border py-1.5 text-xs text-muted-foreground transition-colors hover:border-muted-foreground hover:text-foreground"
+            >
+              <MessageSquarePlus className="h-3.5 w-3.5" />
+              Add to chat instead
+            </button>
+          )}
         </div>
       )}
     </div>

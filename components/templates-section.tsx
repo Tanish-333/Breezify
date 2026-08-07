@@ -5,76 +5,50 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { duplicateTemplateRequest } from "@/lib/api-client";
+import { TemplatePreviewDialog } from "@/components/template-preview-dialog";
 import { FEATURED_TEMPLATES, TEMPLATE_CATEGORIES, TEMPLATES, type AppTemplate } from "@/lib/templates";
 import { DUPLICATE_MIN_PLAN, PLAN_RANK, type PlanId } from "@/lib/types";
-import { AlertCircle, ArrowRight, Loader2, Lock } from "lucide-react";
+import { ArrowRight, Lock } from "lucide-react";
 
 /**
- * One template card. Every template has a real, hand-written static file
- * bundle now (see lib/template-apps/), so there's no more "seeded vs. not"
- * distinction — the only thing that decides whether a card is a real,
- * clickable duplicate action or a plan-locked upsell is the viewer's own
- * plan, checked server-side by app/api/apps/from-template.
+ * One template card. Clicking it only ever opens a preview (see
+ * TemplatePreviewDialog) — every template has a real, hand-written static
+ * file bundle now (see lib/template-apps/), so the preview is the exact
+ * same code you'd get. Duplicating only happens from inside that dialog,
+ * never straight from the card.
  */
 function TemplateCard({
   template,
   canDuplicate,
-  using,
-  onUse,
+  onOpen,
 }: {
   template: AppTemplate;
   canDuplicate: boolean;
-  using: boolean;
-  onUse: () => void;
+  onOpen: () => void;
 }) {
   const Icon = template.icon;
-
-  const hero = (
-    <div
-      className={cn(
-        "flex h-20 items-center justify-center rounded-t-lg bg-gradient-to-br",
-        template.gradient
-      )}
-    >
-      <Icon className="h-7 w-7 text-foreground/70" strokeWidth={1.25} />
-    </div>
-  );
-
-  const body = (
-    <div className="p-3">
-      <p className="text-sm font-medium">{template.title}</p>
-      <p className="mt-0.5 text-xs text-muted-foreground">{template.description}</p>
-    </div>
-  );
-
-  if (!canDuplicate) {
-    return (
-      <Link
-        href="/billing"
-        title={`Upgrade to duplicate — templates use the same ${DUPLICATE_MIN_PLAN}+ duplicate flow as any other app`}
-        className="card-hover group relative overflow-hidden rounded-lg border border-border text-left transition-colors hover:border-muted-foreground"
-      >
-        {hero}
-        <Lock className="absolute right-2 top-2 h-3.5 w-3.5 rounded-full bg-background/80 p-0.5 text-muted-foreground" />
-        {body}
-      </Link>
-    );
-  }
 
   return (
     <button
       type="button"
-      onClick={onUse}
-      disabled={using}
-      className="card-hover relative overflow-hidden rounded-lg border border-border text-left transition-colors hover:border-muted-foreground disabled:opacity-60"
+      onClick={onOpen}
+      className="card-hover group relative overflow-hidden rounded-lg border border-border text-left transition-colors hover:border-muted-foreground"
     >
-      {hero}
-      {using && (
-        <div className="absolute inset-0 flex items-center justify-center bg-background/70">
-          <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-        </div>
+      <div
+        className={cn(
+          "flex h-20 items-center justify-center rounded-t-lg bg-gradient-to-br",
+          template.gradient
+        )}
+      >
+        <Icon className="h-7 w-7 text-foreground/70" strokeWidth={1.25} />
+      </div>
+      {!canDuplicate && (
+        <Lock className="absolute right-2 top-2 h-3.5 w-3.5 rounded-full bg-background/80 p-0.5 text-muted-foreground" />
       )}
-      {body}
+      <div className="p-3">
+        <p className="text-sm font-medium">{template.title}</p>
+        <p className="mt-0.5 text-xs text-muted-foreground">{template.description}</p>
+      </div>
     </button>
   );
 }
@@ -95,7 +69,8 @@ export function TemplatesSection({
 }) {
   const router = useRouter();
   const [category, setCategory] = useState<(typeof TEMPLATE_CATEGORIES)[number]>("All");
-  const [usingId, setUsingId] = useState<string | null>(null);
+  const [previewing, setPreviewing] = useState<AppTemplate | null>(null);
+  const [using, setUsing] = useState(false);
   const [error, setError] = useState("");
   const canDuplicate = PLAN_RANK[plan] >= PLAN_RANK[DUPLICATE_MIN_PLAN];
 
@@ -106,15 +81,21 @@ export function TemplatesSection({
         ? TEMPLATES
         : TEMPLATES.filter((t) => t.category === category);
 
-  async function applyTemplate(template: AppTemplate) {
+  function openPreview(template: AppTemplate) {
     setError("");
-    setUsingId(template.id);
+    setPreviewing(template);
+  }
+
+  async function duplicate() {
+    if (!previewing) return;
+    setError("");
+    setUsing(true);
     try {
-      const newId = await duplicateTemplateRequest(template.id);
+      const newId = await duplicateTemplateRequest(previewing.id);
       router.push(`/build/${newId}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Couldn't use this template.");
-      setUsingId(null);
+      setUsing(false);
     }
   }
 
@@ -140,21 +121,13 @@ export function TemplatesSection({
         </div>
       )}
 
-      {error && (
-        <div className={cn("flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error", variant === "full" && "mt-3")}>
-          <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>{error}</span>
-        </div>
-      )}
-
       <div className={cn("grid grid-cols-2 gap-2.5 sm:grid-cols-3", variant === "full" && "mt-3")}>
         {visible.map((t) => (
           <TemplateCard
             key={t.id}
             template={t}
             canDuplicate={canDuplicate}
-            using={usingId === t.id}
-            onUse={() => applyTemplate(t)}
+            onOpen={() => openPreview(t)}
           />
         ))}
       </div>
@@ -169,6 +142,19 @@ export function TemplatesSection({
             <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
+      )}
+
+      {previewing && (
+        <TemplatePreviewDialog
+          template={previewing}
+          canDuplicate={canDuplicate}
+          using={using}
+          error={error}
+          onDuplicate={duplicate}
+          onClose={() => {
+            if (!using) setPreviewing(null);
+          }}
+        />
       )}
     </div>
   );

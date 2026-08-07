@@ -942,6 +942,9 @@ function AppWorkspace() {
                 <AppVisualEditor
                   files={files}
                   onEdit={(instruction) => refine(instruction)}
+                  onAddToChat={(reference) =>
+                    setInstruction((prev) => (prev.trim() ? `${prev}\n\n${reference}` : reference))
+                  }
                   disabled={refining || insufficient || blockedByOtherEditor}
                   disabledReason={
                     insufficient
