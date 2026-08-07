@@ -478,7 +478,9 @@ function AppWorkspace() {
             </>
           )}
           <StatusBadge status={displayStatus(app.status)} />
-          <DeployBadge status={effectiveDeployStatus(app)} />
+          <span title={effectiveDeployStatus(app) === "error" ? app.deployErrorMessage : undefined}>
+            <DeployBadge status={effectiveDeployStatus(app)} />
+          </span>
           {user && (
             <button
               onClick={() => toggleStarredApp(user.uid, app.id, starred)}
@@ -770,11 +772,24 @@ function AppWorkspace() {
               </div>
             )}
 
-            {deployError && (
+            {/*
+              deployError is only ever set by THIS browser tab's own just-
+              finished deploy attempt (see deployApp() above) — it resets to
+              "" on every page load, so a "Deploy failed" badge from an
+              earlier session (a previous visit, a different tab, another
+              collaborator's attempt) showed no reason at all: the actual
+              message was written to Firestore (deployErrorMessage, see
+              app/api/deploy/route.ts) but nothing here ever read it back.
+              Falling back to app.deployErrorMessage means reloading this
+              page after a failed deploy still shows why, instead of just a
+              red badge with no explanation. A live deployError always wins
+              (it's this attempt's own fresher, still-accurate message).
+            */}
+            {(deployError || (effectiveDeployStatus(app) === "error" && app.deployErrorMessage)) && (
               <div className="flex items-start gap-2 rounded-lg border border-error/30 bg-error/5 p-3 text-sm text-error">
                 <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
                 <pre className="max-h-48 flex-1 overflow-y-auto whitespace-pre-wrap break-words font-sans">
-                  {deployError}
+                  {deployError || app.deployErrorMessage}
                 </pre>
               </div>
             )}
