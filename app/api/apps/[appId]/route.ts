@@ -5,13 +5,14 @@ import { deleteApp } from "@/lib/deploy-actions";
 export const runtime = "nodejs";
 
 /**
- * Deletes an app entirely — its Vercel project domain (best-effort), its
+ * Deletes an app entirely — its Vercel project domain and, for a real
+ * paid-plan deploy, the Vercel project itself (both best-effort), its
  * secrets/versions/collaborators subcollections, and the app doc itself —
  * which immediately frees the active-subdomain slot it held, if any (see
  * MAX_ACTIVE_DEPLOYED_APPS in lib/types.ts). Routed through deleteApp() in
- * lib/deploy-actions.ts so a custom domain attached to the app's Vercel
- * project is actually detached, not just orphaned in Breezify's own records
- * while staying claimed on Vercel.
+ * lib/deploy-actions.ts so both the custom domain and the underlying
+ * project are actually removed from Vercel, not just orphaned in
+ * Breezify's own records while staying claimed there.
  */
 export async function DELETE(req: NextRequest, { params }: { params: { appId: string } }) {
   try {

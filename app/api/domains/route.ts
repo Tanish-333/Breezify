@@ -41,6 +41,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: message }, { status: 502 });
     }
 
+    // "Verified" as shown to the user means "actually live at this domain",
+    // not just Vercel's ownership check — a domain can pass that TXT
+    // challenge while still 404ing because the A/CNAME record that routes
+    // real traffic hasn't been added yet (misconfigured). See
+    // recommendedDnsRecord() in lib/vercel-deploy.ts for what to tell the
+    // owner to add.
+    const isLive = status.verified && !status.misconfigured;
+
     // Attaching here always means "a domain I already own elsewhere" — a
     // domain actually bought through Breezify is attached by the Stripe
     // webhook instead (see app/api/stripe/webhook), which is the only place
@@ -58,7 +66,7 @@ export async function POST(req: NextRequest) {
           `apps/${appId}`,
           {
             customDomain: normalizedDomain,
-            customDomainVerified: status.verified,
+            customDomainVerified: isLive,
             ...(wasPurchased && !stillSameDomain
               ? { domainPurchased: false, domainExpiresAt: null, domainAutoRenew: false, domainOrderId: null }
               : {}),
@@ -106,9 +114,10 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: message }, { status: 502 });
     }
 
-    if (status.verified !== Boolean(loaded.doc.fields.customDomainVerified)) {
+    const isLive = status.verified && !status.misconfigured;
+    if (isLive !== Boolean(loaded.doc.fields.customDomainVerified)) {
       await commit(
-        [updateWrite(`apps/${appId}`, { customDomainVerified: status.verified }, ["customDomainVerified"])],
+        [updateWrite(`apps/${appId}`, { customDomainVerified: isLive }, ["customDomainVerified"])],
         idToken
       ).catch(() => {});
     }

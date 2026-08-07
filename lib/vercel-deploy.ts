@@ -354,10 +354,56 @@ export interface DomainVerificationRecord {
   reason: string;
 }
 
+/** The DNS record that actually routes traffic to Vercel — distinct from `verification` below, which only proves ownership. */
+export interface DnsRecord {
+  type: "A" | "CNAME";
+  /** "@" for the apex/root domain, or the subdomain label otherwise. */
+  name: string;
+  value: string;
+}
+
 export interface DomainStatus {
   name: string;
   verified: boolean;
   verification?: DomainVerificationRecord[];
+  /** True when Vercel can't see traffic-routing DNS (A/CNAME) pointed at it yet — independent of `verified`, which is ownership only. */
+  misconfigured?: boolean;
+  /** The A (apex) or CNAME (subdomain) record this domain needs, regardless of verification state. */
+  dnsRecord?: DnsRecord;
+}
+
+/**
+ * The A/CNAME record a domain needs to actually route traffic to Vercel.
+ * Apex domains (e.g. "myapp.com") need an A record at the root; anything
+ * with a subdomain label (e.g. "www.myapp.com") needs a CNAME on that
+ * label instead — Vercel rejects a CNAME at the apex (DNS doesn't allow
+ * CNAME + other records coexisting at the zone root).
+ */
+export function recommendedDnsRecord(domain: string): DnsRecord {
+  const labels = domain.split(".");
+  if (labels.length <= 2) {
+    return { type: "A", name: "@", value: "76.76.21.21" };
+  }
+  return { type: "CNAME", name: labels[0], value: "cname.vercel-dns.com" };
+}
+
+/**
+ * Whether Vercel currently sees this domain's DNS actually routing to it —
+ * separate from `verified` (ownership only, via the TXT challenge in
+ * `verification`). A domain can be verified but still misconfigured (the
+ * owner hasn't added the A/CNAME record yet), which is the normal state
+ * right after attaching a domain nobody's pointed at Vercel before. Fails
+ * safe: if the config check itself fails, treat it as misconfigured rather
+ * than claiming a domain works when we couldn't actually confirm it.
+ */
+async function getDomainMisconfigured(domain: string): Promise<boolean> {
+  try {
+    const res = await vercelFetch(withTeam(`/v6/domains/${encodeURIComponent(domain)}/config`));
+    if (!res.ok) return true;
+    return Boolean(res.body?.misconfigured);
+  } catch {
+    return true;
+  }
 }
 
 /**
@@ -391,7 +437,14 @@ export async function addProjectDomain(projectSlug: string, domain: string): Pro
   if (!res.ok) {
     throw new Error(res.body?.error?.message || res.body?.message || "Couldn't add that domain.");
   }
-  return { name: res.body.name, verified: Boolean(res.body.verified), verification: res.body.verification };
+  const misconfigured = await getDomainMisconfigured(domain);
+  return {
+    name: res.body.name,
+    verified: Boolean(res.body.verified),
+    verification: res.body.verification,
+    misconfigured,
+    dnsRecord: recommendedDnsRecord(domain),
+  };
 }
 
 /** Re-checks a domain already attached to the project, e.g. after the caller has added the DNS record. */
@@ -402,7 +455,14 @@ export async function getProjectDomainStatus(projectSlug: string, domain: string
   if (!res.ok) {
     throw new Error(res.body?.error?.message || res.body?.message || "Couldn't check that domain's status.");
   }
-  return { name: res.body.name, verified: Boolean(res.body.verified), verification: res.body.verification };
+  const misconfigured = await getDomainMisconfigured(domain);
+  return {
+    name: res.body.name,
+    verified: Boolean(res.body.verified),
+    verification: res.body.verification,
+    misconfigured,
+    dnsRecord: recommendedDnsRecord(domain),
+  };
 }
 
 export async function removeProjectDomain(projectSlug: string, domain: string): Promise<void> {

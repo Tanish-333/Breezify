@@ -13,7 +13,7 @@ import {
   queryCollection,
   updateWrite,
 } from "@/lib/firestore-rest";
-import { removeProjectDomain, projectSlugFromDeployedUrl } from "@/lib/vercel-deploy";
+import { removeProjectDomain, deleteVercelProject, projectSlugFromDeployedUrl } from "@/lib/vercel-deploy";
 import { getDeployDomain } from "@/lib/deploy-domain";
 import { getAppBaseUrl } from "@/lib/app-base-url";
 import {
@@ -159,6 +159,28 @@ async function tryDetachDomain(fields: Record<string, unknown>): Promise<void> {
 }
 
 /**
+ * Deletes the app's own Vercel project, if it has one. A paid-plan deploy
+ * (app/api/deploy/route.ts) is its own real Vercel project named after its
+ * slug — deleting the app must actually delete that project on Vercel too,
+ * or it sits there forever, still counting against the account's project
+ * quota (see the long comment on deployFreeTierApp for why that quota
+ * matters) with nothing in Breezify pointing at it anymore. A free-tier app
+ * (fields.subdomain set — see deployFreeTierApp) has no project of its own;
+ * it's served by the one shared main Breezify project, which must never be
+ * touched here. Best-effort: mirrors deleteVercelProject's own
+ * swallow-and-log behavior so a Vercel-side failure never blocks deleting
+ * the app record itself.
+ */
+async function tryDeleteVercelProject(fields: Record<string, unknown>): Promise<void> {
+  const deployedUrl = fields.deployedUrl as string | undefined;
+  const subdomain = fields.subdomain as string | undefined;
+  if (!deployedUrl || subdomain) return;
+  const slug = projectSlugFromDeployedUrl(deployedUrl);
+  if (!slug) return;
+  await deleteVercelProject(slug);
+}
+
+/**
  * Takes an app offline without deleting it: clears its deploy state so it
  * stops counting against MAX_ACTIVE_DEPLOYED_APPS, but keeps the app, its
  * generated code, and its turn history intact so it can be redeployed later
@@ -198,6 +220,43 @@ export async function undeployApp(params: { appId: string; uid: string; idToken:
   await commit([updateWrite(`apps/${appId}`, fields, Object.keys(fields))], idToken);
 }
 
+/**
+ * Bulk version of undeployApp, plus an actual Vercel project delete: takes
+ * every one of the caller's live, real-Vercel-project apps offline and
+ * deletes their underlying Vercel projects in one go, freeing up Vercel
+ * project quota (see the long comment on deployFreeTierApp for why that
+ * matters) without deleting the apps themselves — their code and history
+ * stay put, same as undeployApp, just for every app at once instead of
+ * clicking through them one at a time. Free-tier apps (their own
+ * `subdomain` field — see deployFreeTierApp) share the one main Breezify
+ * project rather than having one of their own, so there's nothing to
+ * delete for them and they're skipped. Best-effort per app: one failing to
+ * delete on Vercel's side doesn't stop the rest or block updating its own
+ * Firestore record.
+ */
+export async function deleteAllVercelProjects(params: { uid: string; idToken: string }): Promise<{ count: number }> {
+  const { uid, idToken } = params;
+  const apps = await listOwnApps(uid, idToken);
+  const targets = apps.filter((a) => Boolean(a.fields.deployedUrl) && !a.fields.subdomain);
+
+  await Promise.all(
+    targets.map(async (a) => {
+      await tryDetachDomain(a.fields);
+      await tryDeleteVercelProject(a.fields);
+      const fields = {
+        deployStatus: "error" as const,
+        deployErrorMessage: "Vercel project deleted — redeploy any time.",
+        deployedUrl: null,
+        deployExpiresAt: null,
+        customDomainVerified: false,
+      };
+      await commit([updateWrite(`apps/${a.id}`, fields, Object.keys(fields))], idToken).catch(() => {});
+    })
+  );
+
+  return { count: targets.length };
+}
+
 // Firestore's REST commit caps at 500 writes per request, same limit the
 // client SDK's writeBatch enforces.
 const COMMIT_WRITE_LIMIT = 450;
@@ -221,6 +280,7 @@ export async function deleteApp(params: { appId: string; uid: string; idToken: s
   if (appDoc.fields.userId !== uid) throw new Error("You don't have access to this app.");
 
   await tryDetachDomain(appDoc.fields);
+  await tryDeleteVercelProject(appDoc.fields);
 
   const [secrets, versions, collaborators, analytics] = await Promise.all([
     listCollection(`apps/${appId}/secrets`, idToken),

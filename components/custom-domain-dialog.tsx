@@ -15,10 +15,18 @@ interface DomainVerificationRecord {
   reason: string;
 }
 
+interface DnsRecord {
+  type: "A" | "CNAME";
+  name: string;
+  value: string;
+}
+
 interface DomainStatus {
   name: string;
   verified: boolean;
   verification?: DomainVerificationRecord[];
+  misconfigured?: boolean;
+  dnsRecord?: DnsRecord;
 }
 
 interface DomainSearchResult {
@@ -480,19 +488,26 @@ export function CustomDomainDialog({
             </>
           ) : (
             <>
-              <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
-                <span className="truncate font-mono text-sm">{activeDomain}</span>
-                {checking ? (
-                  <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
-                ) : status?.verified ? (
-                  <span className="flex shrink-0 items-center gap-1 text-xs text-success">
-                    <CheckCircle2 className="h-3.5 w-3.5" />
-                    Verified
-                  </span>
-                ) : (
-                  <span className="shrink-0 text-xs text-muted-foreground">Pending</span>
-                )}
-              </div>
+              {(() => {
+                const live = Boolean(status?.verified) && !status?.misconfigured;
+                return (
+                  <div className="flex items-center justify-between rounded-lg border border-border px-3 py-2">
+                    <span className="truncate font-mono text-sm">{activeDomain}</span>
+                    {checking ? (
+                      <RefreshCw className="h-4 w-4 shrink-0 animate-spin text-muted-foreground" />
+                    ) : live ? (
+                      <span className="flex shrink-0 items-center gap-1 text-xs text-success">
+                        <CheckCircle2 className="h-3.5 w-3.5" />
+                        Live
+                      </span>
+                    ) : (
+                      <span className="shrink-0 text-xs text-muted-foreground">
+                        {status?.verified ? "DNS not configured yet" : "Pending"}
+                      </span>
+                    )}
+                  </div>
+                );
+              })()}
 
               {domainPurchased && (
                 <div className="space-y-2">
@@ -515,10 +530,23 @@ export function CustomDomainDialog({
                 </div>
               )}
 
+              {status?.misconfigured && status?.dnsRecord && (
+                <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3 text-xs">
+                  <p className="text-muted-foreground">
+                    Add this record at your domain registrar to point {status.name} at Breezify:
+                  </p>
+                  <div className="space-y-0.5 font-mono">
+                    <div>Type: {status.dnsRecord.type}</div>
+                    <div className="truncate">Name: {status.dnsRecord.name}</div>
+                    <div className="truncate">Value: {status.dnsRecord.value}</div>
+                  </div>
+                </div>
+              )}
+
               {!status?.verified && status?.verification && status.verification.length > 0 && (
                 <div className="space-y-2 rounded-lg border border-border bg-muted/20 p-3 text-xs">
                   <p className="text-muted-foreground">
-                    Add this DNS record at your domain registrar, then check status:
+                    Also add this record to prove you own {status.name}:
                   </p>
                   {status.verification.map((rec, i) => (
                     <div key={i} className="space-y-0.5 font-mono">
@@ -530,7 +558,7 @@ export function CustomDomainDialog({
                 </div>
               )}
 
-              {!status?.verified && (
+              {!(status?.verified && !status?.misconfigured) && (
                 <Button variant="secondary" className="w-full" onClick={recheck} loading={checking}>
                   <RefreshCw className="h-4 w-4" />
                   Check status

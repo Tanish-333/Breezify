@@ -306,7 +306,7 @@ async function handler(req: NextRequest) {
       if (existingDomain && !appDoc.fields.customDomainVerified) {
         try {
           const status = await addProjectDomain(slug, existingDomain);
-          if (status.verified) {
+          if (status.verified && !status.misconfigured) {
             await commit(
               [updateWrite(`apps/${appId}`, { customDomainVerified: true }, ["customDomainVerified"])],
               idToken

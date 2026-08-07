@@ -64,12 +64,12 @@ function DeployedRow({ app, onManage }: { app: FeatherApp; onManage: () => void 
               {app.customDomainVerified ? (
                 <span className="flex shrink-0 items-center gap-1 text-[11px] text-success">
                   <CheckCircle2 className="h-3 w-3" />
-                  Verified
+                  Live
                 </span>
               ) : (
                 <span className="flex shrink-0 items-center gap-1 text-[11px] text-muted-foreground">
                   <Clock className="h-3 w-3" />
-                  Pending verification
+                  Needs DNS setup
                 </span>
               )}
               {app.domainPurchased && (

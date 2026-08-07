@@ -29,6 +29,20 @@ const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
   "gemini-3.1-pro-preview": { input: 1.25, output: 10.0 },
 };
 
+// See the matching comment in lib/generation/anthropic.ts — transient
+// failures (rate limits, momentary overload/5xx) are common enough under
+// real traffic to be worth one retry before charging the failure to the
+// user, as long as nothing has streamed yet.
+const RETRYABLE_STATUS = new Set([408, 409, 429, 500, 502, 503]);
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAYS_MS = [500, 1500];
+
+function isRetryableError(err: unknown): boolean {
+  const status = (err as { status?: number; code?: number } | null)?.status ?? (err as any)?.code;
+  if (status === undefined) return true;
+  return RETRYABLE_STATUS.has(Number(status));
+}
+
 export async function generateWithGemini(
   userContent: string,
   model: ModelId,
@@ -39,37 +53,58 @@ export async function generateWithGemini(
   const ai = getClient();
   const apiModel = MODEL_INFO[model].apiModel;
 
-  const stream = await ai.models.generateContentStream({
-    model: apiModel,
-    contents: userContent,
-    config: {
-      systemInstruction: SYSTEM_PROMPT,
-      maxOutputTokens,
-      // Gemini can hard-guarantee JSON output, so we don't have to rely on
-      // the model honoring the "no markdown fences" instruction.
-      responseMimeType: "application/json",
-      abortSignal: signal,
-    },
-  });
+  async function attemptOnce() {
+    const stream = await ai.models.generateContentStream({
+      model: apiModel,
+      contents: userContent,
+      config: {
+        systemInstruction: SYSTEM_PROMPT,
+        maxOutputTokens,
+        // Gemini can hard-guarantee JSON output, so we don't have to rely on
+        // the model honoring the "no markdown fences" instruction.
+        responseMimeType: "application/json",
+        abortSignal: signal,
+      },
+    });
+
+    let raw = "";
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let finishReason: string | undefined;
+
+    for await (const chunk of stream) {
+      const text = chunk.text;
+      if (text) {
+        raw += text;
+        onProgress?.({ chars: raw.length, files: detectFiles(raw) });
+      }
+      const reason = chunk.candidates?.[0]?.finishReason;
+      if (reason) finishReason = reason;
+      // Usage arrives on the final chunks; keep the latest non-zero values.
+      const usage = chunk.usageMetadata;
+      if (usage) {
+        inputTokens = usage.promptTokenCount ?? inputTokens;
+        outputTokens = usage.candidatesTokenCount ?? outputTokens;
+      }
+    }
+
+    return { raw, inputTokens, outputTokens, finishReason };
+  }
 
   let raw = "";
   let inputTokens = 0;
   let outputTokens = 0;
   let finishReason: string | undefined;
 
-  for await (const chunk of stream) {
-    const text = chunk.text;
-    if (text) {
-      raw += text;
-      onProgress?.({ chars: raw.length, files: detectFiles(raw) });
-    }
-    const reason = chunk.candidates?.[0]?.finishReason;
-    if (reason) finishReason = reason;
-    // Usage arrives on the final chunks; keep the latest non-zero values.
-    const usage = chunk.usageMetadata;
-    if (usage) {
-      inputTokens = usage.promptTokenCount ?? inputTokens;
-      outputTokens = usage.candidatesTokenCount ?? outputTokens;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const result = await attemptOnce();
+      ({ raw, inputTokens, outputTokens, finishReason } = result);
+      break;
+    } catch (err) {
+      const canRetry = attempt < MAX_ATTEMPTS && raw.length === 0 && !signal?.aborted && isRetryableError(err);
+      if (!canRetry) throw err;
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1] ?? 1500));
     }
   }
 

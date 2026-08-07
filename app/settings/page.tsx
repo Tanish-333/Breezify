@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/lib/auth-context";
 import { friendlyAuthError } from "@/lib/auth-errors";
 import { downloadUserData } from "@/lib/export-data";
+import { deleteAllVercelProjectsRequest } from "@/lib/api-client";
 import { formatCredits, cn } from "@/lib/utils";
 import { getTheme, setTheme, type Theme } from "@/lib/theme";
 import { getDefaultModel, setDefaultModel } from "@/lib/preferences";
@@ -113,9 +114,24 @@ function SettingsContent() {
   const [pwLoading, setPwLoading] = useState(false);
   const [deleteError, setDeleteError] = useState("");
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [deleteVercelError, setDeleteVercelError] = useState("");
+  const [deleteVercelLoading, setDeleteVercelLoading] = useState(false);
+  const [deleteVercelResult, setDeleteVercelResult] = useState<number | null>(null);
+  const [showDeleteVercelConfirm, setShowDeleteVercelConfirm] = useState(false);
   const [exportError, setExportError] = useState("");
   const [exportLoading, setExportLoading] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  // DEPLOY_DOMAIN is server-only (see lib/deploy-domain.ts) — it can't be
+  // read via process.env in this client component, so it's fetched from a
+  // tiny API route instead. undefined = still loading, null = not set.
+  const [deployDomain, setDeployDomain] = useState<string | null | undefined>(undefined);
+  useEffect(() => {
+    fetch("/api/deploy-domain")
+      .then((res) => res.json())
+      .then((data) => setDeployDomain(data.domain ?? null))
+      .catch(() => setDeployDomain(null));
+  }, []);
 
   // Firebase rejects a password change once the session's gotten old enough
   // (auth/requires-recent-login) until identity is re-proven. Rather than
@@ -238,6 +254,21 @@ function SettingsContent() {
       setShowDeleteConfirm(false);
     } finally {
       setDeleteLoading(false);
+    }
+  }
+
+  async function handleDeleteAllVercelProjects() {
+    setDeleteVercelError("");
+    setDeleteVercelResult(null);
+    setDeleteVercelLoading(true);
+    try {
+      const { count } = await deleteAllVercelProjectsRequest();
+      setDeleteVercelResult(count);
+      setShowDeleteVercelConfirm(false);
+    } catch (err) {
+      setDeleteVercelError(err instanceof Error ? err.message : "Couldn't delete your Vercel projects.");
+    } finally {
+      setDeleteVercelLoading(false);
     }
   }
 
@@ -521,7 +552,9 @@ function SettingsContent() {
             <CardContent className="space-y-3">
               <div className="flex items-center justify-between text-sm">
                 <span className="text-muted-foreground">Current domain</span>
-                <span className="font-mono">{process.env.NEXT_PUBLIC_DEPLOY_DOMAIN || "Not configured (using *.vercel.app)"}</span>
+                <span className="font-mono">
+                  {deployDomain === undefined ? "Loading..." : deployDomain || "Not configured (using *.vercel.app)"}
+                </span>
               </div>
               <p className="text-xs text-muted-foreground">
                 Each app you deploy gets a unique subdomain on this domain (e.g., <code className="rounded bg-muted px-1.5 py-0.5">my-app-abc123.breezify.dev</code>).
@@ -556,6 +589,42 @@ function SettingsContent() {
         </Card>
         </Section>
 
+        <Section title="Vercel projects" keywords="vercel delete deploy project quota bulk" query={search}>
+        <Card className="border-error/30">
+          <CardHeader>
+            <CardTitle className="text-error">Vercel projects</CardTitle>
+            <CardDescription>
+              Delete every real Vercel project behind your deployed apps in one go, without deleting the apps
+              themselves — free-tier apps aren&apos;t affected. Each app stays put and can be redeployed any time.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            {deleteVercelError && (
+              <div className="mb-4 flex items-start gap-2 rounded border border-error/30 bg-error/5 p-3 text-sm text-error">
+                <AlertCircle className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>{deleteVercelError}</span>
+              </div>
+            )}
+            {deleteVercelResult !== null && (
+              <div className="mb-4 flex items-start gap-2 rounded border border-success/30 bg-success/5 p-3 text-sm text-success">
+                <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
+                <span>
+                  Deleted {deleteVercelResult} Vercel project{deleteVercelResult === 1 ? "" : "s"}. Those apps are
+                  now undeployed — redeploy any of them any time.
+                </span>
+              </div>
+            )}
+            <Button
+              variant="destructive"
+              onClick={() => setShowDeleteVercelConfirm(true)}
+              loading={deleteVercelLoading}
+            >
+              Delete all Vercel projects
+            </Button>
+          </CardContent>
+        </Card>
+        </Section>
+
         <Section title="Danger zone" keywords="delete account remove close cancel" query={search}>
         <Card className="border-error/30">
           <CardHeader>
@@ -576,6 +645,20 @@ function SettingsContent() {
         </Card>
         </Section>
       </Group>
+
+      {showDeleteVercelConfirm && (
+        <ConfirmDialog
+          title="Delete all Vercel projects?"
+          description="Every deployed app that's its own real Vercel project goes offline and that project is deleted on Vercel. Free-tier apps aren't affected. Your apps, their code, and history stay put — redeploy any of them any time. This cannot be undone."
+          confirmLabel="Yes, delete all Vercel projects"
+          loading={deleteVercelLoading}
+          error={deleteVercelError}
+          onClose={() => {
+            if (!deleteVercelLoading) setShowDeleteVercelConfirm(false);
+          }}
+          onConfirm={handleDeleteAllVercelProjects}
+        />
+      )}
 
       {showDeleteConfirm && (
         <ConfirmDialog

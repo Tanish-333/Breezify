@@ -163,6 +163,20 @@ export async function undeployAppRequest(appId: string): Promise<void> {
   if (!res.ok) throw new Error(data.error || "Couldn't undeploy this app.");
 }
 
+/** Bulk-undeploys and deletes the Vercel project behind every one of the caller's real (paid-plan) deploys at once — see app/api/apps/delete-all-vercel-projects. */
+export async function deleteAllVercelProjectsRequest(): Promise<{ count: number }> {
+  const user = auth.currentUser;
+  if (!user) throw new Error("You must be signed in.");
+  const idToken = await user.getIdToken();
+  const res = await fetch(`/api/apps/delete-all-vercel-projects`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${idToken}` },
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Couldn't delete your Vercel projects.");
+  return data;
+}
+
 /** Renews a free-tier app's expiry clock — only accepted inside its renewal window, see app/api/apps/[appId]/renew. */
 export async function renewAppRequest(appId: string): Promise<number> {
   const user = auth.currentUser;

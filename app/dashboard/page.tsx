@@ -29,6 +29,8 @@ import {
   displayStatus,
   effectiveDeployStatus,
   IMPORT_MIN_PLAN,
+  isActiveDeployment,
+  MAX_ACTIVE_DEPLOYED_APPS,
   MODEL_INFO,
   PLAN_RANK,
   planAllowsModel,
@@ -86,6 +88,14 @@ function DashboardContent() {
   const appsLoading = ownedLoading || sharedLoading;
   const { heading, empty } = VIEW_COPY[view] ?? VIEW_COPY.all;
   const plan: PlanId = profile?.plan ?? "free";
+  // Live-app slots are per-owner (see MAX_ACTIVE_DEPLOYED_APPS in
+  // lib/types.ts) — count only apps this account owns, not ones shared with
+  // it, same scope the server-side cap in lib/deploy-actions.ts uses.
+  const liveSlotCap = MAX_ACTIVE_DEPLOYED_APPS[plan];
+  const liveSlotsUsed = useMemo(
+    () => ownedApps.filter((a) => isActiveDeployment({ status: a.status, deployStatus: a.deployStatus })).length,
+    [ownedApps]
+  );
   const canImport = PLAN_RANK[plan] >= PLAN_RANK[IMPORT_MIN_PLAN];
   const [showImport, setShowImport] = useState(false);
   const [confirmTarget, setConfirmTarget] = useState<
@@ -205,6 +215,21 @@ function DashboardContent() {
         <p className="mt-2.5 text-sm text-muted-foreground">
           Describe an app and Breezify writes the whole codebase.
         </p>
+        {!ownedLoading && (
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {liveSlotCap === null
+              ? `${liveSlotsUsed} live app${liveSlotsUsed === 1 ? "" : "s"}`
+              : `${liveSlotsUsed} of ${liveSlotCap} live app slot${liveSlotCap === 1 ? "" : "s"} used`}
+            {liveSlotCap !== null && liveSlotsUsed >= liveSlotCap && (
+              <>
+                {" — "}
+                <Link href="/billing" className="underline hover:text-foreground">
+                  upgrade for more
+                </Link>
+              </>
+            )}
+          </p>
+        )}
 
         <div className="mx-auto mt-8 max-w-2xl text-left">
           <div className="mb-2 flex justify-end">

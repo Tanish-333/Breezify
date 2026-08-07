@@ -24,6 +24,26 @@ const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
   "claude-opus-5": { input: 5.0, output: 25.0 },
 };
 
+// Transient failures — the API overloaded (529), rate-limited (429), or a
+// momentary 5xx — are common enough under real traffic that surfacing them
+// straight to the user as "generation failed" wastes the credits already
+// charged (see the upfront charge in app/api/generate/route.ts) on
+// something a simple retry would have recovered from. Only ever retried
+// when the model hasn't produced any output yet (raw.length === 0 in the
+// loop below) — once a real stream is underway, retrying would silently
+// restart and double the eventual response rather than resume it.
+const RETRYABLE_STATUS = new Set([408, 409, 429, 500, 502, 503, 529]);
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAYS_MS = [500, 1500];
+
+function isRetryableError(err: unknown): boolean {
+  const status = (err as { status?: number } | null)?.status;
+  // No status at all (a network-level failure, e.g. ECONNRESET/timeout
+  // before any HTTP response) is just as worth retrying as a 5xx.
+  if (status === undefined) return true;
+  return RETRYABLE_STATUS.has(status);
+}
+
 export async function generateWithAnthropic(
   userContent: string,
   model: ModelId,
@@ -34,31 +54,48 @@ export async function generateWithAnthropic(
   const anthropic = getClient();
   const apiModel = MODEL_INFO[model].apiModel;
 
-  // SYSTEM_PROMPT is identical on every call, for every user, forever — marking
-  // it as an ephemeral cache breakpoint means only the first call in each 5min
-  // window pays full price for it; every call after reads it at ~10% of the
-  // input-token cost. Below each model's minimum cacheable prefix (varies by
-  // model, see shared/prompt-caching.md) the marker is simply a no-op, not an
-  // error, so this is safe to leave on unconditionally.
-  const stream = anthropic.messages.stream(
-    {
-      model: apiModel,
-      max_tokens: maxOutputTokens,
-      system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
-      messages: [{ role: "user", content: userContent }],
-    },
-    { signal }
-  );
-
-  let raw = "";
-  if (onProgress) {
-    stream.on("text", (delta) => {
-      raw += delta;
-      onProgress({ chars: raw.length, files: detectFiles(raw) });
-    });
+  async function attemptOnce() {
+    let raw = "";
+    const stream = anthropic.messages.stream(
+      {
+        model: apiModel,
+        max_tokens: maxOutputTokens,
+        system: [{ type: "text", text: SYSTEM_PROMPT, cache_control: { type: "ephemeral" } }],
+        messages: [{ role: "user", content: userContent }],
+      },
+      { signal }
+    );
+    if (onProgress) {
+      stream.on("text", (delta) => {
+        raw += delta;
+        onProgress({ chars: raw.length, files: detectFiles(raw) });
+      });
+    }
+    const message = await stream.finalMessage();
+    return { message, raw };
   }
 
-  const message = await stream.finalMessage();
+  let message!: Awaited<ReturnType<typeof attemptOnce>>["message"];
+  let raw = "";
+
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      // SYSTEM_PROMPT is identical on every call, for every user, forever — marking
+      // it as an ephemeral cache breakpoint means only the first call in each 5min
+      // window pays full price for it; every call after reads it at ~10% of the
+      // input-token cost. Below each model's minimum cacheable prefix (varies by
+      // model, see shared/prompt-caching.md) the marker is simply a no-op, not an
+      // error, so this is safe to leave on unconditionally.
+      const result = await attemptOnce();
+      message = result.message;
+      raw = result.raw;
+      break;
+    } catch (err) {
+      const canRetry = attempt < MAX_ATTEMPTS && raw.length === 0 && !signal?.aborted && isRetryableError(err);
+      if (!canRetry) throw err;
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1] ?? 1500));
+    }
+  }
 
   if (message.stop_reason === "refusal") {
     throw new Error("Claude declined to build this app. Try rephrasing your request.");

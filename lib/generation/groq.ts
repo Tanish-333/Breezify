@@ -17,6 +17,14 @@ const PRICE_PER_MTOK: Record<string, { input: number; output: number }> = {
   "openai/gpt-oss-120b": { input: 0.15, output: 0.75 },
 };
 
+// See the matching comment in lib/generation/anthropic.ts — transient
+// failures (rate limits, momentary 5xx) are common enough under real
+// traffic to be worth one retry before charging the failure to the user,
+// as long as nothing has streamed yet.
+const RETRYABLE_STATUS = new Set([408, 409, 429, 500, 502, 503]);
+const MAX_ATTEMPTS = 3;
+const RETRY_DELAYS_MS = [500, 1500];
+
 export async function generateWithGroq(
   userContent: string,
   model: ModelId,
@@ -30,69 +38,97 @@ export async function generateWithGroq(
   }
   const apiModel = MODEL_INFO[model].apiModel;
 
-  const res = await fetch(GROQ_API, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: apiModel,
-      stream: true,
-      max_tokens: maxOutputTokens,
-      messages: [
-        { role: "system", content: SYSTEM_PROMPT },
-        { role: "user", content: userContent },
-      ],
-    }),
-    signal,
-  });
+  async function attemptOnce() {
+    const res = await fetch(GROQ_API, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: apiModel,
+        stream: true,
+        max_tokens: maxOutputTokens,
+        messages: [
+          { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: userContent },
+        ],
+      }),
+      signal,
+    });
 
-  if (!res.ok || !res.body) {
-    const text = await res.text().catch(() => "");
-    throw new Error(`Groq request failed (${res.status}): ${text.slice(0, 300) || "no response body"}`);
+    if (!res.ok || !res.body) {
+      const text = await res.text().catch(() => "");
+      const err = new Error(`Groq request failed (${res.status}): ${text.slice(0, 300) || "no response body"}`);
+      (err as Error & { status?: number }).status = res.status;
+      throw err;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let raw = "";
+    let inputTokens = 0;
+    let outputTokens = 0;
+    let finishReason: string | null = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith("data:")) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === "[DONE]") continue;
+        let chunk: any;
+        try {
+          chunk = JSON.parse(payload);
+        } catch {
+          continue;
+        }
+        const choice = chunk.choices?.[0];
+        const delta = choice?.delta?.content;
+        if (delta) {
+          raw += delta;
+          onProgress?.({ chars: raw.length, files: detectFiles(raw) });
+        }
+        if (choice?.finish_reason) finishReason = choice.finish_reason;
+        // Groq includes usage on the final streamed chunk under x_groq.usage,
+        // falling back to a plain "usage" key to match the OpenAI shape.
+        const usage = chunk.x_groq?.usage ?? chunk.usage;
+        if (usage) {
+          inputTokens = usage.prompt_tokens ?? inputTokens;
+          outputTokens = usage.completion_tokens ?? outputTokens;
+        }
+      }
+    }
+
+    return { raw, inputTokens, outputTokens, finishReason };
   }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
   let raw = "";
   let inputTokens = 0;
   let outputTokens = 0;
   let finishReason: string | null = null;
 
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-
-    for (const line of lines) {
-      const trimmed = line.trim();
-      if (!trimmed.startsWith("data:")) continue;
-      const payload = trimmed.slice(5).trim();
-      if (payload === "[DONE]") continue;
-      let chunk: any;
-      try {
-        chunk = JSON.parse(payload);
-      } catch {
-        continue;
-      }
-      const choice = chunk.choices?.[0];
-      const delta = choice?.delta?.content;
-      if (delta) {
-        raw += delta;
-        onProgress?.({ chars: raw.length, files: detectFiles(raw) });
-      }
-      if (choice?.finish_reason) finishReason = choice.finish_reason;
-      // Groq includes usage on the final streamed chunk under x_groq.usage,
-      // falling back to a plain "usage" key to match the OpenAI shape.
-      const usage = chunk.x_groq?.usage ?? chunk.usage;
-      if (usage) {
-        inputTokens = usage.prompt_tokens ?? inputTokens;
-        outputTokens = usage.completion_tokens ?? outputTokens;
-      }
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    try {
+      const result = await attemptOnce();
+      ({ raw, inputTokens, outputTokens, finishReason } = result);
+      break;
+    } catch (err) {
+      const status = (err as Error & { status?: number }).status;
+      const canRetry =
+        attempt < MAX_ATTEMPTS &&
+        raw.length === 0 &&
+        !signal?.aborted &&
+        (status === undefined || RETRYABLE_STATUS.has(status));
+      if (!canRetry) throw err;
+      await new Promise((r) => setTimeout(r, RETRY_DELAYS_MS[attempt - 1] ?? 1500));
     }
   }
 

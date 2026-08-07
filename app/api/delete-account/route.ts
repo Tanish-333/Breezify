@@ -140,6 +140,13 @@ export async function POST(req: NextRequest) {
       queryCollection("apps", "userId", uid, idToken),
       queryCollection("transactions", "userId", uid, idToken),
     ]);
+    // domainOrders/{stripeSessionId} (see app/api/domains/purchase) is a
+    // real-money purchase record, deliberately excluded from this cleanup:
+    // firestore.rules sets `allow update, delete: if false` on it — even
+    // the owner can't delete or edit it, only read it — so it's kept as an
+    // audit trail of the actual registrar charge regardless of what
+    // happens to the Breezify account itself, the same reason detaching a
+    // domain (app/api/domains DELETE) never cancels its real registration.
 
     // Delete all Vercel projects for this user's deployed apps (best-effort,
     // doesn't block account deletion if a project fails to delete). Also
@@ -163,15 +170,22 @@ export async function POST(req: NextRequest) {
     const subcollectionWrites = (
       await Promise.all(
         apps.map(async (a) => {
-          const [secrets, versions, collaborators] = await Promise.all([
+          const [secrets, versions, collaborators, analytics] = await Promise.all([
             listCollection(`apps/${a.id}/secrets`, idToken).catch(() => []),
             listCollection(`apps/${a.id}/versions`, idToken).catch(() => []),
             listCollection(`apps/${a.id}/collaborators`, idToken).catch(() => []),
+            // Same gap the single-app delete flow (lib/deploy-actions.ts's
+            // deleteApp) already covers — visit-tracking docs written by
+            // withAnalytics()'s beacon don't cascade-delete with their
+            // parent app either, and were missing here even though
+            // deleteApp already accounts for them.
+            listCollection(`apps/${a.id}/analytics`, idToken).catch(() => []),
           ]);
           return [
             ...secrets.map((s) => deleteWrite(`apps/${a.id}/secrets/${s.id}`)),
             ...versions.map((v) => deleteWrite(`apps/${a.id}/versions/${v.id}`)),
             ...collaborators.map((c) => deleteWrite(`apps/${a.id}/collaborators/${c.id}`)),
+            ...analytics.map((an) => deleteWrite(`apps/${a.id}/analytics/${an.id}`)),
           ];
         })
       )

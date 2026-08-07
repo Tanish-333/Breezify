@@ -212,7 +212,14 @@ async function handleDomainPurchase(stripe: Stripe, session: Stripe.Checkout.Ses
   if (slug) {
     try {
       const status = await addProjectDomain(slug, order.domain);
-      verified = status.verified;
+      // "verified" here means actually live — a domain bought through
+      // Vercel's own registrar typically has DNS auto-configured, but that
+      // can lag briefly behind the purchase, and misconfigured is the same
+      // "not actually routing yet" signal used for domains attached
+      // manually (see the isLive checks in app/api/domains/route.ts). The
+      // owner's own "Check status" recheck covers the case where this
+      // lands false right after purchase.
+      verified = status.verified && !status.misconfigured;
     } catch (err) {
       // The domain is bought and non-refundable at this point regardless —
       // log loudly for manual attachment rather than losing the purchase.
