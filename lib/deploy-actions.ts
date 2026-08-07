@@ -162,9 +162,21 @@ async function tryDetachDomain(fields: Record<string, unknown>): Promise<void> {
  * Takes an app offline without deleting it: clears its deploy state so it
  * stops counting against MAX_ACTIVE_DEPLOYED_APPS, but keeps the app, its
  * generated code, and its turn history intact so it can be redeployed later
- * (subject to the cap again at that point, same as any other deploy). Also
- * detaches any custom domain, since a domain can't stay usefully pointed at
- * a project with nothing live on it.
+ * (subject to the cap again at that point, same as any other deploy).
+ *
+ * Detaches the domain from the Vercel project (a domain can't stay usefully
+ * pointed at a project with nothing live on it) but deliberately does NOT
+ * clear customDomain/domainPurchased/domainExpiresAt/domainAutoRenew/
+ * domainOrderId — a domain bought through Breezify is a real registration
+ * that's still owned and still billed regardless of whether this one app
+ * happens to be deployed right now (see app/api/domains/purchase's own
+ * comment on this). Wiping that metadata here used to silently turn off
+ * auto-renew on a domain the customer is still paying for, and stopped
+ * app/api/cron/renew-domains from ever finding it again — with zero
+ * warning, directly contradicting undeploy's own "the app stays put"
+ * promise (see the confirm dialog in app/dashboard/page.tsx). Redeploying
+ * re-attaches a still-recorded domain automatically — see the
+ * customDomain re-attach step in app/api/deploy/route.ts.
  */
 export async function undeployApp(params: { appId: string; uid: string; idToken: string }): Promise<void> {
   const { appId, uid, idToken } = params;
@@ -180,12 +192,8 @@ export async function undeployApp(params: { appId: string; uid: string; idToken:
     deployedUrl: null,
     deployExpiresAt: null,
     subdomain: null,
-    customDomain: null,
+    // Only the "currently attached to a live project" flag — not ownership.
     customDomainVerified: false,
-    domainPurchased: false,
-    domainExpiresAt: null,
-    domainAutoRenew: false,
-    domainOrderId: null,
   };
   await commit([updateWrite(`apps/${appId}`, fields, Object.keys(fields))], idToken);
 }

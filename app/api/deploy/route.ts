@@ -4,7 +4,7 @@ import { commit, getDoc, incrementWrite, listCollection, updateWrite } from "@/l
 import { hasEditAccess } from "@/lib/app-collaborators";
 import { withWatermark } from "@/lib/watermark";
 import { withAnalytics } from "@/lib/analytics-snippet";
-import { deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
+import { addProjectDomain, deployToVercel, isDeployConfigured } from "@/lib/vercel-deploy";
 import { unsupportedReason } from "@/lib/app-support";
 import { hasApiRoutes } from "@/lib/preview";
 import { tryWrapExpressForVercel } from "@/lib/express-adapter";
@@ -291,6 +291,32 @@ async function handler(req: NextRequest) {
         ],
         idToken
       );
+
+      // A domain recorded on this app (bought through Breezify, or attached
+      // by the owner) but not currently verified means it isn't actually
+      // pointed at a live Vercel project right now — the normal case right
+      // after an undeploy+redeploy, since undeployApp() detaches it from
+      // Vercel but deliberately keeps the record (see its own doc comment).
+      // Re-attach it here so redeploying is enough to restore it, rather
+      // than leaving the owner to notice it's broken and re-add it by hand.
+      // Best-effort: a domain that fails to re-attach shouldn't fail the
+      // deploy itself, same reasoning as the original attach in
+      // app/api/stripe/webhook's handleDomainPurchase.
+      const existingDomain = appDoc.fields.customDomain as string | undefined;
+      if (existingDomain && !appDoc.fields.customDomainVerified) {
+        try {
+          const status = await addProjectDomain(slug, existingDomain);
+          if (status.verified) {
+            await commit(
+              [updateWrite(`apps/${appId}`, { customDomainVerified: true }, ["customDomainVerified"])],
+              idToken
+            );
+          }
+        } catch (err) {
+          console.error(`[deploy] appId=${appId} domain=${existingDomain} re-attach after deploy failed:`, err);
+        }
+      }
+
       const note = [wrapped?.note, secretsNote].filter(Boolean).join(" ") || undefined;
       return NextResponse.json({ url: result.url, note });
     } catch (err) {
