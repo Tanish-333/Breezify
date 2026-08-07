@@ -92,8 +92,8 @@ export default function PrivacyPage() {
 
       <h2>9. Contact</h2>
       <p>
-        Questions about this Privacy Policy can be sent to the contact address listed on our
-        website.
+        Questions about this Privacy Policy can be sent through the Help section of your Breezify
+        dashboard.
       </p>
     </LegalPage>
   );

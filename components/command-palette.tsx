@@ -8,6 +8,7 @@ import type { FeatherApp } from "@/lib/types";
 import {
   CreditCard,
   FolderOpen,
+  HelpCircle,
   LayoutGrid,
   LayoutTemplate,
   Plus,
@@ -49,6 +50,7 @@ export function CommandPalette({
       { id: "nav-build", label: "New app", icon: Plus, run: go("/build") },
       { id: "nav-billing", label: "Billing", icon: CreditCard, run: go("/billing") },
       { id: "nav-settings", label: "Settings", icon: Settings, run: go("/settings") },
+      { id: "nav-help", label: "Help", icon: HelpCircle, run: go("/help") },
     ];
     const appItems: Item[] = apps.map((a) => ({
       id: `app-${a.id}`,

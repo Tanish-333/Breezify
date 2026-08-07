@@ -18,13 +18,17 @@ export const maxDuration = 120;
 // *** THIS ROUTE MOVES REAL MONEY. ***
 // Unlike app/api/cron/cleanup (which only touches Breezify's own data),
 // this one charges a customer's saved card off-session, unattended, and
-// only then extends their domain registration. It's fully wired here but
-// deliberately NOT added to vercel.json's crons — exercise it against
-// Stripe test mode (and confirm what purchaseDomainOnVercel actually does
-// when called again for a domain Breezify already owns, since that
-// specific behavior has no live environment here to verify against) before
-// adding:
-//   { "path": "/api/cron/renew-domains", "schedule": "0 3 * * *" }
+// only then extends their domain registration. It's live in vercel.json's
+// crons (owner sign-off given without a Stripe-test-mode dry run — no live
+// environment was available to exercise it first). One specific behavior
+// remains unverified against Vercel's real registrar API: what
+// purchaseDomainOnVercel's POST .../buy actually does when called again
+// for a domain this Vercel account already owns (renew vs. reject vs.
+// something else) — the failure handling below (refund on registrar
+// failure, disable-and-notify rather than blind retry, no infinite loop)
+// is what bounds the downside if that assumption turns out wrong. If a
+// live environment becomes available, exercising this against Stripe test
+// mode is still worth doing.
 
 // Wide enough to comfortably catch a domain before it actually expires even
 // if this doesn't run every single day; narrow enough that it isn't

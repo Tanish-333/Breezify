@@ -107,7 +107,7 @@ export default function TermsPage() {
 
       <h2>11. Contact</h2>
       <p>
-        Questions about these Terms can be sent to the contact address listed on our website.
+        Questions about these Terms can be sent through the Help section of your Breezify dashboard.
       </p>
     </LegalPage>
   );
