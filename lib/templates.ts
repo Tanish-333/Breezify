@@ -1,11 +1,13 @@
 import type { LucideIcon } from "lucide-react";
 import {
   BookOpen,
+  Boxes,
   CalendarCheck,
   Gamepad2,
   Kanban,
   Link2,
   NotebookPen,
+  Plane,
   Receipt,
   Timer,
   Users,
@@ -137,6 +139,27 @@ export const TEMPLATES: AppTemplate[] = [
       "A pomodoro timer. Configurable focus length, short-break length, long-break length, and how many focus sessions before a long break (defaults 25/5/15/4, editable in settings). A large countdown display shows the current session's remaining time and whether it's a focus or break session, with start/pause/reset controls and automatic transition to the next session (focus -> short break -> focus -> ... -> long break) once time runs out, playing a short sound/beep on each transition. An optional task name field lets the user label what they're focusing on for the current session. A history log lists completed focus sessions with their task label, date, and duration, plus a simple daily total (e.g. total focused minutes today).",
     icon: Timer,
     gradient: "from-foreground/[0.09] via-background to-muted",
+  },
+  {
+    id: "inventory-tracker",
+    category: "Business",
+    title: "Inventory tracker",
+    description: "Stock levels, suppliers, and low-stock alerts",
+    prompt:
+      "An inventory tracker for a small business. A products catalog stores name, SKU, category, quantity on hand, a reorder threshold, unit cost, and a linked supplier. Every stock change goes through an 'adjust stock' action with a signed quantity and a reason (restock, sale, damaged, correction), logged with a timestamp into a movements list you can filter by product. A suppliers section stores name, contact email, and phone, reusable across products. A dashboard shows total inventory value (sum of quantity x unit cost), total SKU count, and a count of products at or below their reorder threshold, with those low-stock products listed by name and current quantity so they're easy to spot. The product catalog supports search by name/SKU and filtering by category. Include full create/edit/delete for products and suppliers, and seed the app with a handful of realistic demo products, suppliers, and movement history so it isn't empty on first load.",
+    icon: Boxes,
+    gradient: "from-foreground/[0.08] via-background to-muted",
+  },
+  {
+    id: "pto-tracker",
+    category: "Business",
+    title: "PTO tracker",
+    description: "Time-off requests, approvals, and team calendar",
+    prompt:
+      "An employee time-off tracker. An employee roster stores name, role, and an annual PTO allowance in days. Employees submit time-off requests with a type (Vacation, Sick, Unpaid, Other), a start date, an end date, and optional notes; every request starts Pending and can be moved to Approved or Denied. Only Approved requests count against an employee's balance — show each employee's days used and days remaining this year as a progress bar next to their name. A team calendar view shows the current month with each day listing who's approved to be out that day (color-coded by leave type), with prev/next month navigation. A requests list is filterable by status and by employee, and every request can be deleted. Include full create/edit/delete for employees, and seed the app with a handful of realistic demo employees and a mix of pending/approved/denied requests so it isn't empty on first load.",
+    icon: Plane,
+    gradient: "from-foreground/[0.06] via-muted to-background",
+    featured: true,
   },
 ];
 
