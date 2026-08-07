@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { commit, createWrite } from "@/lib/firestore-rest";
 import { rateLimit } from "@/lib/rate-limit";
 import { randomUUID } from "crypto";
+import * as Sentry from "@sentry/nextjs";
 
 export const runtime = "nodejs";
 
@@ -48,9 +49,15 @@ async function handler(req: NextRequest) {
     // Store in Firestore for debugging
     await commit([createWrite(`client-errors/${errorId}`, errorData)]);
 
-    // In production, also send to external error tracking service
+    // Also forward to Sentry so someone actually gets alerted, instead of
+    // this only ever landing in a Firestore collection nobody watches.
+    // No-op if NEXT_PUBLIC_SENTRY_DSN isn't set (sentry.server.config.ts
+    // never calls Sentry.init in that case, so captureException is a no-op).
     if (process.env.NEXT_PUBLIC_SENTRY_DSN) {
-      // Would send to Sentry here
+      Sentry.captureException(new Error(errorData.message), {
+        extra: { stack: errorData.stack, context: errorData.context, url: errorData.url, errorId },
+        level: errorData.level === "warning" ? "warning" : "error",
+      });
     }
 
     return NextResponse.json(
