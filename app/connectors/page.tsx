@@ -44,7 +44,7 @@ function ConnectorsContent() {
       </div>
 
       {grouped.length === 0 ? (
-        <p className="py-10 text-center text-sm text-muted-foreground">No connectors match "{query}".</p>
+        <p className="py-10 text-center text-sm text-muted-foreground">No connectors match &quot;{query}&quot;.</p>
       ) : (
         <div className="space-y-8">
           {grouped.map(({ category, connectors }) => (
