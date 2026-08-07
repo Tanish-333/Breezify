@@ -140,16 +140,35 @@ async function tryCustomAlias(slug: string): Promise<{ alias: string | null; err
       method: "POST",
       body: JSON.stringify({ name: alias }),
     });
-    if (res.ok) return { alias };
 
     // A redeploy calling this again after an earlier deploy already
     // attached it is a success, not a failure — Vercel's POST error text
     // for "you already own this" isn't a stable string to match on, so
-    // confirm with a GET instead of giving up on the first non-2xx.
-    const existing = await vercelFetch(
-      `/v9/projects/${encodeURIComponent(slug)}/domains/${encodeURIComponent(alias)}${scopeQuery()}`
-    );
-    if (existing.ok) return { alias };
+    // confirm with a GET instead of giving up on the first non-2xx. Either
+    // way, `attached` below is the actual status body, whichever call
+    // produced it.
+    const attached = res.ok
+      ? res.body
+      : (await vercelFetch(`/v9/projects/${encodeURIComponent(slug)}/domains/${encodeURIComponent(alias)}${scopeQuery()}`)).body;
+
+    if (attached?.name) {
+      // Attached (res.ok, or already was) is NOT the same as verified and
+      // actually serving traffic — a subdomain of an already-verified apex
+      // is *supposed* to inherit that verification instantly when it's
+      // attached to a different project on the same team, but this can't
+      // be assumed blindly: returning the alias here when Vercel hasn't
+      // actually confirmed it live would hand back a URL that 404s instead
+      // of the working *.vercel.app fallback, which is strictly worse than
+      // just falling back. Only ever return the alias once Vercel itself
+      // confirms it.
+      if (attached.verified === false) {
+        const reason =
+          "attached to this project but Vercel hasn't marked it verified — a subdomain of an already-verified domain is expected to inherit that instantly, so if it's still unverified after a few minutes, check this project's own Domains tab in Vercel directly rather than DEPLOY_DOMAIN's setup.";
+        console.warn(`[vercel-deploy] ${alias} attached to ${slug} but not verified:`, attached.verification);
+        return { alias: null, error: reason };
+      }
+      return { alias };
+    }
 
     const reason = res.body?.error?.message || res.body?.message || `HTTP ${res.status}`;
     console.warn(`[vercel-deploy] Couldn't attach ${alias} to project ${slug}:`, reason);
