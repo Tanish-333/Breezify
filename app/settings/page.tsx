@@ -509,6 +509,29 @@ function SettingsContent() {
         </Section>
       </Group>
 
+      <Group label="Deployment">
+        <Section title="Deployment domain" keywords="deploy domain vercel custom domain breezify.dev" query={search}>
+          <Card>
+            <CardHeader>
+              <CardTitle>Deployment domain</CardTitle>
+              <CardDescription>
+                Your custom domain for deployed apps (if configured).
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="text-muted-foreground">Current domain</span>
+                <span className="font-mono">{process.env.NEXT_PUBLIC_DEPLOY_DOMAIN || "Not configured (using *.vercel.app)"}</span>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Each app you deploy gets a unique subdomain on this domain (e.g., <code className="rounded bg-muted px-1.5 py-0.5">my-app-abc123.breezify.dev</code>).
+                The domain is verified and managed in your Vercel account settings.
+              </p>
+            </CardContent>
+          </Card>
+        </Section>
+      </Group>
+
       <Group label="Data & danger zone">
         <Section title="Your data" keywords="export download privacy gdpr" query={search}>
         <Card>
@@ -537,7 +560,7 @@ function SettingsContent() {
         <Card className="border-error/30">
           <CardHeader>
             <CardTitle className="text-error">Danger zone</CardTitle>
-            <CardDescription>Permanently delete your account and all your apps.</CardDescription>
+            <CardDescription>Permanently delete your account, all apps, and all Vercel projects.</CardDescription>
           </CardHeader>
           <CardContent>
             {deleteError && (
@@ -557,8 +580,19 @@ function SettingsContent() {
       {showDeleteConfirm && (
         <ConfirmDialog
           title="Delete your account permanently?"
-          description="This can't be undone. Every app you own, your billing history, and your credit balance will be gone."
-          confirmLabel="Delete account"
+          description={
+            <>
+              <p>This action cannot be undone. When you delete your account:</p>
+              <ul className="mt-2 space-y-1 ml-4 text-sm list-disc">
+                <li>All your Breezify apps will be permanently deleted</li>
+                <li>Every deployed app on Vercel will be automatically deleted from your Vercel account</li>
+                <li>All custom domains and project configurations will be removed</li>
+                <li>Your billing history and credit balance will be cleared</li>
+                <li>You will be signed out immediately</li>
+              </ul>
+            </>
+          }
+          confirmLabel="Yes, delete everything"
           loading={deleteLoading}
           error={deleteError}
           onClose={() => {

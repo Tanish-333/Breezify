@@ -11,6 +11,7 @@ import {
 } from "@/lib/firestore-rest";
 import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
+import { deleteVercelProject, projectSlugFromDeployedUrl } from "@/lib/vercel-deploy";
 
 export const runtime = "nodejs";
 
@@ -139,6 +140,17 @@ export async function POST(req: NextRequest) {
       queryCollection("apps", "userId", uid, idToken),
       queryCollection("transactions", "userId", uid, idToken),
     ]);
+
+    // Delete all Vercel projects for this user's deployed apps (best-effort,
+    // doesn't block account deletion if a project fails to delete). Also
+    // handle free-tier apps (deployedUrl may be a path, not a deployed project).
+    const vercelProjectSlugs = apps
+      .map((a) => {
+        const deployedUrl = a.fields.deployedUrl as string | undefined;
+        return deployedUrl ? projectSlugFromDeployedUrl(deployedUrl) : null;
+      })
+      .filter((slug): slug is string => slug !== null);
+    await Promise.all(vercelProjectSlugs.map((slug) => deleteVercelProject(slug)));
 
     // apps/{appId}/secrets, .../versions, and .../collaborators don't
     // cascade-delete with their parent (Firestore never does), and secrets'

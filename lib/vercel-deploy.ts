@@ -593,3 +593,25 @@ export async function pollDomainOrder(orderId: string, deadlineMs = 45_000): Pro
   }
   throw new DomainOrderTimeoutError(orderId);
 }
+
+/**
+ * Deletes a Vercel project by slug. Best-effort — if deletion fails, logs
+ * the error but doesn't throw, since the project may already be deleted or
+ * the user's permissions may have changed. Used during account deletion to
+ * clean up all generated-app projects.
+ */
+export async function deleteVercelProject(slug: string): Promise<void> {
+  try {
+    const res = await vercelFetch(`/v9/projects/${encodeURIComponent(slug)}${scopeQuery()}`, {
+      method: "DELETE",
+    });
+    if (!res.ok && res.status !== 404) {
+      console.warn(
+        `[vercel-deploy] Failed to delete project ${slug}:`,
+        res.body?.error?.message || res.body?.message || `HTTP ${res.status}`
+      );
+    }
+  } catch (err) {
+    console.warn(`[vercel-deploy] Couldn't delete Vercel project ${slug}:`, err);
+  }
+}
