@@ -9,6 +9,7 @@ import { unsupportedReason } from "@/lib/app-support";
 import { tryWrapExpressForVercel } from "@/lib/express-adapter";
 import { missingEnvVars } from "@/lib/backend-env";
 import { ANALYTICS_MIN_PLAN, DEPLOY_DAILY_LIMIT, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
+import { rateLimit } from "@/lib/rate-limit";
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -25,7 +26,7 @@ function slugify(appId: string, name: string) {
   return `${base}-${appId.slice(0, 6)}`;
 }
 
-export async function POST(req: NextRequest) {
+async function handler(req: NextRequest) {
   try {
     if (!isDeployConfigured()) {
       return NextResponse.json(
@@ -240,3 +241,8 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: message }, { status: 500 });
   }
 }
+
+// Real deploys hit the Vercel API and create real projects, so this per-IP
+// cap is deliberately tight. The per-plan DEPLOY_DAILY_LIMIT above is the
+// real business limit; this is just a flood guard in front of it.
+export const POST = rateLimit(10, 60_000)(handler);

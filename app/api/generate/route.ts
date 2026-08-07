@@ -5,6 +5,7 @@ import { commit, createWrite, getDoc, incrementWrite, updateWrite } from "@/lib/
 import { hasAppAccess } from "@/lib/app-collaborators";
 import { generateApp, isModelAvailable, refineApp } from "@/lib/generation";
 import { checkClarity } from "@/lib/generation/clarify";
+import { rateLimit } from "@/lib/rate-limit";
 import {
   MODEL_INFO,
   PLANS,
@@ -74,7 +75,7 @@ async function releaseRefineLock(appId: string, previousStatus: string | undefin
   );
 }
 
-export async function POST(req: NextRequest) {
+async function handler(req: NextRequest) {
   const authHeader = req.headers.get("authorization") ?? "";
   const idToken = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
   if (!idToken) return errorStream("Missing authorization token.");
@@ -481,3 +482,10 @@ export async function POST(req: NextRequest) {
 
   return new Response(stream, { headers: SSE_HEADERS });
 }
+
+// Real generations are AI calls that cost real money, so this per-IP cap is
+// deliberately tight — a legitimate user issuing more than this many
+// generate/refine requests in a minute is not the normal case. Auth and
+// per-account credit checks inside handler() are the primary defense; this
+// just stops a flood of requests (valid or not) from all reaching them.
+export const POST = rateLimit(10, 60_000)(handler);
