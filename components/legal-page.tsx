@@ -20,7 +20,11 @@ export function LegalPage({
           {children}
         </div>
         <p className="mt-12 text-sm text-muted-foreground">
-          Questions? See our other policies:{" "}
+          Questions? Visit{" "}
+          <Link href="/help" className="text-foreground hover:underline">
+            Help
+          </Link>
+          , or see our other policies:{" "}
           <Link href="/terms" className="text-foreground hover:underline">
             Terms
           </Link>{" "}

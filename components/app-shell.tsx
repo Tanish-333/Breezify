@@ -14,6 +14,7 @@ import { PLANS } from "@/lib/types";
 import {
   CreditCard,
   FolderOpen,
+  HelpCircle,
   LayoutGrid,
   PanelLeft,
   Plus,
@@ -29,6 +30,7 @@ const MAIN_NAV = [
 const ACCOUNT_NAV = [
   { href: "/billing", label: "Billing", icon: CreditCard },
   { href: "/settings", label: "Settings", icon: Settings },
+  { href: "/help", label: "Help", icon: HelpCircle },
 ];
 
 function NavLink({
@@ -274,6 +276,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
         <footer className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 border-t border-border px-5 py-4 text-xs text-muted-foreground md:px-10">
           <span>© {new Date().getFullYear()} Breezify. All rights reserved.</span>
+          <Link href="/help" className="transition-colors hover:text-foreground">
+            Help
+          </Link>
           <Link href="/terms" className="transition-colors hover:text-foreground">
             Terms
           </Link>

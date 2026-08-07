@@ -6,7 +6,7 @@ import { ModalPortal } from "@/components/modal-portal";
 
 /**
  * Replaces window.confirm()/alert() for destructive actions: those render as
- * a browser-chrome popup stamped with the site's own URL ("breezify.vercel.app
+ * a browser-chrome popup stamped with the site's own URL ("breezify.dev
  * says..."), which looks broken/untrustworthy compared to the rest of the UI.
  */
 export function ConfirmDialog({

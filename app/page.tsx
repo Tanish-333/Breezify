@@ -232,6 +232,9 @@ export default function LandingPage() {
         <div className="container flex flex-col items-center justify-between gap-4 text-sm text-muted-foreground md:flex-row">
           <span>© {new Date().getFullYear()} Breezify. All rights reserved.</span>
           <div className="flex flex-wrap items-center justify-center gap-6">
+            <Link href="/help" className="hover:text-foreground transition-colors">
+              Help
+            </Link>
             <Link href="/terms" className="hover:text-foreground transition-colors">
               Terms
             </Link>
