@@ -16,6 +16,7 @@ import {
   Clock,
   CreditCard,
   FolderKanban,
+  Globe,
   HelpCircle,
   LayoutDashboard,
   LayoutGrid,
@@ -40,6 +41,7 @@ const PROJECTS_NAV = [
 
 const TOP_NAV = [
   { href: "/templates", label: "Templates", icon: LayoutTemplate },
+  { href: "/domains", label: "Domains", icon: Globe },
   { href: "/connectors", label: "Connectors", icon: Plug },
   { href: "/analytics", label: "Analytics", icon: BarChart3 },
 ];
