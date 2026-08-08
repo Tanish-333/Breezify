@@ -9,6 +9,7 @@ import { unsupportedReason } from "@/lib/app-support";
 import { hasApiRoutes } from "@/lib/preview";
 import { tryWrapExpressForVercel } from "@/lib/express-adapter";
 import { missingEnvVars } from "@/lib/backend-env";
+import { missingDependencies } from "@/lib/missing-deps";
 import { deployNewApp, deployFreeTierApp, subdomainSlug, DeployLimitError } from "@/lib/deploy-actions";
 import {
   DEPLOY_DAILY_LIMIT,
@@ -202,6 +203,22 @@ async function handler(req: NextRequest) {
     const unsupported = unsupportedReason(rawFiles, "deploy");
     if (unsupported) {
       return NextResponse.json({ error: unsupported }, { status: 400 });
+    }
+
+    // The live preview resolves every bare import from a CDN regardless of
+    // package.json (see lib/missing-deps.ts), so a model that forgot to
+    // list one renders fine in preview and only fails once Vercel runs a
+    // real `npm install`. Catch it here instead of burning a deploy (and a
+    // daily-limit slot, already claimed above) on a build that can't
+    // possibly succeed.
+    const missingDeps = missingDependencies(rawFiles);
+    if (missingDeps.length > 0) {
+      return NextResponse.json(
+        {
+          error: `This app imports ${missingDeps.join(", ")} but package.json's "dependencies" ${missingDeps.length > 1 ? "don't" : "doesn't"} list ${missingDeps.length > 1 ? "them" : "it"} — the real deploy build would fail on \`npm install\`. Ask Breezify to add the missing package${missingDeps.length > 1 ? "s" : ""} to package.json, or edit it directly in the Code view.`,
+        },
+        { status: 400 }
+      );
     }
 
     const slug = subdomainSlug(appId, name);
