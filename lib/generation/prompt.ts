@@ -243,45 +243,59 @@ export function detectFiles(partial: string): string[] {
   return found;
 }
 
+// Characters JSON actually recognizes right after a backslash inside a
+// string. Anything else there isn't a real escape sequence.
+const VALID_JSON_ESCAPES = new Set(['"', "\\", "/", "b", "f", "n", "r", "t", "u"]);
+
 /**
- * Best-effort repair for the single most common way a model breaks JSON
- * while writing out a "files" value full of generated source code: emitting
- * a raw, unescaped newline/tab/carriage-return inside a JSON string instead
- * of `\n`/`\t`/`\r`. Valid JSON requires every control character inside a
- * string to be escaped, but nothing about writing file contents makes a
- * model reliably remember that, and JSON.parse fails immediately on the
- * first offender — discarding a response that's otherwise complete and
- * well-formed, and getting reported as "cut off" even though the model
- * finished fine (see the stop_reason === "max_tokens" check in
- * generateWithAnthropic, which already catches genuine truncation before
- * this is ever reached). Walks the text once, tracking string/escape state,
- * and escapes any raw control character found inside a string so
+ * Best-effort repair for the two most common ways a model breaks JSON while
+ * writing out a "files" value full of generated source code:
+ *
+ * 1. A raw, unescaped newline/tab/carriage-return inside a JSON string
+ *    instead of `\n`/`\t`/`\r` — nothing about writing file contents makes a
+ *    model reliably remember JSON's escaping rules for control characters.
+ * 2. A lone backslash that isn't actually escaping anything JSON recognizes —
+ *    extremely common wherever generated code has a regex (`\d`, `\s`), a
+ *    Windows path (`C:\Users\...`), or any other single-backslash sequence
+ *    the model forgot to double for JSON.
+ *
+ * Either one makes JSON.parse fail immediately on the first offender,
+ * discarding a response that's otherwise complete and well-formed, and (pre-
+ * fix) getting reported as "cut off" even though the model finished fine —
+ * see the stop_reason === "max_tokens" check in generateWithAnthropic, which
+ * already catches genuine truncation before this is ever reached. Walks the
+ * text once, tracking string state, and fixes both cases in place so
  * JSON.parse can succeed on it.
  */
-function escapeRawControlCharsInStrings(text: string): string {
+function repairGenerationJSON(text: string): string {
   let out = "";
   let inString = false;
-  let escaped = false;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (!inString) {
+      out += ch;
       if (ch === '"') inString = true;
-      out += ch;
-      continue;
-    }
-    if (escaped) {
-      out += ch;
-      escaped = false;
-      continue;
-    }
-    if (ch === "\\") {
-      out += ch;
-      escaped = true;
       continue;
     }
     if (ch === '"') {
       inString = false;
       out += ch;
+      continue;
+    }
+    if (ch === "\\") {
+      const next = text[i + 1];
+      if (next !== undefined && VALID_JSON_ESCAPES.has(next)) {
+        // A real escape sequence (including \uXXXX — the hex digits that
+        // follow need no special handling, they're just literal characters
+        // the loop will pass through unchanged on later iterations).
+        out += ch + next;
+        i += 1;
+        continue;
+      }
+      // Not a real JSON escape — double the backslash instead of leaving it
+      // to break the parse. The character after it (if any) is handled
+      // normally on the next iteration, not consumed here.
+      out += "\\\\";
       continue;
     }
     if (ch === "\n") out += "\\n";
@@ -313,7 +327,7 @@ export function parseGenerationJSON(raw: string): {
     return JSON.parse(body);
   } catch {
     try {
-      return JSON.parse(escapeRawControlCharsInStrings(body));
+      return JSON.parse(repairGenerationJSON(body));
     } catch {
       throw new Error(
         "The model's response was cut off before it finished. Try a simpler prompt or a more capable model."
