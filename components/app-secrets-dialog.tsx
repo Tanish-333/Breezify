@@ -156,7 +156,7 @@ function ConnectorCard({
 
 export function AppSecretsDialog({ appId, onClose }: { appId: string; onClose: () => void }) {
   const { user } = useAuth();
-  const { secrets, loading } = useAppSecrets(appId);
+  const { secrets, loading } = useAppSecrets(appId, user?.uid);
   const [openConnector, setOpenConnector] = useState<string | null>(null);
   const [savingConnector, setSavingConnector] = useState<string | null>(null);
   const [search, setSearch] = useState("");

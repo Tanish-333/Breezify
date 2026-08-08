@@ -404,18 +404,36 @@ function toSecret(id: string, data: any): AppSecret {
   };
 }
 
-/** Key/value pairs configured for one app, e.g. an API key the generated app calls out with. */
-export function useAppSecrets(appId: string | undefined) {
+/**
+ * Key/value pairs configured for one app, e.g. an API key the generated app
+ * calls out with. Requires the caller's own uid: secrets/{id}'s read rule
+ * checks resource.data.userId (see firestore.rules), a field on the
+ * document itself, not a get() on the parent — Firestore can only allow a
+ * list/query when it can prove every document it could return satisfies
+ * the rule, and it can only prove that from the query's own shape, never
+ * by inspecting results afterward. This listener used to query with only
+ * `orderBy(createdAt)` and no matching `where` clause, which Firestore
+ * rejected outright every single time — the Secrets panel has never once
+ * actually shown a configured secret in this UI, silently (the error was
+ * only ever logged, never surfaced — see logListenerError below). See the
+ * server-side version of the exact same bug, fixed in
+ * app/api/deploy/route.ts via querySubcollection.
+ */
+export function useAppSecrets(appId: string | undefined, uid: string | undefined) {
   const [secrets, setSecrets] = useState<AppSecret[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    if (!appId) {
+    if (!appId || !uid) {
       setSecrets([]);
       setLoading(false);
       return;
     }
-    const q = query(collection(db, "apps", appId, "secrets"), orderBy("createdAt", "asc"));
+    const q = query(
+      collection(db, "apps", appId, "secrets"),
+      where("userId", "==", uid),
+      orderBy("createdAt", "asc")
+    );
     const unsub = onSnapshot(
       q,
       (snap) => {
@@ -428,7 +446,7 @@ export function useAppSecrets(appId: string | undefined) {
       }
     );
     return () => unsub();
-  }, [appId]);
+  }, [appId, uid]);
 
   return { secrets, loading };
 }

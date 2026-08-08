@@ -165,7 +165,7 @@ function AppWorkspace() {
   const isOwner = app?.userId === user?.uid;
   const canInviteCollaborators = PLAN_RANK[plan] >= PLAN_RANK[COLLABORATOR_MIN_PLAN];
   const otherViewers = usePresence(app?.id, user?.uid, user?.email);
-  const { secrets: appSecrets } = useAppSecrets(isOwner ? app?.id : undefined);
+  const { secrets: appSecrets } = useAppSecrets(isOwner ? app?.id : undefined, user?.uid);
   // A collaborator invited as "viewer" gets read-only access — this mirrors
   // firestore.rules' isAppEditor and lib/app-collaborators.ts's
   // hasEditAccess, which are what actually enforce it; this is just what

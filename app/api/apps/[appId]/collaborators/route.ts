@@ -56,7 +56,34 @@ export async function GET(req: NextRequest, { params }: { params: { appId: strin
       }
     }
 
-    const rows = await listCollection(`apps/${params.appId}/collaborators`, idToken);
+    // getDoc above already confirmed the caller has legitimate read access
+    // (owner or existing collaborator) — no further access decision left
+    // for a security rule to make, so this goes through the Admin SDK when
+    // configured rather than trusting rules-based list-safety again.
+    // collaborators/{uid}'s read rule looks safe for an unfiltered list
+    // (its get()-on-parent branch is collection-wide constant, same shape
+    // as analytics/{day}'s), but analytics turning out to still fail that
+    // exact pattern once a subcollection had enough documents means it's
+    // not a guarantee worth re-trusting here — see
+    // lib/deploy-actions.ts's deleteSubcollectionAdmin for the same
+    // reasoning applied to app deletion.
+    const rows = isFirebaseAdminConfigured()
+      ? (await adminDb().collection(`apps/${params.appId}/collaborators`).get()).docs.map((d) => ({
+          id: d.id,
+          // Admin SDK returns a Timestamp instance for addedAt (its .data()
+          // doesn't go through the REST client's fromFirestoreFields at
+          // all), which JSON.stringify would otherwise serialize as its raw
+          // {_seconds, _nanoseconds} internal shape instead of the ISO
+          // string the client actually expects (matching what the REST
+          // path below produces) — normalize it the same way here.
+          fields: Object.fromEntries(
+            Object.entries(d.data()).map(([k, v]) => [
+              k,
+              v && typeof v === "object" && "toDate" in v ? (v as { toDate(): Date }).toDate().toISOString() : v,
+            ])
+          ),
+        }))
+      : await listCollection(`apps/${params.appId}/collaborators`, idToken);
     return NextResponse.json({
       ownerUid,
       ownerEmail,
