@@ -9,7 +9,6 @@ import {
   deleteDoc,
   doc,
   getDoc,
-  limitToLast,
   onSnapshot,
   orderBy,
   query,
@@ -451,8 +450,6 @@ export function useAppSecrets(appId: string | undefined, uid: string | undefined
   return { secrets, loading };
 }
 
-const ANALYTICS_WINDOW_DAYS = 30;
-
 function toDailyAnalytics(id: string, data: any): DailyAnalytics {
   return {
     date: id,
@@ -464,12 +461,23 @@ function toDailyAnalytics(id: string, data: any): DailyAnalytics {
   };
 }
 
+// Analytics doesn't need millisecond-live updates the way presence or a
+// generation stream does — a visitor's page view landing a minute late in
+// this chart is unnoticeable, so a poll is a fine trade for what it avoids.
+const ANALYTICS_POLL_MS = 60_000;
+
 /**
  * The last 30 days of one app's visit rollup (see lib/traffic-guard.ts's
- * recordView) — day-doc ids are "YYYY-MM-DD", which sorts correctly as a
- * plain string, so orderBy(documentId()) needs no separate date field.
- * Empty (not an error) whenever FIREBASE_SERVICE_ACCOUNT isn't configured
- * on this deployment, since that's the only path that ever writes these.
+ * recordView). Fetched from app/api/apps/[appId]/analytics (Admin SDK)
+ * rather than a direct client-side onSnapshot listener: analytics/{day}'s
+ * read rule only checks a get() on the parent apps/{appId} doc, which
+ * looks safe for an unfiltered query (the condition doesn't vary per
+ * potential result) but turned out to still fail with PERMISSION_DENIED
+ * once a subcollection accumulated enough documents — confirmed live in
+ * production on this exact collection (see the API route's own doc
+ * comment for the full explanation). A client-side listener has no Admin
+ * SDK to fall back on, so this fetches from a small server route instead,
+ * polled rather than a live subscription.
  */
 export function useAppAnalytics(appId: string | undefined) {
   const [days, setDays] = useState<DailyAnalytics[]>([]);
@@ -481,23 +489,34 @@ export function useAppAnalytics(appId: string | undefined) {
       setLoading(false);
       return;
     }
-    const q = query(
-      collection(db, "apps", appId, "analytics"),
-      orderBy("__name__"),
-      limitToLast(ANALYTICS_WINDOW_DAYS)
-    );
-    const unsub = onSnapshot(
-      q,
-      (snap) => {
-        setDays(snap.docs.map((d) => toDailyAnalytics(d.id, d.data())));
-        setLoading(false);
-      },
-      (err) => {
-        logListenerError("useAppAnalytics", err);
-        setLoading(false);
+    let cancelled = false;
+
+    async function load() {
+      const user = auth.currentUser;
+      if (!user) return;
+      try {
+        const idToken = await user.getIdToken();
+        const res = await fetch(`/api/apps/${encodeURIComponent(appId!)}/analytics`, {
+          headers: { Authorization: `Bearer ${idToken}` },
+        });
+        const data = await res.json();
+        if (cancelled) return;
+        if (res.ok && Array.isArray(data.days)) {
+          setDays(data.days.map((d: any) => toDailyAnalytics(d.date, d)));
+        }
+      } catch (err) {
+        if (!cancelled) logListenerError("useAppAnalytics", err);
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-    );
-    return () => unsub();
+    }
+
+    load();
+    const interval = setInterval(load, ANALYTICS_POLL_MS);
+    return () => {
+      cancelled = true;
+      clearInterval(interval);
+    };
   }, [appId]);
 
   return { days, loading };
