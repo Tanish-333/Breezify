@@ -249,8 +249,25 @@ service cloud.firestore {
       // role, or remove someone else; a collaborator may remove themselves
       // (leave) but never anyone else, and can never add themselves.
       match /collaborators/{collabUid} {
+        // isOwner(resource.data.uid), not just isOwner(collabUid): the two
+        // are always equal in practice (create requires
+        // request.resource.data.uid == collabUid, see below) but Firestore
+        // can't use that as a fact when deciding whether a QUERY is safe —
+        // isOwner(collabUid) is a path-wildcard check, invisible to the
+        // rules engine's list-safety proof, which only works from the
+        // query's own explicit `where` clause matched against a field the
+        // rule actually reads. useCollaboratingApps() (client-side) and
+        // app/api/delete-account's own collectionGroup cleanup both query
+        // `where uid == callerUid` — without this field-based OR-clause
+        // mirroring that exact filter, Firestore can't prove every
+        // possible result satisfies the rule and rejects the ENTIRE query
+        // with PERMISSION_DENIED, regardless of whether the caller
+        // genuinely only matched their own docs. That silently emptied
+        // "Shared with me" for every collaborator, on every load, with
+        // nothing but a swallowed listener error to show for it.
         allow read: if isOwner(get(/databases/$(database)/documents/apps/$(appId)).data.userId)
           || isOwner(collabUid)
+          || isOwner(resource.data.uid)
           || isAppCollaborator(database, appId);
         // uid must mirror the doc's own path segment: useCollaboratingApps()
         // finds a user's shared apps with a collectionGroup query filtered

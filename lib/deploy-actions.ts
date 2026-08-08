@@ -11,6 +11,7 @@ import {
   getDoc,
   listCollection,
   queryCollection,
+  querySubcollection,
   updateWrite,
 } from "@/lib/firestore-rest";
 import { removeProjectDomain, deleteVercelProject, projectSlugFromDeployedUrl } from "@/lib/vercel-deploy";
@@ -295,9 +296,22 @@ export async function deleteApp(params: { appId: string; uid: string; idToken: s
   await tryDetachDomain(appDoc.fields);
   await tryDeleteVercelProject(appDoc.fields);
 
+  // secrets/{id} and versions/{id} both scope their read rule to a field on
+  // the document itself (resource.data.userId — see firestore.rules), not a
+  // get() on the already-authorized parent apps/{appId} doc. Firestore can
+  // only allow a list/query request when it can prove EVERY document the
+  // query could return satisfies the rule, and it can only prove that from
+  // the query's own shape — never by inspecting each result afterward. A
+  // plain "list everything in this subcollection" call has no such shape to
+  // prove it with, so Firestore rejects it outright with PERMISSION_DENIED,
+  // which used to fail this delete entirely for any app with turn history
+  // (virtually every app) — see querySubcollection's own doc comment.
+  // collaborators/{uid} and analytics/{day} don't have this problem (their
+  // rules check via get() on the parent, not resource.data), so a plain
+  // list still works for those two.
   const [secrets, versions, collaborators, analytics] = await Promise.all([
-    listCollection(`apps/${appId}/secrets`, idToken),
-    listCollection(`apps/${appId}/versions`, idToken),
+    querySubcollection(`apps/${appId}`, "secrets", "userId", uid, idToken),
+    querySubcollection(`apps/${appId}`, "versions", "userId", uid, idToken),
     listCollection(`apps/${appId}/collaborators`, idToken),
     listCollection(`apps/${appId}/analytics`, idToken),
   ]);

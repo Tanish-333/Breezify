@@ -7,6 +7,7 @@ import {
   listCollection,
   queryCollection,
   queryCollectionGroup,
+  querySubcollection,
   type FirestoreWrite,
 } from "@/lib/firestore-rest";
 import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
@@ -160,19 +161,29 @@ export async function POST(req: NextRequest) {
     await Promise.all(vercelProjectSlugs.map((slug) => deleteVercelProject(slug)));
 
     // apps/{appId}/secrets, .../versions, and .../collaborators don't
-    // cascade-delete with their parent (Firestore never does), and secrets'
-    // own rules check ownership via get(apps/{appId}).data.userId — so if
-    // the parent app doc were deleted first, or in a way this missed, those
-    // documents wouldn't just be orphaned, they'd become permanently
-    // unreadable and undeletable by anyone, including the account owner.
-    // Secrets in particular can hold real third-party API keys, so this has
-    // to run for every app, not skipped as an optimization.
+    // cascade-delete with their parent (Firestore never does). secrets/{id}
+    // and versions/{id} both scope their read rule to a field on the
+    // document itself (resource.data.userId — see firestore.rules), not a
+    // get() on the parent apps/{appId} doc — Firestore can only allow a
+    // list/query when it can prove every document it could return
+    // satisfies the rule, and it can only prove that from the query's own
+    // shape, never from inspecting results afterward. A plain "list
+    // everything" call has no such shape, so it's rejected outright with
+    // PERMISSION_DENIED regardless of whether every doc really does belong
+    // to this account — which the .catch(() => []) below used to mask
+    // completely: this account's own secrets (real third-party API keys)
+    // and version history were silently NEVER actually deleted on account
+    // deletion, contradicting what deletion promises, with no error
+    // anywhere to notice it by. querySubcollection's own doc comment has
+    // the full explanation. collaborators/{uid} and analytics/{day} don't
+    // have this problem (their rules check via get() on the parent), so a
+    // plain list still works for those two.
     const subcollectionWrites = (
       await Promise.all(
         apps.map(async (a) => {
           const [secrets, versions, collaborators, analytics] = await Promise.all([
-            listCollection(`apps/${a.id}/secrets`, idToken).catch(() => []),
-            listCollection(`apps/${a.id}/versions`, idToken).catch(() => []),
+            querySubcollection(`apps/${a.id}`, "secrets", "userId", uid, idToken).catch(() => []),
+            querySubcollection(`apps/${a.id}`, "versions", "userId", uid, idToken).catch(() => []),
             listCollection(`apps/${a.id}/collaborators`, idToken).catch(() => []),
             // Same gap the single-app delete flow (lib/deploy-actions.ts's
             // deleteApp) already covers — visit-tracking docs written by

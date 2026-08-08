@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { commit, createWrite, getDoc, listCollection } from "@/lib/firestore-rest";
+import { commit, createWrite, getDoc, querySubcollection } from "@/lib/firestore-rest";
 import { hasEditAccess } from "@/lib/app-collaborators";
 import { DUPLICATE_MIN_PLAN, PLAN_RANK, PLANS, type PlanId } from "@/lib/types";
 
@@ -103,7 +103,16 @@ export async function POST(req: NextRequest) {
     // already succeeded.
     if (doc.fields.userId === uid) {
       try {
-        const secretDocs = await listCollection(`apps/${appId}/secrets`, idToken);
+        // secrets/{id}'s read rule checks resource.data.userId (a field on
+        // each document), not a get() on the parent — a plain "list
+        // everything" call can't be proven safe by Firestore for a rule
+        // shaped like that, and is rejected outright with
+        // PERMISSION_DENIED regardless of actual ownership, silently
+        // masked by the catch below. See querySubcollection's own doc
+        // comment for the full mechanics. Filtering by this caller's own
+        // uid (already confirmed as the owner just above) is what makes
+        // the request provably safe.
+        const secretDocs = await querySubcollection(`apps/${appId}`, "secrets", "userId", uid, idToken);
         const writes = secretDocs
           .filter((s) => typeof s.fields.key === "string" && typeof s.fields.value === "string")
           .map((s) =>

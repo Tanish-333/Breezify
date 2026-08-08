@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { verifyIdToken } from "@/lib/verify-id-token";
-import { commit, getDoc, incrementWrite, listCollection, updateWrite } from "@/lib/firestore-rest";
+import { commit, getDoc, incrementWrite, querySubcollection, updateWrite } from "@/lib/firestore-rest";
 import { hasEditAccess } from "@/lib/app-collaborators";
 import { withWatermark } from "@/lib/watermark";
 import { withAnalytics } from "@/lib/analytics-snippet";
@@ -218,7 +218,21 @@ async function handler(req: NextRequest) {
     const isAppOwner = appDoc.fields.userId === uid;
     if (isAppOwner) {
       try {
-        const secretDocs = await listCollection(`apps/${appId}/secrets`, idToken);
+        // secrets/{id}'s read rule checks a field on the document itself
+        // (resource.data.userId — see firestore.rules), not a get() on this
+        // already-authorized apps/{appId} doc, so Firestore can only allow
+        // a list/query here when the query itself proves every possible
+        // result satisfies that check — a plain "list everything" call
+        // can't prove that and was rejected outright with
+        // PERMISSION_DENIED every single time, silently, via the catch
+        // below. That meant configured Secrets NEVER actually reached a
+        // deployed app's backend, on every deploy, ever — and the missing-
+        // env-var warning further down always fired even for a properly
+        // configured key, since secretsEnv was always empty. Filtering by
+        // the owner's own uid (this deploy is already gated on isAppOwner)
+        // is what lets Firestore verify the request and actually allow it —
+        // see querySubcollection's own doc comment for the full mechanics.
+        const secretDocs = await querySubcollection(`apps/${appId}`, "secrets", "userId", uid, idToken);
         secretsEnv = Object.fromEntries(
           secretDocs
             .map((d) => [d.fields.key, d.fields.value])

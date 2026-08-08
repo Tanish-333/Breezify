@@ -222,6 +222,58 @@ export async function queryCollection(
     }));
 }
 
+/**
+ * Same as queryCollection, but scoped to a specific parent document's
+ * subcollection (e.g. apps/{appId}/versions) rather than a database-wide
+ * collection. Needed wherever a subcollection's security rule checks a
+ * field on each document itself (e.g. versions/{turnId}'s `resource.data.
+ * userId`, see firestore.rules) rather than via a parent get() — Firestore
+ * can only allow a `list`/query request when it can prove EVERY document
+ * the query could return satisfies the rule, and it can only prove that
+ * from the query's own shape (a matching `where` clause), never from
+ * inspecting results after the fact. listCollection()'s plain "list
+ * everything in this subcollection" call has no such clause, so Firestore
+ * rejects it outright with PERMISSION_DENIED the moment a rule like that
+ * is in play — regardless of whether every document actually does belong
+ * to the caller. Filtering by the exact field the rule checks is what
+ * lets Firestore verify the request is safe and actually allow it.
+ */
+export async function querySubcollection(
+  parentPath: string,
+  collectionId: string,
+  field: string,
+  value: string,
+  idToken: string
+): Promise<{ id: string; fields: Record<string, unknown> }[]> {
+  const res = await firestoreFetch(`${BASE}/${parentPath}:runQuery`, idToken, {
+    method: "POST",
+    body: JSON.stringify({
+      structuredQuery: {
+        from: [{ collectionId }],
+        where: {
+          fieldFilter: {
+            field: { fieldPath: field },
+            op: "EQUAL",
+            value: toFirestoreValue(value),
+          },
+        },
+      },
+    }),
+  });
+  if (res.status === 404) return [];
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Firestore query ${parentPath}/${collectionId} failed (${res.status}): ${body}`);
+  }
+  const rows = (await res.json()) as { document?: { name: string; fields?: Record<string, any> } }[];
+  return rows
+    .filter((r) => r.document)
+    .map((r) => ({
+      id: r.document!.name.split("/").pop()!,
+      fields: fromFirestoreFields(r.document!.fields ?? {}),
+    }));
+}
+
 const DOCUMENTS_PREFIX = `projects/${PROJECT_ID}/databases/(default)/documents/`;
 
 /**
