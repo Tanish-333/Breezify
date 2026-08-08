@@ -10,6 +10,7 @@ import {
   querySubcollection,
   type FirestoreWrite,
 } from "@/lib/firestore-rest";
+import { adminDb, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
 import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
 import { getStripe, isStripeConfigured } from "@/lib/stripe";
 import { deleteVercelProject, projectSlugFromDeployedUrl } from "@/lib/vercel-deploy";
@@ -160,36 +161,49 @@ export async function POST(req: NextRequest) {
       .filter((slug): slug is string => slug !== null);
     await Promise.all(vercelProjectSlugs.map((slug) => deleteVercelProject(slug)));
 
-    // apps/{appId}/secrets, .../versions, and .../collaborators don't
-    // cascade-delete with their parent (Firestore never does). secrets/{id}
-    // and versions/{id} both scope their read rule to a field on the
-    // document itself (resource.data.userId — see firestore.rules), not a
-    // get() on the parent apps/{appId} doc — Firestore can only allow a
-    // list/query when it can prove every document it could return
-    // satisfies the rule, and it can only prove that from the query's own
-    // shape, never from inspecting results afterward. A plain "list
-    // everything" call has no such shape, so it's rejected outright with
-    // PERMISSION_DENIED regardless of whether every doc really does belong
-    // to this account — which the .catch(() => []) below used to mask
-    // completely: this account's own secrets (real third-party API keys)
-    // and version history were silently NEVER actually deleted on account
-    // deletion, contradicting what deletion promises, with no error
-    // anywhere to notice it by. querySubcollection's own doc comment has
-    // the full explanation. collaborators/{uid} and analytics/{day} don't
-    // have this problem (their rules check via get() on the parent), so a
-    // plain list still works for those two.
-    const subcollectionWrites = (
-      await Promise.all(
+    // apps/{appId}/secrets, .../versions, .../collaborators, and
+    // .../analytics don't cascade-delete with their parent (Firestore never
+    // does). Deleted via the Admin SDK when configured — bypassing
+    // firestore.rules entirely — rather than the caller's own idToken:
+    // rules-based list/query safety turned out to be a real, recurring dead
+    // end for exactly this kind of already-authorized server-side cleanup
+    // (ownership of every one of these apps was already confirmed by the
+    // queryCollection("apps", "userId", uid, ...) call above). secrets/{id}
+    // and versions/{id} reject a plain "list everything" call outright
+    // (Firestore can't prove it's safe without a matching `where` clause on
+    // the exact field the rule checks), and even analytics/{day} — whose
+    // rule only checks a get() on the parent, nothing per-document — failed
+    // the same way once an app had accumulated enough daily rollups. That
+    // was previously masked completely by .catch(() => []): this account's
+    // own secrets (real third-party API keys) and version history were
+    // silently NEVER actually deleted on account deletion, contradicting
+    // what deletion promises, with no error anywhere to notice it by. See
+    // lib/deploy-actions.ts's deleteSubcollectionAdmin for the same fix
+    // applied to a single-app delete.
+    let subcollectionWrites: FirestoreWrite[];
+    if (isFirebaseAdminConfigured()) {
+      const db = adminDb();
+      const writes = await Promise.all(
+        apps.map(async (a) => {
+          const collections = await Promise.all(
+            ["secrets", "versions", "collaborators", "analytics"].map((collectionId) =>
+              db.collection(`apps/${a.id}/${collectionId}`).listDocuments()
+            )
+          );
+          return collections.flat().map((ref) => deleteWrite(ref.path));
+        })
+      );
+      subcollectionWrites = writes.flat();
+    } else {
+      // No service account configured on this deployment — fall back to
+      // the caller's own idToken, best-effort (some of these may still be
+      // silently rejected by rules, see the comment above).
+      const writes = await Promise.all(
         apps.map(async (a) => {
           const [secrets, versions, collaborators, analytics] = await Promise.all([
             querySubcollection(`apps/${a.id}`, "secrets", "userId", uid, idToken).catch(() => []),
             querySubcollection(`apps/${a.id}`, "versions", "userId", uid, idToken).catch(() => []),
             listCollection(`apps/${a.id}/collaborators`, idToken).catch(() => []),
-            // Same gap the single-app delete flow (lib/deploy-actions.ts's
-            // deleteApp) already covers — visit-tracking docs written by
-            // withAnalytics()'s beacon don't cascade-delete with their
-            // parent app either, and were missing here even though
-            // deleteApp already accounts for them.
             listCollection(`apps/${a.id}/analytics`, idToken).catch(() => []),
           ]);
           return [
@@ -199,8 +213,9 @@ export async function POST(req: NextRequest) {
             ...analytics.map((an) => deleteWrite(`apps/${a.id}/analytics/${an.id}`)),
           ];
         })
-      )
-    ).flat();
+      );
+      subcollectionWrites = writes.flat();
+    }
 
     // This account may also be a COLLABORATOR on apps it doesn't own — those
     // apps/{appId}/collaborators/{uid} docs live under someone else's app

@@ -14,6 +14,7 @@ import {
   querySubcollection,
   updateWrite,
 } from "@/lib/firestore-rest";
+import { adminDb, isFirebaseAdminConfigured } from "@/lib/firebase-admin";
 import { removeProjectDomain, deleteVercelProject, projectSlugFromDeployedUrl } from "@/lib/vercel-deploy";
 import { getDeployDomain } from "@/lib/deploy-domain";
 import { getAppBaseUrl } from "@/lib/app-base-url";
@@ -287,6 +288,38 @@ function chunk<T>(items: T[], size: number): T[][] {
  * cascade-deletes these), and finally the app doc itself. Always frees a
  * slot, the same as undeployApp, but with no way back.
  */
+/**
+ * Deletes every doc in apps/{appId}/{collectionId} via the Admin SDK,
+ * bypassing firestore.rules entirely. Used only here, where ownership was
+ * already fully verified in application code (the userId check in
+ * deleteApp() below) before this ever runs — there is no further access
+ * decision left for a security rule to make, and rules-based list/query
+ * safety turned out to be a real, recurring dead end for this exact
+ * operation: Firestore can only allow a list/query when it can PROVE every
+ * document it could return satisfies the read rule, and it can only prove
+ * that from the query's own shape (a matching `where` clause on a field
+ * the rule reads) — not from a get() on the parent (still per-request, can
+ * still hit real limits on a subcollection with many documents) and not by
+ * inspecting results afterward. secrets/versions failed this outright
+ * (fixed with a matching-field query, see querySubcollection); analytics
+ * failed it too despite a get()-only rule, once an app had accumulated
+ * enough daily rollups. Rather than keep discovering these one at a time,
+ * every subcollection deleteApp() touches goes through the Admin SDK
+ * uniformly now — deterministic, not dependent on getting each rule's
+ * list-provability exactly right.
+ */
+async function deleteSubcollectionAdmin(parentPath: string, collectionId: string): Promise<void> {
+  const db = adminDb();
+  const snap = await db.collection(`${parentPath}/${collectionId}`).get();
+  if (snap.empty) return;
+  const batches = chunk(snap.docs, COMMIT_WRITE_LIMIT);
+  for (const batch of batches) {
+    const writer = db.batch();
+    for (const doc of batch) writer.delete(doc.ref);
+    await writer.commit();
+  }
+}
+
 export async function deleteApp(params: { appId: string; uid: string; idToken: string }): Promise<void> {
   const { appId, uid, idToken } = params;
   const appDoc = await getDoc(`apps/${appId}`, idToken);
@@ -296,34 +329,34 @@ export async function deleteApp(params: { appId: string; uid: string; idToken: s
   await tryDetachDomain(appDoc.fields);
   await tryDeleteVercelProject(appDoc.fields);
 
-  // secrets/{id} and versions/{id} both scope their read rule to a field on
-  // the document itself (resource.data.userId — see firestore.rules), not a
-  // get() on the already-authorized parent apps/{appId} doc. Firestore can
-  // only allow a list/query request when it can prove EVERY document the
-  // query could return satisfies the rule, and it can only prove that from
-  // the query's own shape — never by inspecting each result afterward. A
-  // plain "list everything in this subcollection" call has no such shape to
-  // prove it with, so Firestore rejects it outright with PERMISSION_DENIED,
-  // which used to fail this delete entirely for any app with turn history
-  // (virtually every app) — see querySubcollection's own doc comment.
-  // collaborators/{uid} and analytics/{day} don't have this problem (their
-  // rules check via get() on the parent, not resource.data), so a plain
-  // list still works for those two.
-  const [secrets, versions, collaborators, analytics] = await Promise.all([
-    querySubcollection(`apps/${appId}`, "secrets", "userId", uid, idToken),
-    querySubcollection(`apps/${appId}`, "versions", "userId", uid, idToken),
-    listCollection(`apps/${appId}/collaborators`, idToken),
-    listCollection(`apps/${appId}/analytics`, idToken),
-  ]);
-  const subPaths = [
-    ...secrets.map((d) => `apps/${appId}/secrets/${d.id}`),
-    ...versions.map((d) => `apps/${appId}/versions/${d.id}`),
-    ...collaborators.map((d) => `apps/${appId}/collaborators/${d.id}`),
-    ...analytics.map((d) => `apps/${appId}/analytics/${d.id}`),
-  ];
-
-  for (const group of chunk(subPaths, COMMIT_WRITE_LIMIT)) {
-    await commit(group.map(deleteWrite), idToken);
+  if (isFirebaseAdminConfigured()) {
+    await Promise.all(
+      ["secrets", "versions", "collaborators", "analytics"].map((collectionId) =>
+        deleteSubcollectionAdmin(`apps/${appId}`, collectionId)
+      )
+    );
+  } else {
+    // No service account configured on this deployment — fall back to the
+    // caller's own idToken. secrets/versions need the field-filtered query
+    // to have any chance of being allowed by rules at all; collaborators/
+    // analytics use a plain list, which usually works but isn't guaranteed
+    // the way the Admin SDK path above is.
+    const [secrets, versions, collaborators, analytics] = await Promise.all([
+      querySubcollection(`apps/${appId}`, "secrets", "userId", uid, idToken),
+      querySubcollection(`apps/${appId}`, "versions", "userId", uid, idToken),
+      listCollection(`apps/${appId}/collaborators`, idToken),
+      listCollection(`apps/${appId}/analytics`, idToken),
+    ]);
+    const subPaths = [
+      ...secrets.map((d) => `apps/${appId}/secrets/${d.id}`),
+      ...versions.map((d) => `apps/${appId}/versions/${d.id}`),
+      ...collaborators.map((d) => `apps/${appId}/collaborators/${d.id}`),
+      ...analytics.map((d) => `apps/${appId}/analytics/${d.id}`),
+    ];
+    for (const group of chunk(subPaths, COMMIT_WRITE_LIMIT)) {
+      await commit(group.map(deleteWrite), idToken);
+    }
   }
+
   await commit([deleteWrite(`apps/${appId}`)], idToken);
 }
