@@ -76,6 +76,59 @@ async function cleanStuckDeploys() {
   return { status: "completed", message: `Reset ${cleaned} deploy(s) stuck past ${STUCK_DEPLOY_MS / 60000} minutes.` };
 }
 
+// Same idea as STUCK_DEPLOY_MS, for the generation/refine lifecycle
+// (`status`, not `deployStatus`) — a function killed mid-generation (its
+// own maxDuration, a crashed process, the underlying platform's actual
+// duration cap being lower than the code's declared maxDuration) leaves
+// the app doc parked at "generating" forever. app/api/generate/route.ts
+// already has a 6-minute stale-lock check that lets a NEW refine reclaim
+// an app stuck this way — but that only ever fires when someone actively
+// tries to refine it again. A brand-new app's first-ever generation
+// getting killed has no such trigger: nobody refines an app with zero
+// files, so it just sits on a permanent "Generating" spinner with no way
+// to ever recover short of deleting it and starting over. Comfortably
+// above that 6-minute window so a genuinely still-running generation is
+// never mistaken for a stuck one by this cron.
+const STUCK_GENERATION_MS = 10 * 60 * 1000;
+
+async function cleanStuckGenerations() {
+  if (!isFirebaseAdminConfigured()) {
+    return { status: "skipped", message: "FIREBASE_SERVICE_ACCOUNT not configured." };
+  }
+  const db = adminDb();
+  const snap = await db.collection("apps").where("status", "==", "generating").get();
+  const cutoff = Date.now() - STUCK_GENERATION_MS;
+  let cleaned = 0;
+  for (const docSnap of snap.docs) {
+    const startedAt = docSnap.get("generatingStartedAt");
+    const startedMs =
+      startedAt && typeof startedAt.toMillis === "function" ? startedAt.toMillis() : 0;
+    if (!startedMs || startedMs >= cutoff) continue;
+
+    // A refine that got killed still has the app's last successfully
+    // generated files sitting there untouched (a refine never partially
+    // overwrites them — see mergeRefineFiles in lib/generation) — that's a
+    // real, working app, so restore it to "ready" rather than "error".
+    // Only a brand-new app's first-ever generation, which has no files at
+    // all yet, has genuinely nothing to fall back to.
+    const hasFiles = Boolean(
+      Object.keys((docSnap.get("generatedCode")?.files as Record<string, unknown>) ?? {}).length
+    );
+    await docSnap.ref.update({
+      status: hasFiles ? "ready" : "error",
+      generatingBy: null,
+      generatingByEmail: null,
+      generatingStartedAt: null,
+      ...(hasFiles ? {} : { errorMessage: "Generation timed out or was interrupted. Please try again." }),
+    });
+    cleaned++;
+  }
+  return {
+    status: "completed",
+    message: `Reset ${cleaned} generation(s) stuck past ${STUCK_GENERATION_MS / 60000} minutes.`,
+  };
+}
+
 export async function POST(req: NextRequest) {
   // Verify this is called by Vercel's cron service. Fail closed if the
   // secret isn't configured at all, rather than matching a literal
@@ -118,6 +171,18 @@ export async function POST(req: NextRequest) {
       results.builds = await cleanStuckDeploys();
     } catch (error) {
       results.builds = {
+        status: "error",
+        message: error instanceof Error ? error.message : "Unknown error",
+      };
+    }
+
+    // Apps left stuck in "generating" by a killed function — see
+    // cleanStuckGenerations' own doc comment for why this has no other
+    // recovery path for a brand-new app's first-ever generation.
+    try {
+      results.generations = await cleanStuckGenerations();
+    } catch (error) {
+      results.generations = {
         status: "error",
         message: error instanceof Error ? error.message : "Unknown error",
       };
