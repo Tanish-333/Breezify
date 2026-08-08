@@ -244,6 +244,55 @@ export function detectFiles(partial: string): string[] {
 }
 
 /**
+ * Best-effort repair for the single most common way a model breaks JSON
+ * while writing out a "files" value full of generated source code: emitting
+ * a raw, unescaped newline/tab/carriage-return inside a JSON string instead
+ * of `\n`/`\t`/`\r`. Valid JSON requires every control character inside a
+ * string to be escaped, but nothing about writing file contents makes a
+ * model reliably remember that, and JSON.parse fails immediately on the
+ * first offender — discarding a response that's otherwise complete and
+ * well-formed, and getting reported as "cut off" even though the model
+ * finished fine (see the stop_reason === "max_tokens" check in
+ * generateWithAnthropic, which already catches genuine truncation before
+ * this is ever reached). Walks the text once, tracking string/escape state,
+ * and escapes any raw control character found inside a string so
+ * JSON.parse can succeed on it.
+ */
+function escapeRawControlCharsInStrings(text: string): string {
+  let out = "";
+  let inString = false;
+  let escaped = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (!inString) {
+      if (ch === '"') inString = true;
+      out += ch;
+      continue;
+    }
+    if (escaped) {
+      out += ch;
+      escaped = false;
+      continue;
+    }
+    if (ch === "\\") {
+      out += ch;
+      escaped = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = false;
+      out += ch;
+      continue;
+    }
+    if (ch === "\n") out += "\\n";
+    else if (ch === "\r") out += "\\r";
+    else if (ch === "\t") out += "\\t";
+    else out += ch;
+  }
+  return out;
+}
+
+/**
  * Models occasionally wrap JSON in prose or a markdown fence despite being
  * told not to, so pull out the outermost JSON object before parsing.
  */
@@ -259,12 +308,17 @@ export function parseGenerationJSON(raw: string): {
   if (start === -1 || end === -1 || end <= start) {
     throw new Error("The model did not return a valid app. Please try again.");
   }
+  const body = raw.slice(start, end + 1);
   try {
-    return JSON.parse(raw.slice(start, end + 1));
+    return JSON.parse(body);
   } catch {
-    throw new Error(
-      "The model's response was cut off before it finished. Try a simpler prompt or a more capable model."
-    );
+    try {
+      return JSON.parse(escapeRawControlCharsInStrings(body));
+    } catch {
+      throw new Error(
+        "The model's response was cut off before it finished. Try a simpler prompt or a more capable model."
+      );
+    }
   }
 }
 
