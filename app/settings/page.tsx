@@ -589,12 +589,12 @@ function SettingsContent() {
         </Card>
         </Section>
 
-        <Section title="Vercel projects" keywords="vercel delete deploy project quota bulk" query={search}>
+        <Section title="Vercel projects" keywords="vercel undeploy delete deploy project quota bulk" query={search}>
         <Card className="border-error/30">
           <CardHeader>
             <CardTitle className="text-error">Vercel projects</CardTitle>
             <CardDescription>
-              Delete every real Vercel project behind your deployed apps in one go, without deleting the apps
+              Undeploy every app that&apos;s its own real Vercel project in one go, without deleting the apps
               themselves — free-tier apps aren&apos;t affected. Each app stays put and can be redeployed any time.
             </CardDescription>
           </CardHeader>
@@ -609,8 +609,8 @@ function SettingsContent() {
               <div className="mb-4 flex items-start gap-2 rounded border border-success/30 bg-success/5 p-3 text-sm text-success">
                 <CheckCircle2 className="h-4 w-4 shrink-0 mt-0.5" />
                 <span>
-                  Deleted {deleteVercelResult} Vercel project{deleteVercelResult === 1 ? "" : "s"}. Those apps are
-                  now undeployed — redeploy any of them any time.
+                  Undeployed {deleteVercelResult} app{deleteVercelResult === 1 ? "" : "s"} — their Vercel project
+                  {deleteVercelResult === 1 ? " was" : "s were"} deleted. Redeploy any of them any time.
                 </span>
               </div>
             )}
@@ -619,7 +619,7 @@ function SettingsContent() {
               onClick={() => setShowDeleteVercelConfirm(true)}
               loading={deleteVercelLoading}
             >
-              Delete all Vercel projects
+              Undeploy all projects
             </Button>
           </CardContent>
         </Card>
@@ -648,9 +648,9 @@ function SettingsContent() {
 
       {showDeleteVercelConfirm && (
         <ConfirmDialog
-          title="Delete all Vercel projects?"
+          title="Undeploy all projects?"
           description="Every deployed app that's its own real Vercel project goes offline and that project is deleted on Vercel. Free-tier apps aren't affected. Your apps, their code, and history stay put — redeploy any of them any time. This cannot be undone."
-          confirmLabel="Yes, delete all Vercel projects"
+          confirmLabel="Yes, undeploy all projects"
           loading={deleteVercelLoading}
           error={deleteVercelError}
           onClose={() => {
