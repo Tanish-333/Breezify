@@ -260,6 +260,37 @@ async function getDeploymentBuildLogs(deploymentId: string, limit = 300): Promis
 }
 
 /**
+ * Vite itself transpiles with esbuild and never type-checks at all, but the
+ * common Vite+React+TS scaffold's default build script is `tsc -b && vite
+ * build` — a real type-check gate in front of it. The generation prompt
+ * (lib/generation/prompt.ts) tells the model to emit a plain `vite build`
+ * instead specifically so a real deploy can't fail on something the live
+ * preview never runs (Babel-standalone in the browser, no tsc at all — see
+ * lib/preview.ts) or on a stray invalid tsconfig.json compiler option (both
+ * observed in practice: a generated app can render perfectly in preview and
+ * still fail `tsc -b` on deploy with e.g. "Unknown compiler option"). A
+ * model reaching for the familiar scaffold script anyway is common enough
+ * that relying on it to comply isn't good enough — rewrite it server-side
+ * instead of hoping.
+ */
+function dropTypeCheckFromBuildScript(files: Record<string, string>): Record<string, string> {
+  const raw = files["package.json"];
+  if (!raw) return files;
+  let pkg: { scripts?: Record<string, string> };
+  try {
+    pkg = JSON.parse(raw);
+  } catch {
+    return files;
+  }
+  const build = pkg.scripts?.build;
+  if (typeof build !== "string" || !/\btsc\b/.test(build)) return files;
+  return {
+    ...files,
+    "package.json": JSON.stringify({ ...pkg, scripts: { ...pkg.scripts, build: "vite build" } }, null, 2),
+  };
+}
+
+/**
  * Creates a deployment from raw file contents (no git repo, no CLI) and
  * polls until Vercel finishes building it. Vercel auto-creates the project
  * (named after `slug`) on first deploy and reuses it on every later one, so
@@ -268,11 +299,13 @@ async function getDeploymentBuildLogs(deploymentId: string, limit = 300): Promis
  */
 export async function deployToVercel(
   slug: string,
-  files: Record<string, string>,
+  rawFiles: Record<string, string>,
   onStatus?: (message: string) => void,
   env?: Record<string, string>
 ): Promise<DeployResult> {
   onStatus?.("Uploading files");
+
+  const files = dropTypeCheckFromBuildScript(rawFiles);
 
   // Forcing the "vite" framework unconditionally used to be safe (every
   // deploy was a Vite frontend), but lib/express-adapter.ts can now produce

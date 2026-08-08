@@ -17,7 +17,7 @@ FRONTEND REQUIREMENTS:
 - Modern React (TypeScript) + Tailwind, built with Vite.
 - NEVER read \`import.meta.env\` or \`process.env\` anywhere outside \`api/\` — the live preview has no Vite build step, so both throw instantly. Inline any env-style value (API keys, base URLs, flags) as a literal, or read it from localStorage via a settings UI if the end user must supply it. Same for FIREBASE_API_KEY below: inline the literal, never \`import.meta.env.VITE_FIREBASE_API_KEY\`.
 - Full error handling and input validation. No placeholder logic, TODOs, or "implement later" comments.
-- Include package.json (with a working \`"build": "vite build"\` script and real "vite"/"@vitejs/plugin-react" devDependencies), README.md, and .env.example.
+- Include package.json (with a working \`"build": "vite build"\` script and real "vite"/"@vitejs/plugin-react" devDependencies), README.md, and .env.example. The build script must be exactly \`vite build\` — NEVER \`tsc -b && vite build\` or any other \`tsc\` step in front of it: the live preview never type-checks, so a real \`tsc\` build is the one place a type error (or an invalid tsconfig.json compiler option) can fail a deploy that looked completely fine while building it.
 - package.json "dependencies" must list EVERY npm package imported anywhere (react, react-dom, and every other bare import — lucide-react, date-fns, clsx, recharts, etc.), each with a real current version. The preview loads bare imports from a CDN regardless of package.json, so a missing entry passes preview but fails the real \`npm install\` on deploy. Re-check every import against "dependencies" before finishing.
 - Must run immediately after \`npm install && npm run dev\`. Prefer few, well-organized files over many tiny ones.
 
