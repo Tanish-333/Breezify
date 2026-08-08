@@ -1,4 +1,4 @@
-import type { PlanId } from "@/lib/types";
+import { MODEL_INFO, type ModelId, type PlanId } from "@/lib/types";
 import { FIREBASE_PUBLIC_CONFIG } from "@/lib/firebase-public-config";
 import { getAppBaseUrl } from "@/lib/app-base-url";
 
@@ -173,15 +173,29 @@ export function mergeRefineFiles(
  * that can't be used at all, so the real cost of too tight a budget isn't
  * just a worse error message — it's the user paying full price for nothing.
  * Haiku in particular tends to need more tokens than a pricier model for the
- * same spec (verbosity isn't correlated with cost), and every plan can reach
- * for Haiku (see MODEL_INFO's minPlan), so this used to leave every non-max
- * plan genuinely under-budgeted for an ordinary multi-file app, not just
- * unusually large ones. 32000 was already max's own working budget in
- * production; every plan gets that same proven number now, with max's own
- * headroom raised to keep it a real step up rather than now-identical.
+ * same spec (verbosity isn't correlated with cost) — a SHORT, vague prompt
+ * (e.g. "a habit tracker with streaks and a weekly calendar view") gives
+ * Haiku the least scope to work from, and in practice that's exactly what
+ * pushed it to over-elaborate and blow the previous 32000 budget on
+ * something genuinely simple, repeatably, not just on unusually large or
+ * detailed requests. 32000/40000 was raised once already from an even
+ * tighter budget and still wasn't enough.
+ *
+ * Provider-aware, not just plan-aware: this same number is requested as
+ * the hard `max_tokens` on whichever provider ends up handling the call
+ * (see callModel in lib/generation/index.ts), and Groq's actual per-model
+ * output ceiling has historically been well below Anthropic's — asking it
+ * for a number past its real cap doesn't truncate gracefully like a real
+ * over-budget generation does, it just fails the request outright with a
+ * 400. Anthropic and Gemini both comfortably support the higher budget
+ * with no special extended-output request; Groq keeps the previous,
+ * already-working number rather than risking exchanging "sometimes cuts
+ * off" for "sometimes refuses to run at all."
  */
-export function maxOutputTokensFor(plan: PlanId): number {
-  return plan === "max" ? 40000 : 32000;
+export function maxOutputTokensFor(plan: PlanId, model?: ModelId): number {
+  const provider = model ? MODEL_INFO[model].provider : undefined;
+  if (provider === "groq") return plan === "max" ? 40000 : 32000;
+  return plan === "max" ? 64000 : 48000;
 }
 
 export interface GenerationResult {

@@ -31,7 +31,7 @@ async function callModel(
   signal?: AbortSignal
 ) {
   const provider = MODEL_INFO[model].provider;
-  const maxOutputTokens = maxOutputTokensFor(plan);
+  const maxOutputTokens = maxOutputTokensFor(plan, model);
 
   const { raw, inputTokens, outputTokens, actualCostUSD } =
     provider === "anthropic"
